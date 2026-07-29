@@ -44,6 +44,7 @@ if [ "$FIRST_RUN" = "true" ]; then
   # Helper: install global npm package (idempotent, 3 retries)
   npm_install_global() {
     local pkg="$1"
+    # Explicitly set prefix to avoid fallback to /usr/lib/node_modules
     npm config set prefix '/home/dev/.npm-global'
     if npm ls -g --prefix '/home/dev/.npm-global' "$pkg" >/dev/null 2>&1; then
       echo "[devstack] $pkg already installed, skipping"
@@ -84,10 +85,11 @@ if [ "$FIRST_RUN" = "true" ]; then
   # Install core tools
   echo "[devstack] Installing core tools..."
   npm_install_global @earendil-works/pi-coding-agent
+  npm_install_global @fission-ai/openspec
+  pi_install pi-hermes-memory
+  pi_install pi-mcp-adapter
   npm_install_global exa-mcp-server
   npm_install_global agent-browser
-  pi_install npm:pi-hermes-memory
-  pi_install npm:pi-mcp-adapter
   pi_install git:github.com/localpibox/lemonade-pi-plugin@main
 
   # Rebuild native modules
@@ -108,31 +110,61 @@ if [ "$FIRST_RUN" = "true" ]; then
   source "${HOME_DIR}/.venvs/devstack/bin/activate"
   pip install --upgrade pip 2>/dev/null || true
 
-  # --- Copy shared skills from image to volume (first run only) -----------
-  echo "[devstack] Installing skills..."
-  SHARED_SKILLS_VOLUME="${HOME_DIR}/.pi/agent/skills"
-  if [ -d "/opt/pi-skills" ] && [ ! -d "$SHARED_SKILLS_VOLUME" ]; then
-    cp -r /opt/pi-skills "$SHARED_SKILLS_VOLUME"
-    echo "    Copied skills from image"
-  elif [ -d "/opt/pi-skills" ]; then
-    for skill_dir in /opt/pi-skills/*/; do
-      [ -d "$skill_dir" ] || continue
-      skill_name=$(basename "$skill_dir")
-      if [ ! -d "$SHARED_SKILLS_VOLUME/$skill_name" ]; then
-        cp -r "$skill_dir" "$SHARED_SKILLS_VOLUME/$skill_name"
-        echo "      → $skill_name"
+  # --- Install support tools to PATH ----------------------------------------
+  echo "[devstack] Installing support tools..."
+  if [ -d "$PI_SUPPORT_DIR" ]; then
+    for script in "$PI_SUPPORT_DIR"/*.sh; do
+      [ -f "$script" ] || continue
+      sudo cp "$script" "/usr/local/bin/$(basename "$script")"
+      sudo chmod +x "/usr/local/bin/$(basename "$script")"
+    done
+    GLOBAL_NPM_MODS="$(npm root -g)"
+    for ts in "$PI_SUPPORT_DIR"/*.ts; do
+      [ -f "$ts" ] || continue
+      name=$(basename "$ts" .ts)
+      {
+        cat <<'WRAPPER'
+#!/usr/bin/env bash
+export NODE_PATH="${GLOBAL_NPM_DIR}${NODE_PATH:+:$NODE_PATH}"
+exec npx tsx "$PI_SUPPORT_DIR"/"$0" "$@"
+WRAPPER
+      } > "/tmp/devstack-wrapper-$name"
+      sed -i "s/\${GLOBAL_NPM_DIR}/$(echo "$GLOBAL_NPM_MODS" | sed 's/[&/\\]/\\&/g')/" "/tmp/devstack-wrapper-$name"
+      sudo cp "/tmp/devstack-wrapper-$name" "/usr/local/bin/$name"
+      sudo chmod +x "/usr/local/bin/$name"
+    done
+    for exe in "$PI_SUPPORT_DIR"/*; do
+      [ -f "$exe" ] || continue
+      case "$exe" in *.sh|*.ts|*.json|*.txt|*.md|*.yml|*.yaml|*.png|*.jpg|*.jpeg) continue ;; esac
+      name=$(basename "$exe")
+      if [ ! -f "/usr/local/bin/$name" ]; then
+        sudo cp "$exe" "/usr/local/bin/$name"
+        sudo chmod +x "/usr/local/bin/$name" 2>/dev/null || true
       fi
     done
+    echo "    Support tools installed"
   fi
 
   # --- Generate MCP config (first run) --------------------------------------
+  # Copy the image template to ~/.pi/agent/mcp.json (base config).
+  # The pi-mcp-adapter automatically merges workspace .mcp.json files from
+  # standard locations — no hardcoded workspace paths needed.
   echo "[devstack] Setting up MCP config..."
   MCP_TARGET="${HOME_DIR}/.pi/agent/mcp.json"
   MCP_IMAGE_TEMPLATE="/opt/devstack/mcp.json"
   if [ ! -f "$MCP_TARGET" ] && [ -f "$MCP_IMAGE_TEMPLATE" ]; then
     cp "$MCP_IMAGE_TEMPLATE" "$MCP_TARGET"
     echo "    MCP servers: $(jq -r '.mcpServers | keys[]' "$MCP_TARGET" 2>/dev/null | tr '\n' ', ')"
+  elif [ -f "$MCP_TARGET" ]; then
+    echo "    MCP config already exists at $MCP_TARGET"
+  else
+    echo "    [WARN] No MCP template found at $MCP_IMAGE_TEMPLATE"
   fi
+
+  # Install project dependencies
+  echo "[devstack] Installing project dependencies..."
+  cd "$WORKSPACE_DIR"
+  npm install 2>&1 | tail -1 || echo "    [WARN] npm install failed"
 
   # Mark as initialized
   touch "${HOME_DIR}/.pi/.initialized"
@@ -140,8 +172,11 @@ if [ "$FIRST_RUN" = "true" ]; then
 fi
 
 # --- Pre-configure Lemonade provider (every start) ------------------------
+# The lemonade-pi-plugin reads auth.json on startup and auto-registers the
+# provider if credentials are found.
 LEMONADE_AUTH="${HOME_DIR}/.pi/agent/auth.json"
-LEMONADE_BASE="${LEMONADE_BASE_URL%/v1}"
+LEMONADE_URL="${LEMONADE_BASE_URL}"
+LEMONADE_BASE="${LEMONADE_URL%/v1}"
 mkdir -p "${HOME_DIR}/.pi/agent"
 if [ ! -f "$LEMONADE_AUTH" ] || ! grep -q '"lemonade"' "$LEMONADE_AUTH" 2>/dev/null; then
   CREDS_PAYLOAD=$(jq -n \
@@ -155,18 +190,29 @@ if [ ! -f "$LEMONADE_AUTH" ] || ! grep -q '"lemonade"' "$LEMONADE_AUTH" 2>/dev/n
     '{lemonade: {refresh: ($payload | tojson), access: $payload.apiKey, expires: $expires}}' \
     > "$LEMONADE_AUTH"
   echo "[devstack] Pre-configured Lemonade provider"
+else
+  echo "[devstack] Lemonade auth already configured"
 fi
 
 # --- Wait for Lemonade server ---------------------------------------------
 LEMONADE_CHECK_URL="${LEMONADE_BASE}/api/v1/health"
 echo "[devstack] Waiting for Lemonade server (max 60s)..."
+LEMONADE_READY=false
 for i in $(seq 1 60); do
   if curl -sf "${LEMONADE_CHECK_URL}" >/dev/null 2>&1; then
+    LEMONADE_READY=true
     echo "[devstack] Lemonade server ready"
     break
   fi
   sleep 1
 done
+if [ "$LEMONADE_READY" != "true" ]; then
+  echo "[devstack] WARNING: Lemonade not reachable — Pi may fall back to cloud providers"
+fi
+
+# --- Browser state cleanup (every start) ----------------------------------
+echo "[devstack] Cleaning browser states..."
+bash /usr/local/bin/browser-state-cleanup 2>/dev/null || true
 
 # --- Start VSCodium reh-web (foreground) ----------------------------------
 ED_PORT="${ED_PORT:-3000}"

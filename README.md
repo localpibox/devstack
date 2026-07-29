@@ -62,7 +62,7 @@ When the patch matures:
 
 ## 2. `lemonade-pi-plugin` — Forked + Patched
 
-**Source:** `cfxdevkit/lemonade-pi-plugin` (already forked locally)  
+**Source:** `github.com/localpibox/lemonade-pi-plugin` (fork of `cfxdevkit/lemonade-pi-plugin`)
 **Target:** `localpibox/lemonade-pi-plugin`
 
 ### What it does
@@ -174,7 +174,7 @@ After setup, `~/.pi/agent/settings.json`:
 1. Update `~/.pi/agent/settings.json` to point to `localpibox/*` repos
 2. Update Dockerfile URL
 3. Push everything
-4. Clean up old `cfxdevkit/` references
+4. Clean up any remaining `cfxdevkit/` references
 5. Document the setup
 
 ## Upstream Contribution Strategy

@@ -123,9 +123,25 @@ RUN set -eux; \
     echo "=== LocalPibox wiring complete ==="
 
 # ==========================================================================
-# LAYER 6b — Support tools (COPY always runs as root)
+# LAYER 6b — Support tools from config repo (config has the full suite)
 # ==========================================================================
-COPY support /opt/pi-support
+RUN set -eux; \
+    CONFIG_REPO="/home/dev/.local/pi-config"; \
+    mkdir -p /opt/pi-support; \
+    cp "${CONFIG_REPO}/support/start.sh" /opt/pi-support/start.sh; \
+    cp "${CONFIG_REPO}/support/session-uuid.ts" /opt/pi-support/session-uuid.ts; \
+    cp "${CONFIG_REPO}/support/validate-subagent-output.ts" /opt/pi-support/validate-subagent-output.ts; \
+    cp "${CONFIG_REPO}/support/browser" /opt/pi-support/browser; \
+    chmod +x /opt/pi-support/browser; \
+    cp "${CONFIG_REPO}/support/browser-state-cleanup.sh" /opt/pi-support/browser-state-cleanup.sh; \
+    chmod +x /opt/pi-support/browser-state-cleanup.sh; \
+    cp "${CONFIG_REPO}/support/browser-validate.ts" /opt/pi-support/browser-validate.ts; \
+    mkdir -p /opt/pi-support/config; \
+    cp "${CONFIG_REPO}/support/config/"* /opt/pi-support/config/; \
+    mkdir -p /opt/pi-support/docs; \
+    cp "${CONFIG_REPO}/support/docs/"* /opt/pi-support/docs/; \
+    mkdir -p /opt/pi-support/schemas; \
+    cp "${CONFIG_REPO}/support/schemas/"* /opt/pi-support/schemas/
 
 # ==========================================================================
 # LAYER 7 — Extensions from open-vsx.org
