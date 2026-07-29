@@ -125,6 +125,7 @@ RUN set -eux; \
 # ==========================================================================
 # LAYER 6b — Support tools from config repo (config has the full suite)
 # ==========================================================================
+USER root
 RUN set -eux; \
     CONFIG_REPO="/home/dev/.local/pi-config"; \
     mkdir -p /opt/pi-support; \
@@ -142,6 +143,8 @@ RUN set -eux; \
     cp "${CONFIG_REPO}/support/docs/"* /opt/pi-support/docs/; \
     mkdir -p /opt/pi-support/schemas; \
     cp "${CONFIG_REPO}/support/schemas/"* /opt/pi-support/schemas/
+
+USER dev
 
 # ==========================================================================
 # LAYER 7 — Extensions from open-vsx.org
