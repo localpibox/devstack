@@ -1,0 +1,48 @@
+# Local Pi runtime state
+.atl/
+
+# Env files
+.env
+.env.browser
+
+# Dependencies
+node_modules/
+
+# Package lock — keep it to track exact versions
+# (uncomment to ignore: node_modules/ is already covered above)
+
+# Agent-browser state files (may contain session tokens)
+# Kept outside the repo — in the home directory where Docker
+# volumes persist them across rebuilds.
+~/.agent-browser/sessions/
+~/.agent-browser/.encryption-key
+
+# Browser states Docker volume (not tracked)
+/browser-states/
+
+# Pi subagent workspace — kept in home dir, not repo root
+# (Pi subagents may leave behind temporary files, research artifacts, etc.)
+~/.pi/agent/pi-subagents/
+
+# Project-level agent definitions (runtime — templates live in agents/)
+.pi/agents/
+
+# pnpm store (cached packages, rebuilt from lockfile)
+.pnpm-store/
+
+# TypeScript build artifacts
+*.tsbuildinfo
+dist/
+build/
+out/
+
+# IDE / editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Gitnexus index — project-specific, generated at runtime
+.gitnexus/
+
