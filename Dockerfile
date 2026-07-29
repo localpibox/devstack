@@ -92,30 +92,6 @@ WORKDIR /home/dev/workspace
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 
 # ==========================================================================
-# LAYER 5.5 — Clone & patch Pi monorepo (reasoning_effort)
-# ==========================================================================
-RUN set -eux; \
-    PI_FORK="/opt/pi-fork"; \
-    if [ ! -d "$PI_FORK/.git" ]; then \
-        git clone --depth=1 https://github.com/localpibox/pi.git "$PI_FORK"; \
-    fi; \
-    cd "$PI_FORK"; \
-    FILE="$PI_FORK/packages/ai/dist/api/openai-completions.js"; \
-    sed -i '/compat\.thinkingFormat === "qwen" && model\.reasoning/,/^[[:space:]]*}/{
-        /params\.enable_thinking = !!options?.reasoningEffort;$/a\        // Also send reasoning_effort for granularity (high/medium/low)\
-        if (options?.reasoningEffort \&\& options.reasoningEffort !== "off") {\
-            params.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;\
-        }
-    }' "$FILE"; \
-    sed -i '/compat\.thinkingFormat === "qwen-chat-template" && model\.reasoning/,/^[[:space:]]*preserve_thinking: true,/{
-        /preserve_thinking: true,$/a\        // Also send reasoning_effort in chat template kwargs\
-        if (options?.reasoningEffort \&\& options.reasoningEffort !== "off") {\
-            params.chat_template_kwargs.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;\
-        }
-    }' "$FILE"; \
-    echo "Pi monorepo patched with reasoning_effort support"
-
-# ==========================================================================
 # LAYER 6 — Full LocalPibox wiring: packages + config
 # ==========================================================================
 RUN set -eux; \
