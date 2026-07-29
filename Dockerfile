@@ -99,7 +99,7 @@ RUN set -eux; \
     npm install -g "./packages/ai" \
         "./packages/tui" \
         "./packages/agent" \
-        "./packages/storage-sqlite" \
+        "./packages/storage" \
         "./packages/coding-agent" \
         "./packages/evals" \
         "./packages/server"; \
