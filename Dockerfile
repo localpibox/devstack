@@ -1,12 +1,11 @@
 ARG NODE_VERSION=24
 
 # Ubuntu 26.04 LTS — base for the devstack container.
-# Runs VSCodium reh-web (browser editor) + PI Agent MCP (tools/chat).
 FROM ubuntu:26.04
 
 ARG NODE_VERSION
 # ==========================================================================
-# LAYER 1 — apt-get packages (only changes when packages change)
+# LAYER 1 — apt-get packages
 # ==========================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-shm0 \
@@ -28,7 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ==========================================================================
-# LAYER 2 — Node.js (stable, only changes when Node version changes)
+# LAYER 2 — Node.js
 # ==========================================================================
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
@@ -36,7 +35,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && corepack enable
 
 # ==========================================================================
-# LAYER 3 — VSCodium download (heavy, ~100MB, changes only on version bump)
+# LAYER 3 — VSCodium
 # ==========================================================================
 ARG VSCODIUM_VERSION=1.126.0
 ARG VSCODIUM_COMMIT=4524
@@ -48,22 +47,17 @@ RUN curl -fsSL \
     && rm /tmp/vscodium.tar.gz
 
 # ==========================================================================
-# LAYER 4 — Chrome download (heaviest, ~150MB+, changes on Chrome updates)
-#         Downloaded at build time so agent-browser works without host Chrome.
-#         Build into /tmp first to avoid creating /home/dev (conflicts with
-#         usermod -m in Layer 5).
+# LAYER 4 — Chrome
 # ==========================================================================
 RUN CHROME_VERSION=$(curl -s https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json | jq -r '.channels.Stable.version') \
        && curl -L "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" -o /tmp/chrome.zip \
        && mkdir -p /tmp/.agent-browser/browsers/chrome-${CHROME_VERSION} \
        && unzip /tmp/chrome.zip -d /tmp/.agent-browser/browsers/chrome-${CHROME_VERSION} \
        && rm /tmp/chrome.zip \
-       && chown -R 1000:1000 /tmp/.agent-browser \
-       && echo "Chrome ${CHROME_VERSION} installed"
+       && chown -R 1000:1000 /tmp/.agent-browser
 
 # ==========================================================================
-# LAYER 5 — User setup + npm installs + agent-browser (ALL in ONE RUN)
-#         Each RUN creates a layer.  rm -rf cleans temp dirs at the end.
+# LAYER 5 — User setup + base npm installs
 # ==========================================================================
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
@@ -98,35 +92,78 @@ WORKDIR /home/dev/workspace
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 
 # ==========================================================================
-# LAYER 6 — Pi plugin installs (cached by pi, fast rebuild)
-#         Each install is idempotent (|| true for first-run safety).
-#         Also installs the global researcher agent for subagents.
+# LAYER 5.5 — Clone & patch Pi monorepo (reasoning_effort)
 # ==========================================================================
-RUN pi install npm:pi-hermes-memory || true \
+RUN set -eux; \
+    PI_FORK="/opt/pi-fork"; \
+    if [ ! -d "$PI_FORK/.git" ]; then \
+        git clone --depth=1 https://github.com/localpibox/pi.git "$PI_FORK"; \
+    fi; \
+    cd "$PI_FORK"; \
+    FILE="$PI_FORK/packages/ai/dist/api/openai-completions.js"; \
+    sed -i '/compat\.thinkingFormat === "qwen" && model\.reasoning/,/^[[:space:]]*}/{
+        /params\.enable_thinking = !!options?.reasoningEffort;$/a\        // Also send reasoning_effort for granularity (high/medium/low)\
+        if (options?.reasoningEffort \&\& options.reasoningEffort !== "off") {\
+            params.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;\
+        }
+    }' "$FILE"; \
+    sed -i '/compat\.thinkingFormat === "qwen-chat-template" && model\.reasoning/,/^[[:space:]]*preserve_thinking: true,/{
+        /preserve_thinking: true,$/a\        // Also send reasoning_effort in chat template kwargs\
+        if (options?.reasoningEffort \&\& options.reasoningEffort !== "off") {\
+            params.chat_template_kwargs.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;\
+        }
+    }' "$FILE"; \
+    echo "Pi monorepo patched with reasoning_effort support"
+
+# ==========================================================================
+# LAYER 6 — Full LocalPibox wiring: packages + config
+# ==========================================================================
+RUN set -eux; \
+    # Install packages from localpibox repos
+    pi install git:github.com/localpibox/lemonade-pi-plugin@main || true \
+    && pi install npm:pi-hermes-memory || true \
     && pi install npm:pi-mcp-adapter || true \
-    && pi install git:github.com/localpibox/lemonade-pi-plugin@main || true \
     && pi install npm:@tintinweb/pi-subagents || true \
-    && mkdir -p /home/dev/.pi/agent/agents && chown -R 1000:1000 /home/dev/.pi/agent/agents
+    && pi install npm:pi-powerline-footer || true; \
+    \
+    # Clone config repo and apply wiring
+    CONFIG_REPO="/opt/pi-config"; \
+    if [ ! -d "$CONFIG_REPO/.git" ]; then \
+        git clone --depth=1 https://github.com/localpibox/config.git "$CONFIG_REPO"; \
+    fi; \
+    cd "$CONFIG_REPO"; \
+    \
+    # Settings
+    mkdir -p /home/dev/.pi/agent; \
+    cp settings.json /home/dev/.pi/agent/settings.json; \
+    cp mcp.json /home/dev/.pi/agent/mcp.json; \
+    \
+    # Agents.md
+    cp AGENTS.md /home/dev/.pi/agent/AGENTS.md; \
+    \
+    # Skills
+    mkdir -p /home/dev/.pi/agent/skills; \
+    for skill_dir in skills/*/; do \
+        skill_name=$(basename "$skill_dir"); \
+        mkdir -p "/home/dev/.pi/agent/skills/$skill_name"; \
+        cp "$skill_dir"* "/home/dev/.pi/agent/skills/$skill_name/" 2>/dev/null || true; \
+    done; \
+    \
+    # Agents
+    mkdir -p /home/dev/.pi/agent/agents; \
+    cp agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
+    \
+    # Support files
+    mkdir -p /opt/pi-support; \
+    cp -r support/* /opt/pi-support/ 2>/dev/null || true; \
+    find /opt/pi-support -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true; \
+    \
+    # Permissions
+    chown -R 1000:1000 /home/dev/.pi/agent 2>/dev/null || true; \
+    echo "=== LocalPibox wiring complete ==="
 
 # ==========================================================================
-# LAYER 7 — Shared Pi skills (changes occasionally)
-# ==========================================================================
-COPY skills /opt/pi-skills
-
-# ==========================================================================
-# LAYER 8 — Support tools (changes occasionally)
-# ==========================================================================
-COPY support /opt/pi-support
-
-# ==========================================================================
-# LAYER 9 — Config files that change rarely (stable configs)
-# ==========================================================================
-COPY mcp.json /opt/devstack/mcp.json
-COPY extensions.json /opt/devstack/extensions.json
-
-# ==========================================================================
-# Install extensions at build time — fetch from open-vsx.org, unpack vsix,
-# no running server or IPC hook required.
+# LAYER 7 — Extensions (at build time from open-vsx.org)
 # ==========================================================================
 RUN set -eux; \
     EXT_DIR="/home/dev/.vscodium-server/extensions"; \
@@ -148,16 +185,9 @@ RUN set -eux; \
     install_ext pi0 pi-vscode
 
 RUN mkdir -p /home/dev/.config/codium/User
-COPY settings.json /home/dev/.config/codium/User/settings.json
 
 # ==========================================================================
-# LAYER 9b — Global Pi agents (deployed to ~/.pi/agent/agents/)
-# ==========================================================================
-COPY agents /opt/pi-agents
-RUN mkdir -p /home/dev/.pi/agent/agents && cp /opt/pi-agents/*.md /home/dev/.pi/agent/agents/ 2>/dev/null || true && chown -R 1000:1000 /home/dev/.pi/agent/agents
-
-# ==========================================================================
-# LAYER 10 — Start script (changes frequently — kept last for cache isolation)
+# LAYER 8 — Entrypoint
 # ==========================================================================
 COPY support/start.sh /opt/devstack/start.sh
 USER root
@@ -172,5 +202,4 @@ ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV PI_SUPPORT_DIR="/opt/pi-support"
 
-# --- Entrypoint: start MCP + VSCodium -------------------------------------
 CMD ["/bin/bash", "/opt/devstack/start.sh"]
