@@ -76,7 +76,7 @@ RUN set -eux; \
     npm config set fetch-retry-mintimeout 30000; \
     npm config set fetch-retry-maxtimeout 300000; \
     npm config set fetch-timeout 600000; \
-    npm config set allow-scripts 'agent-browser'; \
+    npm config set allow-scripts 'agent-browser better-sqlite3 protobufjs esbuild @google/genai'; \
     npm install -g zod@3; \
     npm install -g agent-browser exa-mcp-server; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
@@ -84,37 +84,33 @@ RUN set -eux; \
     rm -rf /tmp/* /var/tmp/*
 
 # ==========================================================================
-# LAYER 5b — Build pi monorepo (fork with patches) + install all 7 packages globally
+# LAYER 5b — Build pi monorepo (fork with patches) + install all 4 packages globally
 # ==========================================================================
 USER root
 RUN set -eux; \
-    mkdir -p /tmp/pi-build && cd /tmp/pi-build; \
-    git clone https://github.com/localpibox/pi.git .; \
+    mkdir -p /opt/pi-src && cd /opt/pi-src; \
+    git clone --depth=1 --single-branch --branch main https://github.com/localpibox/pi.git .; \
     \
-    # Install monorepo dependencies and build all packages
-    npm ci; \
+    npm ci --ignore-scripts; \
     npm run build; \
     \
-    # Install all 7 packages globally (in dependency order)
     npm install -g "./packages/ai" \
-        "./packages/tui" \
         "./packages/agent" \
-        "./packages/storage" \
         "./packages/coding-agent" \
-        "./packages/evals" \
-        "./packages/server"; \
+        "./packages/tui"; \
     \
-    # Clean up source
-    rm -rf /tmp/pi-build; \
+    # NOTE: do NOT rm -rf /opt/pi-src — the global installs above are
+    # symlinks back into this tree (npm's behavior for local-folder installs),
+    # and node's module resolution also needs the hoisted root node_modules
+    # here at runtime. Only trim what's safe to drop:
+    rm -rf /opt/pi-src/.git; \
     \
-    # Fix ownership for dev user
     chown -R 1000:1000 /home/dev/.npm-global/lib/node_modules 2>/dev/null || true; \
-    chown -R 1000:1000 /home/dev/.npm-global/bin 2>/dev/null || true
+    chown -R 1000:1000 /home/dev/.npm-global/bin 2>/dev/null || true; \
+    chown -R 1000:1000 /opt/pi-src 2>/dev/null || true
 USER dev
-
 WORKDIR /home/dev/workspace
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-
 # ==========================================================================
 # LAYER 6 — Full LocalPibox wiring: packages + config
 # ==========================================================================
