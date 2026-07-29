@@ -78,13 +78,40 @@ RUN set -eux; \
     npm config set fetch-timeout 600000; \
     npm config set allow-scripts 'agent-browser'; \
     npm install -g zod@3; \
-    npm install -g @earendil-works/pi-coding-agent; \
     npm install -g agent-browser exa-mcp-server; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     mkdir -p /home/dev/.npm && chown -R 1000:1000 /home/dev/.npm-global /home/dev/.npm; \
     rm -rf /tmp/* /var/tmp/*
 
+# ==========================================================================
+# LAYER 5b — Build pi monorepo (fork with patches) + install all 7 packages globally
+# ==========================================================================
+USER root
+RUN set -eux; \
+    mkdir -p /tmp/pi-build && cd /tmp/pi-build; \
+    git clone --depth=1 https://github.com/localpibox/pi.git .; \
+    \
+    # Install monorepo dependencies and build all packages
+    npm ci; \
+    npm run build; \
+    \
+    # Install all 7 packages globally (in dependency order)
+    npm install -g "./packages/ai" \
+        "./packages/tui" \
+        "./packages/agent" \
+        "./packages/storage-sqlite" \
+        "./packages/coding-agent" \
+        "./packages/evals" \
+        "./packages/server"; \
+    \
+    # Clean up source
+    rm -rf /tmp/pi-build; \
+    \
+    # Fix ownership for dev user
+    chown -R 1000:1000 /home/dev/.npm-global/lib/node_modules 2>/dev/null || true; \
+    chown -R 1000:1000 /home/dev/.npm-global/bin 2>/dev/null || true
 USER dev
+
 WORKDIR /home/dev/workspace
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 
