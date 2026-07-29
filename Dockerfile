@@ -1,6 +1,4 @@
 ARG NODE_VERSION=24
-
-# Ubuntu 26.04 LTS — base for the devstack container.
 FROM ubuntu:26.04
 
 ARG NODE_VERSION
@@ -8,8 +6,7 @@ ARG NODE_VERSION
 # LAYER 1 — apt-get packages
 # ==========================================================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxcb-shm0 \
-    libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
+    libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
     libxcomposite1 libxcursor1 libxdamage1 libxfixes3 \
     libxi6 libgtk-3-0t64 libpangocairo-1.0-0 libpango-1.0-0 \
     libatk1.0-0t64 libcairo-gobject2 libcairo2 \
@@ -95,51 +92,43 @@ ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 # LAYER 6 — Full LocalPibox wiring: packages + config
 # ==========================================================================
 RUN set -eux; \
-    # Install packages from localpibox repos
     pi install git:github.com/localpibox/lemonade-pi-plugin@main || true \
     && pi install npm:pi-hermes-memory || true \
     && pi install npm:pi-mcp-adapter || true \
     && pi install npm:@tintinweb/pi-subagents || true \
     && pi install npm:pi-powerline-footer || true; \
     \
-    # Clone config repo and apply wiring
-    CONFIG_REPO="/opt/pi-config"; \
+    CONFIG_REPO="/home/dev/.local/pi-config"; \
     if [ ! -d "$CONFIG_REPO/.git" ]; then \
         git clone --depth=1 https://github.com/localpibox/config.git "$CONFIG_REPO"; \
     fi; \
     cd "$CONFIG_REPO"; \
     \
-    # Settings
     mkdir -p /home/dev/.pi/agent; \
     cp settings.json /home/dev/.pi/agent/settings.json; \
     cp mcp.json /home/dev/.pi/agent/mcp.json; \
-    \
-    # Agents.md
     cp AGENTS.md /home/dev/.pi/agent/AGENTS.md; \
     \
-    # Skills
     mkdir -p /home/dev/.pi/agent/skills; \
-    for skill_dir in skills/*/; do \
-        skill_name=$(basename "$skill_dir"); \
-        mkdir -p "/home/dev/.pi/agent/skills/$skill_name"; \
-        cp "$skill_dir"* "/home/dev/.pi/agent/skills/$skill_name/" 2>/dev/null || true; \
+    for d in skills/*; do \
+        name=$(basename "$d"); \
+        mkdir -p "/home/dev/.pi/agent/skills/$name"; \
+        cp "$d"/* "/home/dev/.pi/agent/skills/$name/" 2>/dev/null || true; \
     done; \
     \
-    # Agents
     mkdir -p /home/dev/.pi/agent/agents; \
     cp agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
     \
-    # Support files
     mkdir -p /opt/pi-support; \
+    chown 1000:1000 /opt 2>/dev/null || true; \
     cp -r support/* /opt/pi-support/ 2>/dev/null || true; \
     find /opt/pi-support -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true; \
     \
-    # Permissions
     chown -R 1000:1000 /home/dev/.pi/agent 2>/dev/null || true; \
     echo "=== LocalPibox wiring complete ==="
 
 # ==========================================================================
-# LAYER 7 — Extensions (at build time from open-vsx.org)
+# LAYER 7 — Extensions from open-vsx.org
 # ==========================================================================
 RUN set -eux; \
     EXT_DIR="/home/dev/.vscodium-server/extensions"; \
@@ -160,8 +149,6 @@ RUN set -eux; \
     }; \
     install_ext pi0 pi-vscode
 
-RUN mkdir -p /home/dev/.config/codium/User
-
 # ==========================================================================
 # LAYER 8 — Entrypoint
 # ==========================================================================
@@ -170,9 +157,6 @@ USER root
 RUN chmod +x /opt/devstack/start.sh
 USER dev
 
-# ==========================================================================
-# ENV + Entrypoint
-# ==========================================================================
 ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
 ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
