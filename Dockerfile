@@ -89,7 +89,7 @@ RUN set -eux; \
 USER root
 RUN set -eux; \
     mkdir -p /tmp/pi-build && cd /tmp/pi-build; \
-    git clone --depth=1 https://github.com/localpibox/pi.git .; \
+    git clone https://github.com/localpibox/pi.git .; \
     \
     # Install monorepo dependencies and build all packages
     npm ci; \
