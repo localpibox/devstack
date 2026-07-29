@@ -1,4 +1,5 @@
 # Devstack — single container with VSCodium reh-web + PI Agent MCP.
+project_name: localpistack
 #
 # Usage:
 #   .devstack.sh /path/to/project    # From any directory
@@ -15,7 +16,7 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_VERSION: "24"
-    container_name: devstack
+    container_name: localpistack
     env_file:
       - .env
       - .env.browser

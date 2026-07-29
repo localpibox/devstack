@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# devstack — Start a devstack container for a project.
+# localpistack — Start a devstack container for a project.
 #
 # Usage:
 #   devstack /path/to/project          # Start for specific folder
@@ -22,7 +22,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 DEFAULT_MCP="${SCRIPT_DIR}/mcp.json"
-CONTAINER_NAME="devstack"
+CONTAINER_NAME="localpistack"
 ED_PORT="${ED_PORT:-3000}"
 TOKEN="${CONNECTION_TOKEN:-devsession}"
 
@@ -44,10 +44,10 @@ else
 fi
 
 # --- Check if container is already running ---------------------------------
-if $DC -f "$COMPOSE_FILE" -p "devstack" ps --services --filter "status=running" 2>/dev/null | grep -q "devstack"; then
+if $DC -f "$COMPOSE_FILE" -p "localpistack" ps --services --filter "status=running" 2>/dev/null | grep -q "localpistack"; then
   echo "==> Devstack already running (project: $ABS_PROJECT_DIR)"
   echo "    Editor: http://localhost:${ED_PORT}?tkn=${TOKEN}"
-  echo "    To stop: $DC -f $COMPOSE_FILE -p devstack down"
+  echo "    To stop: $DC -f $COMPOSE_FILE -p localpistack down"
   exit 0
 fi
 
@@ -69,22 +69,22 @@ echo "    Editor:    :${ED_PORT}"
 echo ""
 echo "==> Building image..."
 
-IMAGE_EXISTS=$($DC -f "$COMPOSE_FILE" -p "devstack" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-  | grep -c "^devstack:latest$" || true)
+IMAGE_EXISTS=$($DC -f "$COMPOSE_FILE" -p "localpistack" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+  | grep -c "^localpistack:latest$" || true)
 
 if [ "$IMAGE_EXISTS" -gt 0 ]; then
   echo "    Image exists."
 else
   echo "    Building (first run, may take a while)..."
-  $DC -f "$COMPOSE_FILE" -p "devstack" build --pull 2>&1 | tail -15
+  $DC -f "$COMPOSE_FILE" -p "localpistack" build --pull 2>&1 | tail -15
 fi
 
 # --- Start container -------------------------------------------------------
 echo ""
-echo "==> Starting devstack..."
+echo "==> Starting localpistack..."
 
 export WORKSPACE_DIR="$ABS_PROJECT_DIR"
-$DC -f "$COMPOSE_FILE" -p "devstack" up -d 2>&1 | tail -5
+$DC -f "$COMPOSE_FILE" -p "localpistack" up -d 2>&1 | tail -5
 
 # Wait for VSCodium to be ready
 echo ""
@@ -107,5 +107,5 @@ echo '    ║  Chat:    Pi Code GUI in the activity bar (🤖 icon) ║'
 echo '    ║  Alt:     Terminal → run "pi" for full TUI          ║'
 echo "    ╚══════════════════════════════════════════════════════╝"
 echo ""
-echo "    Stop: $DC -f $COMPOSE_FILE -p devstack down"
-echo "    Logs: $DC -f $COMPOSE_FILE -p devstack logs -f"
+echo "    Stop: $DC -f $COMPOSE_FILE -p localpistack down"
+echo "    Logs: $DC -f $COMPOSE_FILE -p localpistack logs -f"
