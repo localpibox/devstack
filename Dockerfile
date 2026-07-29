@@ -119,13 +119,13 @@ RUN set -eux; \
     mkdir -p /home/dev/.pi/agent/agents; \
     cp agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
     \
-    mkdir -p /opt/pi-support; \
-    chown 1000:1000 /opt 2>/dev/null || true; \
-    cp -r support/* /opt/pi-support/ 2>/dev/null || true; \
-    find /opt/pi-support -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true; \
-    \
     chown -R 1000:1000 /home/dev/.pi/agent 2>/dev/null || true; \
     echo "=== LocalPibox wiring complete ==="
+
+# ==========================================================================
+# LAYER 6b — Support tools (COPY always runs as root)
+# ==========================================================================
+COPY support /opt/pi-support
 
 # ==========================================================================
 # LAYER 7 — Extensions from open-vsx.org
