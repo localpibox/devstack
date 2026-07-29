@@ -93,7 +93,7 @@ ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 # ==========================================================================
 RUN set -eux; \
     pi install git:github.com/localpibox/lemonade-pi-plugin@main || true \
-    && pi install npm:pi-hermes-memory || true \
+    && pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || true \
     && pi install npm:pi-mcp-adapter || true \
     && pi install npm:@tintinweb/pi-subagents || true \
     && pi install npm:pi-powerline-footer || true; \
