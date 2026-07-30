@@ -99,6 +99,9 @@ RUN set -eux; \
         done; \
     fi; \
     npm run build; \
+    for d in packages/ai packages/agent packages/coding-agent packages/tui; do \
+      printf "node_modules\n" > "$d/.npmignore"; \
+    done; \
     npm install -g "./packages/ai" "./packages/agent" "./packages/coding-agent" "./packages/tui"; \
     ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
