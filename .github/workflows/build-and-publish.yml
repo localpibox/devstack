@@ -8,6 +8,12 @@
 #   - Push to main (Dockerfile, support/, stack-upkeep/)
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
 #   - Manual dispatch
+#
+# Actions: all latest major versions (Node.js 24 native)
+#   actions/checkout@v6 · docker/build-push-action@v7
+#   docker/setup-buildx-action@v4 · docker/setup-qemu-action@v4
+#   docker/login-action@v4 · docker/metadata-action@v6
+#   actions/upload-artifact@v7
 
 name: Build & Publish Devstack
 
@@ -53,16 +59,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -70,7 +76,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
@@ -80,7 +86,7 @@ jobs:
             type=schedule,pattern=weekly-%Y-%W
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -103,10 +109,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -144,7 +150,7 @@ jobs:
           ls -lh /home/runner/work/devstack/devstack/updates/
 
       - name: Upload tarballs as artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: update-tarballs
           path: updates/
