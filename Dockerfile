@@ -1,8 +1,13 @@
 # ==========================================================================
-# Multi-stage Dockerfile — LocalPibox Devstack
+# Multi-stage Dockerfile — LocalPibox Devstack (slimmed)
 # ==========================================================================
-# Stage 1 (builder): Heavy build with all deps
-# Stage 2 (runtime): Clean image with only runtime artifacts
+# Stage 1 (builder): compile native modules, clone repos, assemble artifacts
+# Stage 2 (runtime): runtime dependencies + copied artifacts
+#
+# Key changes for size reduction:
+#   - Runtime: NO Chrome/X11 libs (installed via agent-browser install --with-deps)
+#   - Pre-built Chrome removed from builder (deferred to install-browser.sh)
+#   - Runtime user created BEFORE COPY (files use UID 1000)
 # ==========================================================================
 
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
@@ -21,7 +26,7 @@ ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Builder: System deps ───────────────────────────────────────────────────
+# ── Builder: Build tools + Chrome deps (needed for native module compile) ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
     libxcomposite1 libxcursor1 libxdamage1 libxfixes3 \
@@ -32,8 +37,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnss3 libnspr4 libatk-bridge2.0-0t64 \
     libdrm2 libxkbcommon0 libatspi2.0-0 libgbm1 \
     fonts-noto-color-emoji fonts-freefont-ttf \
-    curl ca-certificates gnupg git build-essential pkg-config \
-    unzip wget gh \
+    build-essential pkg-config \
+    curl wget unzip \
+    ca-certificates gnupg \
+    git gh \
+    python3 python3-pip python3-venv \
+    sqlite3 libsqlite3-dev postgresql-client redis-tools \
     ripgrep fzf fd-find jq tmux sudo \
     && rm -rf /var/lib/apt/lists/*
 
@@ -43,13 +52,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && npm install -g npm@latest \
     && corepack enable
 
-# ── Builder: Chrome ────────────────────────────────────────────────────────
-RUN CHROME_VERSION=$(curl -s https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json | jq -r '.channels.Stable.version') \
-       && curl -L "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-linux64.zip" -o /tmp/chrome.zip \
-       && mkdir -p /tmp/.agent-browser/browsers/chrome-${CHROME_VERSION} \
-       && unzip /tmp/chrome.zip -d /tmp/.agent-browser/browsers/chrome-${CHROME_VERSION} \
-       && rm /tmp/chrome.zip
-
 # ── Builder: VSCodium ──────────────────────────────────────────────────────
 RUN curl -fsSL \
       "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
@@ -58,7 +60,7 @@ RUN curl -fsSL \
     && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
     && rm /tmp/vscodium.tar.gz
 
-# ── Builder: User setup ────────────────────────────────────────────────────
+# ── Builder: User setup (matches runtime UID 1000) ─────────────────────────
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
       oldname="$(getent passwd 1000 | cut -d: -f1)"; \
@@ -74,7 +76,7 @@ RUN set -eux; \
     fi; \
     chown -R 1000:1000 /home/dev
 
-# ── Builder: npm config + base installs ────────────────────────────────────
+# ── Builder: npm config + global installs ──────────────────────────────────
 RUN set -eux; \
     npm config set prefix '/home/dev/.npm-global'; \
     npm config set fetch-retries 5; \
@@ -84,7 +86,7 @@ RUN set -eux; \
     npm config set registry https://registry.npmjs.org/; \
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}'; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
-    mkdir -p /home/dev/.npm && chown -R 1000:1000 /home/dev/.npm-global /home/dev/.npm
+    mkdir -p /home/dev/.npm && chown -R 1000:1000 /home/dev/.npm-global
 
 # ── Builder: Pi monorepo build (single pass) ───────────────────────────────
 USER root
@@ -96,24 +98,18 @@ RUN set -eux; \
     git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true; \
     git fetch localpibox patches/qwen-reasoning-effort 2>/dev/null || true; \
     npm ci --ignore-scripts; \
-    # Apply patches
     if ls /opt/pi-patches/*.patch 1>/dev/null 2>&1; then \
         for patch in /opt/pi-patches/*.patch; do \
             git am "$patch" 2>&1; \
         done; \
     fi; \
     npm run build; \
-    # Install globally
-    npm install -g "./packages/ai" \
-        "./packages/agent" \
-        "./packages/coding-agent" \
-        "./packages/tui"; \
-    # Clean build artifacts (keep only dist, remove node_modules)
+    npm install -g "./packages/ai" "./packages/agent" "./packages/coding-agent" "./packages/tui"; \
     cd /home/dev/.npm-global/lib/node_modules && \
     find . -name "node_modules" -type d -exec rm -rf {} + 2>/dev/null || true; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
-# ── Builder: Extensions + Config (robust) ────────────────────────────────────
+# ── Builder: Extensions + Config ───────────────────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
@@ -224,15 +220,9 @@ RUN set -eux; \
     }; \
     install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"
 
-# ── Builder: Cleanup build deps ────────────────────────────────────────────
-RUN apt-get remove -y build-essential git curl wget gnupg unzip; \
-    apt-get purge -y --auto-remove; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache \
-        /opt/pi-src/node_modules /opt/pi-src/dist
-
-USER dev
-
 # ── STAGE 2: RUNTIME ───────────────────────────────────────────────────────
+# Purpose: runtime dependencies + copied artifacts
+# Browser installed on-demand: user runs `agent-browser install` + `--with-deps`
 FROM ubuntu:26.04 AS runtime
 
 ARG NODE_VERSION
@@ -242,17 +232,10 @@ ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Runtime: System deps (minimal) ─────────────────────────────────────────
+# ── Runtime: User's minimal apt list ───────────────────────────────────────
+# Validated on Ubuntu 26.04 — all packages exist in repos.
+# NO Chrome/X11 libs — installed via `agent-browser install --with-deps`
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
-    libxcomposite1 libxcursor1 libxdamage1 libxfixes3 \
-    libxi6 libgtk-3-0t64 libpangocairo-1.0-0 libpango-1.0-0 \
-    libatk1.0-0t64 libcairo-gobject2 libcairo2 \
-    libgdk-pixbuf-2.0-0 libxrender1 libasound2t64 \
-    libfreetype6 libfontconfig1 libdbus-1-3 \
-    libnss3 libnspr4 libatk-bridge2.0-0t64 \
-    libdrm2 libxkbcommon0 libatspi2.0-0 libgbm1 \
-    fonts-noto-color-emoji fonts-freefont-ttf \
     curl ca-certificates gnupg sudo \
     ripgrep fzf fd-find jq tmux \
     && rm -rf /var/lib/apt/lists/*
@@ -263,12 +246,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && npm install -g npm@latest \
     && corepack enable
 
+# ── Runtime: Create dev user (MUST be before COPY — files use UID 1000) ────
+RUN useradd -m -s /bin/bash -u 1000 dev
+
 # ── Runtime: Copy from builder ─────────────────────────────────────────────
-COPY --from=builder /tmp/.agent-browser /home/dev/.agent-browser
 COPY --from=builder /opt/vscodium /opt/vscodium
 COPY --from=builder /opt/pi-src /opt/pi-src
 COPY --from=builder /home/dev/.npm-global /home/dev/.npm-global
-COPY --from=builder /home/dev/.npm /home/dev/.npm
 COPY --from=builder /home/dev/.pi /home/dev/.pi
 COPY --from=builder /home/dev/.local /home/dev/.local
 COPY --from=builder /home/dev/.vscodium-server /home/dev/.vscodium-server
@@ -284,18 +268,20 @@ RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
     && mkdir -p /opt/pi-internal \
     && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
 
-# ── Runtime: Scripts ───────────────────────────────────────────────────────
-# Copy helper scripts into the image so they're available inside the container
+# ── Runtime: Helper scripts ────────────────────────────────────────────────
 COPY support/start.sh /opt/devstack/start.sh
+COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
 COPY build-updates.sh /usr/local/bin/build-updates.sh
 COPY load-updates.sh /usr/local/bin/load-updates.sh
-RUN chmod +x /opt/devstack/start.sh /usr/local/bin/run.sh \
-    /usr/local/bin/stack.sh /usr/local/bin/build-updates.sh \
-    /usr/local/bin/load-updates.sh
+RUN chmod +x /opt/devstack/start.sh \
+    /opt/devstack/install-browser.sh \
+    /usr/local/bin/run.sh /usr/local/bin/stack.sh \
+    /usr/local/bin/build-updates.sh /usr/local/bin/load-updates.sh
 
 # ── Runtime: User ──────────────────────────────────────────────────────────
+# Set ownership on copied directories. Dev user exists (created above).
 RUN chown -R 1000:1000 /home/dev /opt/pi-src /opt/pi-patches \
     && chmod -R u+rwX /home/dev
 
@@ -308,7 +294,6 @@ ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV PI_SUPPORT_DIR="/opt/pi-support"
 
-# Labels for publishing
 LABEL org.opencontainers.image.title="LocalPibox Devstack" \
       org.opencontainers.image.description="AI-powered dev environment with Pi coding agent" \
       org.opencontainers.image.source="https://github.com/localpibox/devstack" \
