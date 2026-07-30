@@ -115,6 +115,7 @@ USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
+    rm -rf /opt/pi-src/* /opt/pi-src/.* 2>/dev/null || true; \
     git clone --depth=1 --single-branch --branch main https://github.com/earendil-works/pi .; \
     git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true; \
     git fetch localpibox patches/qwen-reasoning-effort 2>/dev/null || true; \
