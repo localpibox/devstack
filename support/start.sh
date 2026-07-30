@@ -90,18 +90,44 @@ if [ "$FIRST_RUN" = "true" ]; then
     fi
 
     # Inject default extension packages if settings.json has none
-    HAS_PACKAGES=$(jq -r 'has("packages")' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || echo false)
+    HAS_PACKAGES=$(jq -r 'has("packages")' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || echo "error")
+    echo "[devstack] Settings has packages: $HAS_PACKAGES (file: $(ls -la ${HOME_DIR}/.pi/agent/settings.json 2>&1))"
     if [ "$HAS_PACKAGES" = "false" ]; then
         echo "[devstack] Injecting default extension packages into settings.json..."
-        jq '.packages = [
+        if jq '.packages = [
             "git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision",
             "git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider",
             "npm:pi-mcp-adapter",
             "npm:@tintinweb/pi-subagents",
             "npm:pi-powerline-footer"
-        ]' "${HOME_DIR}/.pi/agent/settings.json" > "${HOME_DIR}/.pi/agent/settings.json.tmp" 2>/dev/null && \
-            mv "${HOME_DIR}/.pi/agent/settings.json.tmp" "${HOME_DIR}/.pi/agent/settings.json" && \
-            chown "$(id -u):$(id -g)" "${HOME_DIR}/.pi/agent/settings.json" || true
+        ]' "${HOME_DIR}/.pi/agent/settings.json" > "${HOME_DIR}/.pi/agent/settings.json.new" 2>/dev/null; then
+            mv "${HOME_DIR}/.pi/agent/settings.json.new" "${HOME_DIR}/.pi/agent/settings.json"
+            chown "$(id -u):$(id -g)" "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || true
+            echo "[devstack] Packages injected successfully"
+        else
+            echo "[devstack] ERROR: Failed to inject packages via jq"
+            echo "[devstack] Current file: $(cat ${HOME_DIR}/.pi/agent/settings.json 2>&1)"
+            # Fallback: append packages manually using python3 or sed
+            if command -v python3 &>/dev/null; then
+                python3 -c "
+import json, sys
+with open('${HOME_DIR}/.pi/agent/settings.json') as f:
+    data = json.load(f)
+data['packages'] = [
+    'git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision',
+    'git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider',
+    'npm:pi-mcp-adapter',
+    'npm:@tintinweb/pi-subagents',
+    'npm:pi-powerline-footer'
+]
+with open('${HOME_DIR}/.pi/agent/settings.json', 'w') as f:
+    json.dump(data, f, indent=2)
+print('Injected via python3 fallback')
+" 2>&1 || echo "[devstack] ERROR: python3 fallback also failed"
+            else
+                echo "[devstack] SKIP: jq failed and python3 not available"
+            fi
+        fi
     fi
 
     # Create initialization marker
