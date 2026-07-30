@@ -28,6 +28,14 @@ ED_PORT="${ED_PORT:-3000}"
 SLEEP_INTERVAL=2
 MAX_RETRIES=30
 
+# Auto-detect mounted project subfolder when DEVCONTAINER_WORKSPACE_DIR not set
+if [ -z "${DEVCONTAINER_WORKSPACE_DIR:-}" ]; then
+    subdir="$(find /home/dev/workspace -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
+    if [ -n "$subdir" ]; then
+        WORKSPACE_DIR="$subdir"
+    fi
+fi
+
 # ── First-run bootstrap ────────────────────────────────────────────────────
 
 FIRST_RUN=false
