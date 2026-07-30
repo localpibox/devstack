@@ -151,6 +151,7 @@ USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     export HOME="/home/dev"; \
+    NPM="npm install -g --prefix /home/dev/.npm-global"; \
     \
     # ── Install extensions ───────────────────────────────────────────────
     echo "=== Installing extensions ==="; \
@@ -167,9 +168,9 @@ RUN set -eux; \
         fi; \
     fi; \
     pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
-    npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
-    npm install -g @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
-    npm install -g pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
+    $NPM pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
+    $NPM @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
+    $NPM pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
     \
     # ── Clone config repo ────────────────────────────────────────────────
     echo "=== Cloning config repo ==="; \
