@@ -8,25 +8,33 @@ AI-powered development environment with the Pi coding agent, VSCodium editor, an
 # Pull the latest image
 podman pull ghcr.io/localpibox/devstack:latest
 
-# Navigate to your project
-cd ~/projects/myproject
+# Run with a project folder
+podman run -d --name localpibox --network host --userns keep-id \
+    -v /path/to/your/project:/home/dev/workspace/myproject:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -e ED_PORT=3000 \
+    ghcr.io/localpibox/devstack:latest
 
-# Launch devstack
-./run.sh /path/to/project
+# Open browser to http://localhost:3000 (token: devsession)
 ```
 
-Open your browser to `http://localhost:3000` (token: `devsession`).
+### Interactive mode
 
-## Commands
+```bash
+# Run and get a shell inside the container
+podman run -it --name localpibox --network host --userns keep-id \
+    -v /path/to/your/project:/home/dev/workspace/myproject:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -e ED_PORT=3000 \
+    ghcr.io/localpibox/devstack:latest
+```
 
-| Command | Description |
-|---|---|
-| `./run.sh /path/to/project` | Launch devstack for a project |
-| `./run.sh /path/to/project --port 8080` | Custom editor port |
-| `./run.sh /path/to/project --pull` | Pull latest image first |
-| `./stack.sh update --pull` | Load latest updates (no rebuild) |
-| `./stack.sh update --extensions` | Update extensions only |
-| `./stack.sh update --patches` | Update patches only |
+### Update extensions/patches (no rebuild)
+
+```bash
+# Inside the running container
+podman exec -it localpibox stack.sh update --pull
+```
 
 ## Architecture
 
@@ -48,13 +56,41 @@ Image: ghcr.io/localpibox/devstack:latest
   └─ Config: settings, mcp, skills, agents
 ```
 
+## Commands Available Inside Container
+
+Once the container is running, these commands are available:
+
+| Command | Description |
+|---|---|
+| `pi` | Start Pi CLI |
+| `stack.sh update --pull` | Load latest updates from GHCR |
+| `stack.sh update --extensions` | Update only extensions |
+| `stack.sh update --patches` | Update only patches |
+| `exit` | Stop the server and exit |
+
+### Update examples
+
+```bash
+# Pull latest tarballs from GHCR and load
+podman exec -it localpibox stack.sh update --pull
+
+# Update only extensions
+podman exec -it localpibox stack.sh update --extensions
+
+# Update only patches
+podman exec -it localpibox stack.sh update --patches
+```
+
 ## Usage
 
 ### Single project
 
 ```bash
 # Run with any project folder
-./run.sh /home/user/projects/myproject
+podman run -d --name localpibox --network host --userns keep-id \
+    -v /home/user/projects/myproject:/home/dev/workspace/myproject:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    ghcr.io/localpibox/devstack:latest
 ```
 
 The project mounts at `/workspace/myproject/` so tools see the correct project name (not "workspace").
@@ -63,44 +99,23 @@ The project mounts at `/workspace/myproject/` so tools see the correct project n
 
 ```bash
 # First project
-./run.sh /home/user/projects/project-a --port 3000
+podman run -d --name localpibox --network host --userns keep-id \
+    -e ED_PORT=3000 \
+    -v /path/to/project-a:/home/dev/workspace/project-a:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    ghcr.io/localpibox/devstack:latest
 # → http://localhost:3000
 
 # Stop and run another
 podman stop localpibox
-./run.sh /home/user/projects/project-b --port 3001
-# → http://localhost:3001
-```
-
-### Update without rebuild
-
-```bash
-# Pull latest update tarballs from GHCR
-./stack.sh update --pull
-
-# Or update specific components
-./stack.sh update --extensions    # Update only extensions
-./stack.sh update --patches       # Update only patches
-```
-
-### Container commands
-
-```bash
-# View logs
-podman logs -f localpibox
-
-# Stop container
-podman stop localpibox
-
-# Remove container
 podman rm localpibox
 
-# Manual podman command
 podman run -d --name localpibox --network host --userns keep-id \
-    -e ED_PORT=3000 \
-    -v "$PWD:/home/dev/workspace/myproject:Z" \
-    -v "$HOME/.localpibox/state:/home/dev/.pi:Z" \
+    -e ED_PORT=3001 \
+    -v /path/to/project-b:/home/dev/workspace/project-b:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
     ghcr.io/localpibox/devstack:latest
+# → http://localhost:3001
 ```
 
 ## Update Pipeline
@@ -112,17 +127,17 @@ podman run -d --name localpibox --network host --userns keep-id \
 └──────────────┘      └───────────────┘      └──────────────────┘
                                                         │
                     ┌──────────────┐                    │
-                    │  Local Pull  │◄───────────────────┘
+                    │  Podman Pull │◄───────────────────┘
                     │  (fast)      │
                     └──────────────┘
                           │
                     ┌──────────────┐
-                    │  ./run.sh    │
+                    │  Podman Run  │
                     │  (launch)    │
                     └──────────────┘
                           │
                     ┌──────────────┐
-                    │  ./stack.sh  │
+                    │  Stack.sh    │
                     │  update      │◄── Patch-level updates
                     └──────────────┘
 ```
@@ -132,8 +147,8 @@ podman run -d --name localpibox --network host --userns keep-id \
 | Component | How | Frequency |
 |---|---|---|
 | Base image | CI/CD on push to main | Every code change |
-| Pi patches | `./stack.sh update --patches` | When patches change |
-| Extensions | `./stack.sh update --extensions` | As needed |
+| Pi patches | `stack.sh update --patches` | When patches change |
+| Extensions | `stack.sh update --extensions` | As needed |
 | Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
 
 ## CI/CD
@@ -166,7 +181,12 @@ podman stop localpibox
 podman rm localpibox
 
 # Run with new port
-./run.sh /path/to/project --port 8080
+podman run -d --name localpibox --network host --userns keep-id \
+    -e ED_PORT=8080 \
+    -v /path/to/project:/home/dev/workspace/myproject:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    ghcr.io/localpibox/devstack:latest
+# → http://localhost:8080
 ```
 
 ### Auth token expired
@@ -180,18 +200,19 @@ podman exec -it localpibox pi login
 ### Outdated extensions
 
 ```bash
-./stack.sh update --pull
+podman exec -it localpibox stack.sh update --pull
 ```
 
 ### Need a rebuild
 
 ```bash
-# On your local machine
-./stack.sh rebuild
-
-# Or pull from GHCR (newer build)
+# Pull from GHCR (newer build)
 podman pull ghcr.io/localpibox/devstack:latest
-./run.sh /path/to/project
+podman stop localpibox && podman rm localpibox
+podman run -d --name localpibox --network host --userns keep-id \
+    -v /path/to/project:/home/dev/workspace/myproject:Z \
+    -v ~/.localpibox/state:/home/dev/.pi:Z \
+    ghcr.io/localpibox/devstack:latest
 ```
 
 ## Directory Structure
@@ -200,14 +221,14 @@ podman pull ghcr.io/localpibox/devstack:latest
 devstack/
 ├── Dockerfile                 # Multi-stage build (builder → runtime)
 ├── docker-compose.yml         # Compose config (for local builds)
-├── run.sh                     # Single-image launcher
-├── stack.sh                   # Stack management commands
+├── run.sh                     # Local launcher script (optional)
+├── stack.sh                   # Stack management (copied into image)
 ├── .github/workflows/         # CI/CD pipeline
 ├── stack-upkeep/              # Patch management system
 │   ├── versions.env           # Version tracking
 │   ├── patches/               # Git patch files
 │   └── scripts/               # Maintenance scripts
-└── support/                   # Entrypoint and config files
+└── support/                   # Entrypoint script
     └── start.sh               # Container entrypoint
 ```
 
