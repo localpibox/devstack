@@ -82,7 +82,8 @@ jobs:
           tags: |
             type=sha,prefix=,format=short
             type=ref,event=branch
-            type=raw,value=latest,enable=${{ github.event.inputs.publish_latest != false || github.event_name == 'schedule' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.event.inputs.publish_latest != false }}
             type=schedule,pattern=weekly-%Y-%W
 
       - name: Build and push
