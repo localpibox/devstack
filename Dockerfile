@@ -305,9 +305,16 @@ RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
     && mkdir -p /opt/pi-internal \
     && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
 
-# ── Runtime: Entrypoint ────────────────────────────────────────────────────
+# ── Runtime: Scripts ───────────────────────────────────────────────────────
+# Copy helper scripts into the image so they're available inside the container
 COPY support/start.sh /opt/devstack/start.sh
-RUN chmod +x /opt/devstack/start.sh
+COPY run.sh /usr/local/bin/run.sh
+COPY stack.sh /usr/local/bin/stack.sh
+COPY build-updates.sh /usr/local/bin/build-updates.sh
+COPY load-updates.sh /usr/local/bin/load-updates.sh
+RUN chmod +x /opt/devstack/start.sh /usr/local/bin/run.sh \
+    /usr/local/bin/stack.sh /usr/local/bin/build-updates.sh \
+    /usr/local/bin/load-updates.sh
 
 # ── Runtime: User ──────────────────────────────────────────────────────────
 RUN chown -R 1000:1000 /home/dev /opt/pi-src /opt/pi-patches \
@@ -329,4 +336,4 @@ LABEL org.opencontainers.image.title="LocalPibox Devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
       org.opencontainers.image.licenses="MIT"
 
-CMD ["/bin/bash", "/opt/devstack/start.sh"]
+ENTRYPOINT ["/opt/devstack/start.sh"]
