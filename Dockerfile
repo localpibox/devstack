@@ -241,7 +241,21 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && corepack enable
 
 # ── Runtime: Create dev user (MUST be before COPY — files use UID 1000) ────
-RUN useradd -m -s /bin/bash -u 1000 dev
+# Ubuntu 26.04 base may already have a user with UID 1000 (e.g. "ubuntu");
+# rename it to "dev" if so.
+RUN set -eux; \
+    if getent passwd 1000 >/dev/null; then \
+      oldname="$(getent passwd 1000 | cut -d: -f1)"; \
+      if [ "$oldname" != "dev" ]; then \
+        usermod -l dev -d /home/dev -m "$oldname"; \
+        if getent group 1000 >/dev/null; then \
+          oldgroup="$(getent group 1000 | cut -d: -f1)"; \
+          [ "$oldgroup" = "dev" ] || groupmod -n dev "$oldgroup"; \
+        fi; \
+      fi; \
+    else \
+      useradd -m -s /bin/bash -u 1000 dev; \
+    fi
 
 # ── Runtime: Copy from builder ─────────────────────────────────────────────
 COPY --from=builder /opt/vscodium /opt/vscodium
