@@ -9,8 +9,7 @@
 ARG NODE_VERSION=24
 ARG PI_PATCH_VERSION=20260730-001
 ARG LEMONADE_PATCH_VERSION=20260730-001
-ARG VSCODIUM_VERSION=1.126.0
-ARG VSCODIUM_COMMIT=4524
+ARG VSCODIUM_VERSION=1.126.04524
 
 # ── STAGE 1: BUILDER ───────────────────────────────────────────────────────
 FROM ubuntu:26.04 AS builder
@@ -19,7 +18,6 @@ ARG NODE_VERSION
 ARG PI_PATCH_VERSION
 ARG LEMONADE_PATCH_VERSION
 ARG VSCODIUM_VERSION
-ARG VSCODIUM_COMMIT
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -56,7 +54,7 @@ RUN CHROME_VERSION=$(curl -s https://googlechromelabs.github.io/chrome-for-testi
 
 # ── Builder: VSCodium ──────────────────────────────────────────────────────
 RUN curl -fsSL \
-      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}${VSCODIUM_COMMIT}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}${VSCODIUM_COMMIT}.tar.gz" \
+      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
     -o /tmp/vscodium.tar.gz \
     && mkdir -p /opt/vscodium \
     && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
@@ -190,7 +188,6 @@ ARG NODE_VERSION
 ARG PI_PATCH_VERSION
 ARG LEMONADE_PATCH_VERSION
 ARG VSCODIUM_VERSION
-ARG VSCODIUM_COMMIT
 
 ENV DEBIAN_FRONTEND=noninteractive
 
