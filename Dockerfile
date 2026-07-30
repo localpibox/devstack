@@ -151,28 +151,9 @@ USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     export HOME="/home/dev"; \
-    NPM="npm install -g --prefix /home/dev/.npm-global"; \
     \
-    # ── Install extensions ───────────────────────────────────────────────
-    echo "=== Installing extensions ==="; \
-    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || echo "WARN: lemonade install failed"; \
-    LEMONADE_DIR="/home/dev/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"; \
-    if [ -f /opt/pi-patches/lemonade-qwen-vision.patch ] && [ -d "$LEMONADE_DIR" ]; then \
-        echo "=== Applying lemonade patches ==="; \
-        cd "$LEMONADE_DIR"; \
-        if git apply --check /opt/pi-patches/lemonade-qwen-vision.patch 2>/dev/null; then \
-            git apply /opt/pi-patches/lemonade-qwen-vision.patch; \
-            echo "  Applied lemonade-qwen-vision.patch"; \
-        else \
-            echo "  lemonade-qwen-vision.patch already applied (or not applicable)"; \
-        fi; \
-    fi; \
-    pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
-    $NPM pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
-    $NPM @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
-    $NPM pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
-    \
-    # ── Clone config repo ────────────────────────────────────────────────
+    # ── Clone config repo — MUST be before `pi install`
+    #    so settings.json exists for `pi install` to extend it. ───
     echo "=== Cloning config repo ==="; \
     mkdir -p /home/dev/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
@@ -180,15 +161,13 @@ RUN set -eux; \
     (cd /tmp/pi-config-repo && cp -r . /home/dev/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
     \
-    # ── Copy config files ────────────────────────────────────────────────
+    # ── Copy config files (baseline — pi install will extend settings.json) ──
     echo "=== Copying config ==="; \
     mkdir -p /home/dev/.pi/agent; \
     [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ || echo "WARN: no mcp.json"; \
     [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
     [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
-    \
-    # ── Copy skills ──────────────────────────────────────────────────────
     mkdir -p /home/dev/.pi/agent/skills; \
     if [ -d /home/dev/.local/pi-config/skills ]; then \
         for d in /home/dev/.local/pi-config/skills/*/; do \
@@ -199,8 +178,6 @@ RUN set -eux; \
             echo "  Skill: $name"; \
         done; \
     fi; \
-    \
-    # ── Copy agents ──────────────────────────────────────────────────────
     mkdir -p /home/dev/.pi/agent/agents; \
     if [ -d /home/dev/.local/pi-config/agents ]; then \
         cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
@@ -241,6 +218,30 @@ RUN set -eux; \
     if [ -d /home/dev/.local/pi-config/support/schemas ]; then \
         cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true; \
     fi; \
+    \
+    # ── Install extensions (now settings.json exists — each `pi install` extends it) ─
+    echo "=== Installing extensions ==="; \
+    # pi install clones to ~/.pi/agent/git/ and registers in settings.json
+    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || echo "WARN: lemonade install failed"; \
+    LEMONADE_DIR="/home/dev/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"; \
+    if [ ! -d "$LEMONADE_DIR" ]; then \
+        echo "WARN: lemonade checkout not found"; \
+        find /home/dev/.pi -maxdepth 6 -iname 'lemonade-pi-plugin' -type d 2>/dev/null | head -5 || echo "  (not found)"; \
+    elif [ -f /opt/pi-patches/lemonade-qwen-vision.patch ]; then \
+        echo "=== Applying lemonade patches ==="; \
+        cd "$LEMONADE_DIR"; \
+        if git apply --check /opt/pi-patches/lemonade-qwen-vision.patch 2>/dev/null; then \
+            git apply /opt/pi-patches/lemonade-qwen-vision.patch; \
+            echo "  Applied lemonade-qwen-vision.patch"; \
+        else \
+            echo "  lemonade patch already applied or not applicable"; \
+        fi; \
+    fi; \
+    pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
+    # Global npm packages: use NPM_CONFIG_PREFIX to set install dir regardless of HOME
+    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
+    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
+    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
     \
     # ── Install VSCode extension ─────────────────────────────────────────
     echo "=== Installing VSCode extension ==="; \
