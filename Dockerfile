@@ -121,14 +121,14 @@ RUN set -eux; \
     # patch mechanism. Fails loudly (no `|| true`) if a patch is present
     # but doesn't apply cleanly — a silently-skipped patch is worse than
     # a failed build.
-    if ls /opt/pi-patches/*.patch 1>/dev/null 2>&1; then \
-        echo "=== Applying patches ==="; \
-        for patch in /opt/pi-patches/*.patch; do \
+    if ls /opt/pi-patches/pi-*.patch 1>/dev/null 2>&1; then \
+        echo "=== Applying pi patches ==="; \
+        for patch in /opt/pi-patches/pi-*.patch; do \
             echo "  Applying: $(basename "$patch")"; \
             git am "$patch"; \
         done; \
     else \
-        echo "WARN: no *.patch files found in /opt/pi-patches — building unpatched upstream pi"; \
+        echo "No pi-*.patch files found — building unpatched upstream pi"; \
     fi; \
     \
     npm run build; \
@@ -155,6 +155,17 @@ RUN set -eux; \
     # ── Install extensions ───────────────────────────────────────────────
     echo "=== Installing extensions ==="; \
     pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || echo "WARN: lemonade install failed"; \
+    LEMONADE_DIR="/home/dev/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"; \
+    if [ -f /opt/pi-patches/lemonade-qwen-vision.patch ] && [ -d "$LEMONADE_DIR" ]; then \
+        echo "=== Applying lemonade patches ==="; \
+        cd "$LEMONADE_DIR"; \
+        if git apply --check /opt/pi-patches/lemonade-qwen-vision.patch 2>/dev/null; then \
+            git apply /opt/pi-patches/lemonade-qwen-vision.patch; \
+            echo "  Applied lemonade-qwen-vision.patch"; \
+        else \
+            echo "  lemonade-qwen-vision.patch already applied (or not applicable)"; \
+        fi; \
+    fi; \
     pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
     npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
     npm install -g @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
