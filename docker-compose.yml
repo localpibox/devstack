@@ -16,10 +16,14 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_VERSION: "24"
+        # Patch versions — change these in versions.env to invalidate Docker build cache
+        PI_PATCH_VERSION: "${PI_PATCH_VERSION:-20260730-001}"
+        LEMONADE_PATCH_VERSION: "${LEMONADE_PATCH_VERSION:-20260730-001}"
     container_name: localpistack
     env_file:
       - .env
       - .env.browser
+      - .env-patches
     environment:
       LEMONADE_BASE_URL: "http://127.0.0.1:13305/v1"
       OPENROUTER_BASE_URL: "https://openrouter.ai/api/v1"

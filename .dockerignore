@@ -1,0 +1,42 @@
+# Stack Upkeep — Ignore patterns for Docker build
+
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+package-lock.json
+*.tsbuildinfo
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (not needed in build)
+*.md
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Scripts (not needed in build)
+localpistack.sh
+docker-patch-pi.sh
+
+# Biome
+biome.base.json
+
+# Keep these:
+# Dockerfile
+# docker-compose.yml
+# support/
+# stack-upkeep/

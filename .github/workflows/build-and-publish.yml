@@ -1,0 +1,202 @@
+# ═══════════════════════════════════════════════════════════
+# LocalPibox Devstack — CI/CD Build & Publish
+# ═══════════════════════════════════════════════════════════
+# Builds the devstack image on GitHub (fast connection)
+# Publishes to GHCR: ghcr.io/localpibox/devstack:latest
+# Also builds update tarballs for patch-level updates
+
+name: Build & Publish Devstack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'support/**'
+      - 'stack-upkeep/**'
+      - '.github/workflows/*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'support/**'
+      - 'stack-upkeep/**'
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly Monday 3am UTC
+  workflow_dispatch:
+    inputs:
+      rebuild_base:
+        description: 'Rebuild full base image (vs tarballs only)'
+        type: boolean
+        default: true
+      publish_latest:
+        description: 'Publish as :latest tag'
+        type: boolean
+        default: true
+      push_tarballs:
+        description: 'Build and push update tarballs'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/localpibox/devstack
+
+jobs:
+  # ── Job 1: Build base image ─────────────────────────────────────────────
+  build:
+    name: Build devstack image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.event.inputs.publish_latest != false || github.event_name == 'schedule' }}
+            type=schedule,pattern=weekly-%Y-%W
+      
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          push: ${{ github.event_name != 'pull_request' }}
+          pull: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NODE_VERSION=24
+            PI_PATCH_VERSION=${{ env.PI_PATCH_VERSION }}
+            LEMONADE_PATCH_VERSION=${{ env.LEMONADE_PATCH_VERSION }}
+            VSCODIUM_VERSION=${{ env.VSCODIUM_VERSION }}
+            VSCODIUM_COMMIT=${{ env.VSCODIUM_COMMIT }}
+      
+      - name: Save image for tarball build
+        run: |
+          docker save ${{ env.IMAGE_NAME }}:$(echo ${{ github.sha }} | cut -c1-7) \
+            -o /tmp/devstack-base.tar
+
+  # ── Job 2: Build update tarballs ───────────────────────────────────────
+  build-tarballs:
+    name: Build update tarballs
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ github.event.inputs.push_tarballs != false }}
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Build tarballs
+        run: |
+          mkdir -p updates
+          cd updates
+          
+          # Pi patches
+          git clone --depth=1 --branch main https://github.com/earendil-works/pi pi
+          cd pi
+          git remote add localpibox https://github.com/localpibox/pi.git
+          git fetch localpibox patches/qwen-reasoning-effort
+          mkdir -p /tmp/patches
+          for patch in /workspace/stack-upkeep/patches/pi-*.patch; do
+            [ -f "$patch" ] && git am "$patch" 2>/dev/null || true
+          done
+          tar czf pi-$(git rev-parse --short HEAD).tar.gz \
+            --owner=1000 --group=1000 \
+            $(git ls-files)
+          cd ..
+          
+          # Lemonade plugin
+          git clone --depth=1 --branch patches/qwen-vision https://github.com/localpibox/lemonade-pi-plugin lemonade
+          tar czf lemonade-$(git -C lemonade rev-parse --short HEAD).tar.gz \
+            --owner=1000 --group=1000 \
+            -C lemonade $(cd lemonade && git ls-files)
+          
+          # Memory extension
+          git clone --depth=1 --branch fix/subprocess-provider https://github.com/localpibox/pi-hermes-memory memory
+          tar czf memory-$(git -C memory rev-parse --short HEAD).tar.gz \
+            --owner=1000 --group=1000 \
+            -C memory $(cd memory && git ls-files)
+          
+          # Config repo
+          git clone --depth=1 https://github.com/localpibox/config config
+          tar czf config-$(git -C config rev-parse --short HEAD).tar.gz \
+            --owner=1000 --group=1000 \
+            -C config $(cd config && git ls-files)
+          
+          ls -lh /workspace/updates/
+      
+      - name: Push tarballs to GHCR
+        run: |
+          for tarball in updates/*.tar.gz; do
+            name=$(basename "$tarball" .tar.gz)
+            docker tag "$tarball" "${{ env.IMAGE_NAME }}-updates:$name"
+            docker push "${{ env.IMAGE_NAME }}-updates:$name"
+            echo "Pushed: $name"
+          done
+      
+      - name: Upload tarballs as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-tarballs
+          path: updates/
+          retention-days: 7
+
+  # ── Job 3: Post-build status ───────────────────────────────────────────
+  status:
+    name: Build status
+    needs: [build, build-tarballs]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check build status
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "Build failed!"
+            exit 1
+          fi
+          echo "Build complete"
+          if [ "${{ needs.build-tarballs.result }}" = "skipped" ]; then
+            echo "Tarballs skipped (only base image built)"
+          else
+            echo "Tarballs built and published"
+          fi
