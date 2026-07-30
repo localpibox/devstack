@@ -1,14 +1,13 @@
 # ═══════════════════════════════════════════════════════════
 # LocalPibox Devstack — CI/CD Build & Publish
 # ═══════════════════════════════════════════════════════════
-# Builds the devstack image on GitHub (fast connection)
-# Publishes to GHCR: ghcr.io/localpibox/devstack:latest
-# Also builds update tarballs for patch-level updates
+# Builds on GitHub (fast connection) → publishes to GHCR
+# Update tarballs built separately, loaded on demand
 #
 # Triggers:
 #   - Push to main (Dockerfile, support/, stack-upkeep/)
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
-#   - Manual dispatch with flags
+#   - Manual dispatch
 
 name: Build & Publish Devstack
 
@@ -47,7 +46,6 @@ env:
   IMAGE_NAME: ghcr.io/localpibox/devstack
 
 jobs:
-  # ── Job 1: Build base image ─────────────────────────────────────────────
   build:
     name: Build devstack image
     runs-on: ubuntu-latest
@@ -55,9 +53,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -98,7 +94,6 @@ jobs:
           provenance: false
           platforms: linux/amd64
 
-  # ── Job 2: Build update tarballs ───────────────────────────────────────
   build-tarballs:
     name: Build update tarballs
     runs-on: ubuntu-latest
@@ -108,7 +103,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -121,8 +116,6 @@ jobs:
         run: |
           mkdir -p updates
           cd updates
-
-          # Pi patches
           git clone --depth=1 --branch main https://github.com/earendil-works/pi pi
           cd pi
           git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true
@@ -135,25 +128,18 @@ jobs:
             --owner=1000 --group=1000 \
             $(git ls-files)
           cd ..
-
-          # Lemonade plugin
           git clone --depth=1 --branch patches/qwen-vision https://github.com/localpibox/lemonade-pi-plugin lemonade
           tar czf lemonade-$(git -C lemonade rev-parse --short HEAD).tar.gz \
             --owner=1000 --group=1000 \
             -C lemonade $(cd lemonade && git ls-files)
-
-          # Memory extension
           git clone --depth=1 --branch fix/subprocess-provider https://github.com/localpibox/pi-hermes-memory memory
           tar czf memory-$(git -C memory rev-parse --short HEAD).tar.gz \
             --owner=1000 --group=1000 \
             -C memory $(cd memory && git ls-files)
-
-          # Config repo
           git clone --depth=1 https://github.com/localpibox/config config
           tar czf config-$(git -C config rev-parse --short HEAD).tar.gz \
             --owner=1000 --group=1000 \
             -C config $(cd config && git ls-files)
-
           echo "=== Tarballs ==="
           ls -lh /home/runner/work/devstack/devstack/updates/
 
@@ -164,22 +150,20 @@ jobs:
           path: updates/
           retention-days: 14
 
-  # ── Job 3: Post-build status ───────────────────────────────────────────
   status:
     name: Build status
     needs: [build, build-tarballs]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check build status
-        run: |
+      - run: |
           if [ "${{ needs.build.result }}" != "success" ]; then
-            echo "❌ Build failed!"
+            echo "Build failed!"
             exit 1
           fi
-          echo "✅ Build complete"
+          echo "Build complete"
           if [ "${{ needs.build-tarballs.result }}" = "skipped" ]; then
-            echo "⚠ Tarballs skipped (PR build or disabled)"
+            echo "Tarballs skipped (PR build or disabled)"
           else
-            echo "✅ Tarballs built and published"
+            echo "Tarballs built and published"
           fi
