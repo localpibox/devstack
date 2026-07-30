@@ -1,185 +1,219 @@
-# Repository Organization — Final Plan
+# LocalPibox Devstack
 
-## 4 Repositories
+AI-powered development environment with the Pi coding agent, VSCodium editor, and agent-browser automation — all containerized.
 
-```
-github.com/localpibox/
-├── pi                             # Forked monorepo + reasoning_effort patch
-├── lemonade-pi-plugin             # Forked + patched (Qwen detection)
-├── config                         # Settings + scripts for Pi setup
-└── devstack                       # Docker-compose + Dockerfile for reproducible stack
-```
+## Quick Start
 
----
-
-## 1. `pi` — Full Monorepo Fork (patched)
-
-**Source:** `earendil-works/pi`  
-**Target:** `localpibox/pi`
-
-### What it is
-Exact copy of the upstream monorepo with a local patch applied to `packages/ai/`.
-
-### Patch
-File: `packages/ai/dist/api/openai-completions.js`
-
-```javascript
-// Around line 571 — Qwen branch
-else if (compat.thinkingFormat === "qwen" && model.reasoning) {
-    params.enable_thinking = !!options?.reasoningEffort;
-    // Also send reasoning_effort for granularity (high/medium/low)
-    if (options?.reasoningEffort && options.reasoningEffort !== "off") {
-        params.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-    }
-}
-```
-
-Same for `qwen-chat-template` branch (around line 575-579).
-
-### Why fork the full monorepo
-- Patch is in `packages/ai/` — part of the monorepo
-- Easier to stay in sync with upstream (merge future changes)
-- Can submit PRs to upstream if patch is generally useful
-- Can add other customizations later without restructuring
-- Pi's `git:` dependency handles workspace resolution automatically
-
-### Versioning
-- Follow upstream versioning (e.g., `0.82.1`)
-- Add local suffix: `0.82.1+localpibox.1`
-- Or bump patch on each local change: `0.82.2`, `0.82.3`, etc.
-
-### CI
-- `action.yml`: Run `npm run build` (workspace), `npm test`
-- Only run on `packages/ai` changes + main pushes
-
-### Upstream contribution path
-When the patch matures:
-1. Test it works broadly
-2. Submit a PR to `earendil-works/pi`
-3. If merged, remove our fork (or keep for other local customizations)
-
----
-
-## 2. `lemonade-pi-plugin` — Forked + Patched
-
-**Source:** `github.com/localpibox/lemonade-pi-plugin` (fork of `cfxdevkit/lemonade-pi-plugin`)
-**Target:** `localpibox/lemonade-pi-plugin`
-
-### What it does
-Registers Lemonade as a Pi provider. The patch adds Qwen reasoning model detection so Pi allows thinking level changes.
-
-### Commits already done
-```
-6c06def feat: detect Qwen reasoning models for enable_thinking support
-```
-
-### Versioning
-- Start at `0.82.1` (current upstream version)
-- Bump minor on feature additions, patch on bugfixes
-
-### CI
-- `action.yml`: TypeScript type check + build on push/PR
-
----
-
-## 3. `config` — Configuration Repo
-
-**Purpose:** Complete Pi configuration for reproducible setup  
-**Contains:**
-```
-config/
-├── settings.json      # Full settings (providers, models, thinking)
-├── mcp.json           # MCP server config
-├── auth.json.example  # Auth template (no real keys)
-├── AGENTS.md          # Global agent instructions
-├── install.sh         # One-command setup script
-└── README.md          # Setup instructions
-```
-
-### `settings.json`
-```json
-{
-  "packages": [
-    "git:github.com/localpibox/pi@main",
-    "git:github.com/localpibox/lemonade-pi-plugin@main",
-    "npm:pi-hermes-memory",
-    "npm:pi-mcp-adapter",
-    "npm:@tintinweb/pi-subagents",
-    "npm:pi-powerline-footer"
-  ],
-  "defaultProvider": "lemonade",
-  "defaultModel": "Qwen3.6-35B-A3B-MTP-GGUF",
-  "defaultThinkingLevel": "high",
-  "mcp": { "directTools": true, "toolPrefix": "server" }
-}
-```
-
-### `install.sh`
 ```bash
-#!/bin/bash
-# Clone and configure localpibox Pi stack
-# Usage: curl -sL <url>/install.sh | bash
+# Pull the latest image
+podman pull ghcr.io/localpibox/devstack:latest
+
+# Navigate to your project
+cd ~/projects/myproject
+
+# Launch devstack
+./run.sh /path/to/project
 ```
 
-### CI
-- No CI needed (config repo)
+Open your browser to `http://localhost:3000` (token: `devsession`).
 
----
+## Commands
 
-## 4. `devstack` — Docker Stack
+| Command | Description |
+|---|---|
+| `./run.sh /path/to/project` | Launch devstack for a project |
+| `./run.sh /path/to/project --port 8080` | Custom editor port |
+| `./run.sh /path/to/project --pull` | Pull latest image first |
+| `./stack.sh update --pull` | Load latest updates (no rebuild) |
+| `./stack.sh update --extensions` | Update extensions only |
+| `./stack.sh update --patches` | Update patches only |
 
-**Purpose:** Reproducible containerized dev environment  
-**Contains:**
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Host                                               │
+│                                                     │
+│  ~/projects/myproject/  ──mount──→  /workspace/myproject/  │
+│  ~/.localpibox/state/   ──mount──→  /home/dev/.pi/       │
+│  Lemonade (:13305)      ──network→  http://127.0.0.1     │
+└─────────────────────────────────────────────────────┘
+
+Image: ghcr.io/localpibox/devstack:latest
+  ├─ Ubuntu 26.04 + Node.js 24
+  ├─ Pi monorepo (built, patched)
+  ├─ VSCodium server (headless, port 3000)
+  ├─ Chrome (agent-browser automation)
+  ├─ Extensions: lemonade, memory, mcp-adapter, subagents
+  └─ Config: settings, mcp, skills, agents
+```
+
+## Usage
+
+### Single project
+
+```bash
+# Run with any project folder
+./run.sh /home/user/projects/myproject
+```
+
+The project mounts at `/workspace/myproject/` so tools see the correct project name (not "workspace").
+
+### Multiple projects
+
+```bash
+# First project
+./run.sh /home/user/projects/project-a --port 3000
+# → http://localhost:3000
+
+# Stop and run another
+podman stop localpibox
+./run.sh /home/user/projects/project-b --port 3001
+# → http://localhost:3001
+```
+
+### Update without rebuild
+
+```bash
+# Pull latest update tarballs from GHCR
+./stack.sh update --pull
+
+# Or update specific components
+./stack.sh update --extensions    # Update only extensions
+./stack.sh update --patches       # Update only patches
+```
+
+### Container commands
+
+```bash
+# View logs
+podman logs -f localpibox
+
+# Stop container
+podman stop localpibox
+
+# Remove container
+podman rm localpibox
+
+# Manual podman command
+podman run -d --name localpibox --network host --userns keep-id \
+    -e ED_PORT=3000 \
+    -v "$PWD:/home/dev/workspace/myproject:Z" \
+    -v "$HOME/.localpibox/state:/home/dev/.pi:Z" \
+    ghcr.io/localpibox/devstack:latest
+```
+
+## Update Pipeline
+
+```
+┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
+│  GitHub      │  ──→ │  CI/CD        │  ──→ │  GHCR            │
+│  (your code) │      │  (fast net)   │      │  (pulled locally)│
+└──────────────┘      └───────────────┘      └──────────────────┘
+                                                        │
+                    ┌──────────────┐                    │
+                    │  Local Pull  │◄───────────────────┘
+                    │  (fast)      │
+                    └──────────────┘
+                          │
+                    ┌──────────────┐
+                    │  ./run.sh    │
+                    │  (launch)    │
+                    └──────────────┘
+                          │
+                    ┌──────────────┐
+                    │  ./stack.sh  │
+                    │  update      │◄── Patch-level updates
+                    └──────────────┘
+```
+
+### What gets updated:
+
+| Component | How | Frequency |
+|---|---|---|
+| Base image | CI/CD on push to main | Every code change |
+| Pi patches | `./stack.sh update --patches` | When patches change |
+| Extensions | `./stack.sh update --extensions` | As needed |
+| Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
+
+## CI/CD
+
+Built automatically on GitHub Actions when:
+- Push to `main` (Dockerfile, support/, stack-upkeep/)
+- Weekly (Monday 3am UTC) — keeps image fresh
+- Manual dispatch with flags
+
+### Actions used (all latest versions, Node.js 24 native)
+
+- `actions/checkout@v6`
+- `docker/build-push-action@v7`
+- `docker/setup-buildx-action@v4`
+- `docker/setup-qemu-action@v4`
+- `docker/login-action@v4`
+- `docker/metadata-action@v6`
+- `actions/upload-artifact@v7`
+
+## Troubleshooting
+
+### Port already in use
+
+```bash
+# Check who's using the port
+lsof -i :3000
+
+# Stop existing container
+podman stop localpibox
+podman rm localpibox
+
+# Run with new port
+./run.sh /path/to/project --port 8080
+```
+
+### Auth token expired
+
+```bash
+# Login in the editor (Ctrl+Shift+P → "Pi: Login")
+# Or via CLI
+podman exec -it localpibox pi login
+```
+
+### Outdated extensions
+
+```bash
+./stack.sh update --pull
+```
+
+### Need a rebuild
+
+```bash
+# On your local machine
+./stack.sh rebuild
+
+# Or pull from GHCR (newer build)
+podman pull ghcr.io/localpibox/devstack:latest
+./run.sh /path/to/project
+```
+
+## Directory Structure
+
 ```
 devstack/
-├── docker-compose.yml
-├── Dockerfile
-├── .env.example
-├── devstack.sh
-└── README.md
+├── Dockerfile                 # Multi-stage build (builder → runtime)
+├── docker-compose.yml         # Compose config (for local builds)
+├── run.sh                     # Single-image launcher
+├── stack.sh                   # Stack management commands
+├── .github/workflows/         # CI/CD pipeline
+├── stack-upkeep/              # Patch management system
+│   ├── versions.env           # Version tracking
+│   ├── patches/               # Git patch files
+│   └── scripts/               # Maintenance scripts
+└── support/                   # Entrypoint and config files
+    └── start.sh               # Container entrypoint
 ```
 
-### Key changes from current workspace
-- Point `pi install` to `git:github.com/localpibox/pi@main`
-- Point to `git:github.com/localpibox/lemonade-pi-plugin@main`
-- Pre-install the full stack in one command
+## Related Repositories
 
-### CI
-- `action.yml`: Build Docker image + verify it works
-
----
-
-## Installation Flow
-
-After setup, `~/.pi/agent/settings.json`:
-```json
-{
-  "packages": [
-    "git:github.com/localpibox/pi@main",
-    "git:github.com/localpibox/lemonade-pi-plugin@main",
-    ...
-  ]
-}
-```
-
-## Creation Order
-
-1. **`pi`** — fork full monorepo, apply reasoning_effort patch
-2. **`lemonade-pi-plugin`** — push local fork (`6c06def`) to new repo
-3. **`config`** — settings + install script
-4. **`devstack`** — docker-compose + Dockerfile
-
-## After Creation
-
-1. Update `~/.pi/agent/settings.json` to point to `localpibox/*` repos
-2. Update Dockerfile URL
-3. Push everything
-4. Clean up any remaining `cfxdevkit/` references
-5. Document the setup
-
-## Upstream Contribution Strategy
-
-- Keep fork history clean with squashed local commits
-- Tag releases that should be considered for upstream
-- Open PRs against `earendil-works/pi` for generally useful changes
-- Keep local-only customizations in separate branches
+- [localpibox/pi](https://github.com/localpibox/pi) — Forked Pi monorepo with Qwen reasoning support
+- [localpibox/lemonade-pi-plugin](https://github.com/localpibox/lemonade-pi-plugin) — Lemonade provider plugin
+- [localpibox/config](https://github.com/localpibox/config) — Pi configuration (settings, mcp, skills)
+- [localpibox/pi-hermes-memory](https://github.com/localpibox/pi-hermes-memory) — Memory extension
