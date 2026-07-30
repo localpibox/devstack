@@ -100,6 +100,7 @@ RUN set -eux; \
     fi; \
     npm run build; \
     npm install -g "./packages/ai" "./packages/agent" "./packages/coding-agent" "./packages/tui"; \
+    ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
 # ── Builder: Extensions + Config ───────────────────────────────────────────
