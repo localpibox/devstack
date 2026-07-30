@@ -89,14 +89,27 @@ if [ "$FIRST_RUN" = "true" ]; then
         fi
     fi
 
+    # Inject default extension packages if settings.json has none
+    HAS_PACKAGES=$(jq -r 'has("packages")' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || echo false)
+    if [ "$HAS_PACKAGES" = "false" ]; then
+        echo "[devstack] Injecting default extension packages into settings.json..."
+        jq '.packages = [
+            "git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision",
+            "git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider",
+            "npm:pi-mcp-adapter",
+            "npm:@tintinweb/pi-subagents",
+            "npm:pi-powerline-footer"
+        ]' "${HOME_DIR}/.pi/agent/settings.json" > "${HOME_DIR}/.pi/agent/settings.json.tmp" 2>/dev/null && \
+            mv "${HOME_DIR}/.pi/agent/settings.json.tmp" "${HOME_DIR}/.pi/agent/settings.json" && \
+            chown "$(id -u):$(id -g)" "${HOME_DIR}/.pi/agent/settings.json" || true
+    fi
+
     # Create initialization marker
     touch "${HOME_DIR}/.pi/.initialized"
     echo "[devstack] First run bootstrap complete."
 fi
 
 # ── Ensure extensions are installed (runs on every boot) ──
-# This catches: volume-mount wipes, image upgrades with stale .initialized,
-# or corrupted extension directories. Checks are idempotent — skips installed ones.
 if [ -f "${HOME_DIR}/.pi/agent/settings.json" ]; then
     echo "[devstack] Validating extension installation..."
     while IFS= read -r ext_entry; do
