@@ -74,12 +74,12 @@ pkill -f "vscodium-server" 2>/dev/null || true
 sleep 1
 
 # Start the server in the background
-/opt/vscodium/bin/code-server \
-    --auth none \
+/opt/vscodium/bin/codium-server serve-web \
+    --accept-server-license-terms \
+    --host 127.0.0.1 \
     --port "${ED_PORT}" \
-    --disable-telemetry \
-    --extensions-dir /home/dev/.vscodium-server/extensions \
-    "${WORKSPACE_DIR}" &
+    --without-connection-token \
+    --default-folder "${WORKSPACE_DIR}" &
 
 SERVER_PID=$!
 echo "[devstack] Server PID: ${SERVER_PID}"
