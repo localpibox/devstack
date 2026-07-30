@@ -91,6 +91,44 @@ else
     echo "[devstack] WARN: /opt/pi-patches/update.sh not found — skipping extension install"
 fi
 
+# ── Post-initialization: native modules & sqlite3 ───────────────────────────
+# Docker build compiles native modules for x86_64. At runtime on ARM, they
+# may be missing or incompatible. Also ensure sqlite3 CLI is available for
+# extensions that use it directly (e.g., pi-hermes-memory).
+echo "[devstack] Post-init: checking native modules and sqlite3..."
+
+# Install sqlite3 if missing
+if ! command -v sqlite3 &>/dev/null; then
+    echo "[devstack] Installing sqlite3..."
+    apt-get update && apt-get install -y --no-install-recommends sqlite3 2>&1 | tail -2
+fi
+
+# Recompile native modules for current architecture
+NEED_REBUILD=false
+EXT_BASE="${HOME_DIR}/.pi/agent/git"
+for ext in "${EXT_BASE}"/*/*/; do
+    [ -d "$ext/node_modules" ] || continue
+    if [ -f "$ext/package.json" ] && grep -q better-sqlite3 "$ext/package.json" 2>/dev/null; then
+        if [ ! -f "$ext/node_modules/better-sqlite3/build/Release/better_sqlite3.node" ]; then
+            NEED_REBUILD=true
+            break
+        fi
+    fi
+done
+
+if [ "$NEED_REBUILD" = "true" ]; then
+    echo "[devstack] Need to recompile native modules for this architecture..."
+    apt-get update && apt-get install -y --no-install-recommends build-essential python3 libsqlite3-dev 2>&1 | tail -3
+    for ext in "${EXT_BASE}"/*/*/; do
+        [ -f "$ext/package.json" ] || continue
+        if grep -q better-sqlite3 "$ext/package.json" 2>/dev/null; then
+            echo "[devstack] Rebuilding native module: $(basename "$(dirname "$ext")")..."
+            (cd "$ext" && npm rebuild better-sqlite3 --build-from-source 2>&1 | tail -2) || \
+            echo "[devstack] WARN: rebuild failed for $(basename "$(dirname "$ext")")"
+        fi
+    done
+fi
+
 # ── Start VSCodium server ──────────────────────────────────────────────────
 
 echo "[devstack] Starting VSCodium server on port ${ED_PORT}..."

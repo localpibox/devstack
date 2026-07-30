@@ -289,7 +289,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg sudo \
     git unzip gh \
-    ripgrep fzf fd-find jq tmux \
+    ripgrep fzf fd-find jq tmux sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Runtime: Node.js ───────────────────────────────────────────────────────
