@@ -31,11 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6 libfontconfig1 libdbus-1-3 \
     libnss3 libnspr4 libatk-bridge2.0-0t64 \
     libdrm2 libxkbcommon0 libatspi2.0-0 libgbm1 \
-    fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
+    fonts-noto-color-emoji fonts-freefont-ttf \
     curl ca-certificates gnupg git build-essential pkg-config \
     unzip wget gh \
-    python3 python3-pip python3-venv \
-    sqlite3 libsqlite3-dev postgresql-client redis-tools \
     ripgrep fzf fd-find jq tmux sudo \
     && rm -rf /var/lib/apt/lists/*
 
@@ -88,29 +86,7 @@ RUN set -eux; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
     mkdir -p /home/dev/.npm && chown -R 1000:1000 /home/dev/.npm-global /home/dev/.npm
 
-# ── Builder: Pi monorepo build ─────────────────────────────────────────────
-USER root
-RUN set -eux; \
-    mkdir -p /opt/pi-src && cd /opt/pi-src; \
-    git clone --depth=1 --single-branch --branch main https://github.com/earendil-works/pi .; \
-    git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true; \
-    git fetch localpibox patches/qwen-reasoning-effort 2>/dev/null || true; \
-    npm ci --ignore-scripts; \
-    # Apply patches
-    if ls /opt/pi-patches/*.patch 1>/dev/null 2>&1; then \
-        for patch in /opt/pi-patches/*.patch; do \
-            git am "$patch" 2>&1; \
-        done; \
-    fi; \
-    npm run build; \
-    # Install globally
-    npm install -g "./packages/ai" \
-        "./packages/agent" \
-        "./packages/coding-agent" \
-        "./packages/tui"; \
-    rm -rf /opt/pi-src/.git
-
-# ── Builder: Pi monorepo build ─────────────────────────────────────────────
+# ── Builder: Pi monorepo build (single pass) ───────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
@@ -132,7 +108,10 @@ RUN set -eux; \
         "./packages/agent" \
         "./packages/coding-agent" \
         "./packages/tui"; \
-    rm -rf /opt/pi-src/.git
+    # Clean build artifacts (keep only dist, remove node_modules)
+    cd /home/dev/.npm-global/lib/node_modules && \
+    find . -name "node_modules" -type d -exec rm -rf {} + 2>/dev/null || true; \
+    rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
 # ── Builder: Extensions + Config (robust) ────────────────────────────────────
 USER root
@@ -247,8 +226,9 @@ RUN set -eux; \
 
 # ── Builder: Cleanup build deps ────────────────────────────────────────────
 RUN apt-get remove -y build-essential git curl wget gnupg unzip; \
-    apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache
+    apt-get purge -y --auto-remove; \
+    rm -rf /var/lib/apt/lists/* /tmp/* /root/.cache \
+        /opt/pi-src/node_modules /opt/pi-src/dist
 
 USER dev
 
@@ -272,9 +252,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libfreetype6 libfontconfig1 libdbus-1-3 \
     libnss3 libnspr4 libatk-bridge2.0-0t64 \
     libdrm2 libxkbcommon0 libatspi2.0-0 libgbm1 \
-    fonts-noto-color-emoji fonts-noto-cjk fonts-freefont-ttf \
+    fonts-noto-color-emoji fonts-freefont-ttf \
     curl ca-certificates gnupg sudo \
-    python3 python3-pip python3-venv \
     ripgrep fzf fd-find jq tmux \
     && rm -rf /var/lib/apt/lists/*
 
