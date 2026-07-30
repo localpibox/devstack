@@ -110,69 +110,139 @@ RUN set -eux; \
         "./packages/tui"; \
     rm -rf /opt/pi-src/.git
 
-# ── Builder: Extensions ────────────────────────────────────────────────────
+# ── Builder: Pi monorepo build ─────────────────────────────────────────────
 USER root
 RUN set -eux; \
-    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || true \
-    && pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || true \
-    && pi install npm:pi-mcp-adapter || true \
-    && pi install npm:@tintinweb/pi-subagents || true \
-    && pi install npm:pi-powerline-footer || true; \
-    pi install git:github.com/localpibox/config.git /home/dev/.local/pi-config || true; \
+    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
+    mkdir -p /opt/pi-src && cd /opt/pi-src; \
+    git clone --depth=1 --single-branch --branch main https://github.com/earendil-works/pi .; \
+    git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true; \
+    git fetch localpibox patches/qwen-reasoning-effort 2>/dev/null || true; \
+    npm ci --ignore-scripts; \
+    # Apply patches
+    if ls /opt/pi-patches/*.patch 1>/dev/null 2>&1; then \
+        for patch in /opt/pi-patches/*.patch; do \
+            git am "$patch" 2>&1; \
+        done; \
+    fi; \
+    npm run build; \
+    # Install globally
+    npm install -g "./packages/ai" \
+        "./packages/agent" \
+        "./packages/coding-agent" \
+        "./packages/tui"; \
+    rm -rf /opt/pi-src/.git
+
+# ── Builder: Extensions + Config (robust) ────────────────────────────────────
+USER root
+RUN set -eux; \
+    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
+    export HOME="/root"; \
     \
-    # Copy config files
+    # ── Install extensions ───────────────────────────────────────────────
+    echo "=== Installing extensions ==="; \
+    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || echo "WARN: lemonade install failed"; \
+    pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
+    npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
+    npm install -g @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
+    npm install -g pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
+    \
+    # ── Clone config repo ────────────────────────────────────────────────
+    echo "=== Cloning config repo ==="; \
+    mkdir -p /home/dev/.local/pi-config; \
+    rm -rf /tmp/pi-config-repo; \
+    git clone --depth=1 https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
+    (cd /tmp/pi-config-repo && cp -r . /home/dev/.local/pi-config/) || echo "WARN: config clone failed"; \
+    rm -rf /tmp/pi-config-repo; \
+    \
+    # ── Copy config files ────────────────────────────────────────────────
+    echo "=== Copying config ==="; \
     mkdir -p /home/dev/.pi/agent; \
-    cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/settings.json; \
-    cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/mcp.json; \
-    cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/AGENTS.md; \
+    [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
+    [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ || echo "WARN: no mcp.json"; \
+    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
     \
-    # Copy skills
+    # ── Copy skills ──────────────────────────────────────────────────────
     mkdir -p /home/dev/.pi/agent/skills; \
-    for d in /home/dev/.local/pi-config/skills/*; do \
-        name=$(basename "$d"); \
-        mkdir -p "/home/dev/.pi/agent/skills/$name"; \
-        cp "$d"/* "/home/dev/.pi/agent/skills/$name/" 2>/dev/null || true; \
-    done; \
+    if [ -d /home/dev/.local/pi-config/skills ]; then \
+        for d in /home/dev/.local/pi-config/skills/*/; do \
+            [ -d "$d" ] || continue; \
+            name=$(basename "$d"); \
+            mkdir -p "/home/dev/.pi/agent/skills/$name"; \
+            cp "$d"* "/home/dev/.pi/agent/skills/$name/" 2>/dev/null || true; \
+            echo "  Skill: $name"; \
+        done; \
+    fi; \
     \
-    # Copy agents
+    # ── Copy agents ──────────────────────────────────────────────────────
     mkdir -p /home/dev/.pi/agent/agents; \
-    cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
+    if [ -d /home/dev/.local/pi-config/agents ]; then \
+        cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
+    fi; \
     \
-    # Copy support tools
+    # ── Copy support tools ───────────────────────────────────────────────
+    echo "=== Copying support tools ==="; \
     mkdir -p /opt/pi-support; \
-    cp "${HOME}/.local/pi-config/support/start.sh" /opt/pi-support/start.sh; \
-    cp "${HOME}/.local/pi-config/support/session-uuid.ts" /opt/pi-support/session-uuid.ts; \
-    cp "${HOME}/.local/pi-config/support/validate-subagent-output.ts" /opt/pi-support/validate-subagent-output.ts; \
-    cp "${HOME}/.local/pi-config/support/browser" /opt/pi-support/browser; \
-    chmod +x /opt/pi-support/browser; \
-    cp "${HOME}/.local/pi-config/support/browser-state-cleanup.sh" /opt/pi-support/browser-state-cleanup.sh; \
-    chmod +x /opt/pi-support/browser-state-cleanup.sh; \
-    cp "${HOME}/.local/pi-config/support/browser-validate.ts" /opt/pi-support/browser-validate.ts; \
+    if [ -f /home/dev/.local/pi-config/support/start.sh ]; then \
+        cp /home/dev/.local/pi-config/support/start.sh /opt/pi-support/start.sh; \
+    fi; \
+    if [ -f /home/dev/.local/pi-config/support/session-uuid.ts ]; then \
+        cp /home/dev/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
+    fi; \
+    if [ -f /home/dev/.local/pi-config/support/validate-subagent-output.ts ]; then \
+        cp /home/dev/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
+    fi; \
+    if [ -f /home/dev/.local/pi-config/support/browser ]; then \
+        cp /home/dev/.local/pi-config/support/browser /opt/pi-support/; \
+        chmod +x /opt/pi-support/browser; \
+    fi; \
+    if [ -f /home/dev/.local/pi-config/support/browser-state-cleanup.sh ]; then \
+        cp /home/dev/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; \
+        chmod +x /opt/pi-support/browser-state-cleanup.sh; \
+    fi; \
+    if [ -f /home/dev/.local/pi-config/support/browser-validate.ts ]; then \
+        cp /home/dev/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
+    fi; \
     mkdir -p /opt/pi-support/config; \
-    cp "${HOME}/.local/pi-config/support/config/"* /opt/pi-support/config/; \
+    if [ -d /home/dev/.local/pi-config/support/config ]; then \
+        cp /home/dev/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
+    fi; \
     mkdir -p /opt/pi-support/docs; \
-    cp "${HOME}/.local/pi-config/support/docs/"* /opt/pi-support/docs/; \
+    if [ -d /home/dev/.local/pi-config/support/docs ]; then \
+        cp /home/dev/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
+    fi; \
     mkdir -p /opt/pi-support/schemas; \
-    cp "${HOME}/.local/pi-config/support/schemas/"* /opt/pi-support/schemas/; \
+    if [ -d /home/dev/.local/pi-config/support/schemas ]; then \
+        cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true; \
+    fi; \
     \
-    # Install VSCode extension
+    # ── Install VSCode extension ─────────────────────────────────────────
+    echo "=== Installing VSCode extension ==="; \
     EXT_DIR="/home/dev/.vscodium-server/extensions"; \
     mkdir -p "${EXT_DIR}"; \
     install_ext() { \
         publisher="$1"; name="$2"; \
         meta_url="https://open-vsx.org/api/${publisher}/${name}"; \
         version=$(curl -fsSL "${meta_url}" | jq -r '.version'); \
+        if [ -z "$version" ] || [ "$version" = "null" ]; then \
+            echo "WARN: no version found for ${publisher}.${name}"; \
+            return 0; \
+        fi; \
         vsix_url=$(curl -fsSL "${meta_url}" | jq -r '.files.download'); \
+        if [ -z "$vsix_url" ] || [ "$vsix_url" = "null" ]; then \
+            echo "WARN: no download URL for ${publisher}.${name}"; \
+            return 0; \
+        fi; \
         dest="${EXT_DIR}/${publisher}.${name}-${version}"; \
         mkdir -p "${dest}"; \
-        curl -fsSL "${vsix_url}" -o /tmp/ext.vsix; \
+        curl -fsSL "${vsix_url}" -o /tmp/ext.vsix || return 0; \
         rm -rf /tmp/ext_extracted; mkdir -p /tmp/ext_extracted; \
         unzip -q /tmp/ext.vsix -d /tmp/ext_extracted; \
         cp -r /tmp/ext_extracted/extension/. "${dest}/"; \
         rm -rf /tmp/ext.vsix /tmp/ext_extracted; \
-        echo "Installed ${publisher}.${name}@${version}"; \
+        echo "  Installed ${publisher}.${name}@${version}"; \
     }; \
-    install_ext pi0 pi-vscode
+    install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"
 
 # ── Builder: Cleanup build deps ────────────────────────────────────────────
 RUN apt-get remove -y build-essential git curl wget gnupg unzip; \
