@@ -2,7 +2,7 @@
 # /opt/devstack/start.sh — Container entrypoint
 #
 # This script:
-# 1. Runs first-run bootstrap (volume ownership, directories)
+# 1. Runs first-run bootstrap (volume ownership, directories, extension install)
 # 2. Starts VSCodium server
 # 3. Waits for readiness
 # 4. Hands off to user command or starts shell
@@ -12,6 +12,13 @@
 #     -v /path/to/project:/home/dev/workspace/myproject:Z \
 #     ghcr.io/localpibox/devstack:latest
 #
+# Environment variables:
+#   ED_PORT            — Editor port (default: 3000)
+#   DEVCONTAINER_WORKSPACE_DIR — Workspace directory
+#   LEMONADE_BASE_URL  — Lemonade API base URL
+#   PI_SUPPORT_DIR     — Pi support tools directory
+#   HOST               — Bind host for VSCodium server (default: 0.0.0.0)
+#
 # Inside the container, these commands are available:
 #   pi              — Start Pi CLI
 #   stack.sh update — Update extensions/patches
@@ -20,11 +27,13 @@
 set -euo pipefail
 
 # ── Configuration ───────────────────────────────────────────────────────────
+export PATH="/opt/vscodium/bin:${PATH}"
 WORKSPACE_DIR="${DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
 HOME_DIR=/home/dev
 LEMONADE_BASE_URL="${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
 PI_SUPPORT_DIR="${PI_SUPPORT_DIR:-/opt/pi-support}"
 ED_PORT="${ED_PORT:-3000}"
+HOST="${HOST:-0.0.0.0}"
 SLEEP_INTERVAL=2
 MAX_RETRIES=30
 
@@ -55,7 +64,8 @@ if [ "$FIRST_RUN" = "true" ]; then
     mkdir -p "${HOME_DIR}/.pi/agent/mcp" \
              "${HOME_DIR}/.pi/agent/skills" \
              "${HOME_DIR}/.venvs" \
-             "${HOME_DIR}/.pi/agent/git"
+             "${HOME_DIR}/.pi/agent/git" \
+             "${HOME_DIR}/.pi/agent/npm"
 
     # NPM config
     npm config set prefix '/home/dev/.npm-global' 2>/dev/null || true
@@ -68,9 +78,52 @@ if [ "$FIRST_RUN" = "true" ]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}' 2>/dev/null || true
 
+    # Copy default config if completely clean (no settings.json)
+    if [ ! -f "${HOME_DIR}/.pi/agent/settings.json" ]; then
+        if [ -f /home/dev/.local/pi-config/settings.json ]; then
+            mkdir -p "${HOME_DIR}/.pi/agent"
+            cp /home/dev/.local/pi-config/settings.json "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || true
+            [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
+            [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
+            [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
+        fi
+    fi
+
     # Create initialization marker
     touch "${HOME_DIR}/.pi/.initialized"
     echo "[devstack] First run bootstrap complete."
+fi
+
+# ── Ensure extensions are installed (runs on every boot) ──
+# This catches: volume-mount wipes, image upgrades with stale .initialized,
+# or corrupted extension directories. Checks are idempotent — skips installed ones.
+if [ -f "${HOME_DIR}/.pi/agent/settings.json" ]; then
+    echo "[devstack] Validating extension installation..."
+    while IFS= read -r ext_entry; do
+        ext_entry="$(echo "$ext_entry" | tr -d '"' | tr -d ' ')"
+        [ -z "$ext_entry" ] && continue
+        case "$ext_entry" in
+            git:https://*)
+                rel_path="${ext_entry#git:}"
+                rel_path="${rel_path#*://}"
+                ;;
+            git://*)
+                rel_path="${ext_entry#git:}"
+                rel_path="${rel_path#*://}"
+                ;;
+            git:*)
+                rel_path="${ext_entry#git:}"
+                ;;
+            *) continue ;;
+        esac
+        # Remove branch/tag suffix (e.g. @patches/qwen-vision, #abc123)
+        path_only="${rel_path%%[@#]*}"
+        check_dir="${HOME_DIR}/.pi/agent/git/${path_only}"
+        if [ ! -d "$check_dir" ]; then
+            echo "[devstack] Installing missing extension: $ext_entry"
+            pi install "$ext_entry" 2>&1 || echo "[devstack] WARN: extension install failed: $ext_entry"
+        fi
+    done < <(jq -r '.packages[]?' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null)
 fi
 
 # ── Start VSCodium server ──────────────────────────────────────────────────
@@ -81,10 +134,10 @@ echo "[devstack] Starting VSCodium server on port ${ED_PORT}..."
 pkill -f "vscodium-server" 2>/dev/null || true
 sleep 1
 
-# Start the server in the background
+# Start the server in the background (bind to all interfaces by default)
 /opt/vscodium/bin/codium-server serve-web \
     --accept-server-license-terms \
-    --host 127.0.0.1 \
+    --host "${HOST}" \
     --port "${ED_PORT}" \
     --connection-token devsession \
     --default-folder "${WORKSPACE_DIR}" &
