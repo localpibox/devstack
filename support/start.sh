@@ -78,7 +78,7 @@ sleep 1
     --accept-server-license-terms \
     --host 127.0.0.1 \
     --port "${ED_PORT}" \
-    --without-connection-token \
+    --connection-token devsession \
     --default-folder "${WORKSPACE_DIR}" &
 
 SERVER_PID=$!

@@ -29,13 +29,13 @@ ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Builder: Minimal build deps (native module compile) ────────────────────
+# ── Builder: Build deps + tools needed for extension/config install ─────────
 # Chrome/X11/GTK fonts dropped — browser installed on-demand at runtime.
-# Runtime-only tools (ripgrep, fzf, jq, tmux, gh, unzip) in runtime stage.
+# jq/unzip kept here — used by extension installer (open-vsx API, VSIX extract).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     curl ca-certificates gnupg \
-    git \
+    git jq unzip \
     python3 python3-pip python3-venv \
     libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -100,8 +100,6 @@ RUN set -eux; \
     fi; \
     npm run build; \
     npm install -g "./packages/ai" "./packages/agent" "./packages/coding-agent" "./packages/tui"; \
-    cd /home/dev/.npm-global/lib/node_modules && \
-    find . -name "node_modules" -type d -exec rm -rf {} + 2>/dev/null || true; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
 # ── Builder: Extensions + Config ───────────────────────────────────────────
