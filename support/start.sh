@@ -2,10 +2,11 @@
 # /opt/devstack/start.sh — Container entrypoint
 #
 # This script:
-# 1. Runs first-run bootstrap (volume ownership, directories, extension install)
-# 2. Starts VSCodium server
-# 3. Waits for readiness
-# 4. Hands off to user command or starts shell
+# 1. Runs first-run bootstrap (volume ownership, directories)
+# 2. Ensures extensions are installed (via update.sh --extensions)
+# 3. Starts VSCodium server
+# 4. Waits for readiness
+# 5. Hands off to user command or starts shell
 #
 # Usage:
 #   podman run -it --network host --userns keep-id \
@@ -13,11 +14,9 @@
 #     ghcr.io/localpibox/devstack:latest
 #
 # Environment variables:
-#   ED_PORT            — Editor port (default: 3000)
+#   ED_PORT                — Editor port (default: 3000)
 #   DEVCONTAINER_WORKSPACE_DIR — Workspace directory
-#   LEMONADE_BASE_URL  — Lemonade API base URL
-#   PI_SUPPORT_DIR     — Pi support tools directory
-#   HOST               — Bind host for VSCodium server (default: 0.0.0.0)
+#   HOST                   — Bind host for VSCodium server (default: 0.0.0.0)
 #
 # Inside the container, these commands are available:
 #   pi              — Start Pi CLI
@@ -27,7 +26,7 @@
 set -euo pipefail
 
 # ── Configuration ───────────────────────────────────────────────────────────
-export PATH="/opt/vscodium/bin:${PATH}"
+export PATH="/opt/vscodium/bin:/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 WORKSPACE_DIR="${DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
 HOME_DIR=/home/dev
 LEMONADE_BASE_URL="${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
@@ -64,8 +63,7 @@ if [ "$FIRST_RUN" = "true" ]; then
     mkdir -p "${HOME_DIR}/.pi/agent/mcp" \
              "${HOME_DIR}/.pi/agent/skills" \
              "${HOME_DIR}/.venvs" \
-             "${HOME_DIR}/.pi/agent/git" \
-             "${HOME_DIR}/.pi/agent/npm"
+             "${HOME_DIR}/.pi/agent/git"
 
     # NPM config
     npm config set prefix '/home/dev/.npm-global' 2>/dev/null || true
@@ -78,91 +76,19 @@ if [ "$FIRST_RUN" = "true" ]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}' 2>/dev/null || true
 
-    # Copy default config if completely clean (no settings.json)
-    if [ ! -f "${HOME_DIR}/.pi/agent/settings.json" ]; then
-        if [ -f /home/dev/.local/pi-config/settings.json ]; then
-            mkdir -p "${HOME_DIR}/.pi/agent"
-            cp /home/dev/.local/pi-config/settings.json "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || true
-            [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
-            [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
-            [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md "${HOME_DIR}/.pi/agent/" 2>/dev/null || true
-        fi
-    fi
-
-    # Inject default extension packages if settings.json has none
-    HAS_PACKAGES=$(jq -r 'has("packages")' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || echo "error")
-    echo "[devstack] Settings has packages: $HAS_PACKAGES (file: $(ls -la ${HOME_DIR}/.pi/agent/settings.json 2>&1))"
-    if [ "$HAS_PACKAGES" = "false" ]; then
-        echo "[devstack] Injecting default extension packages into settings.json..."
-        if jq '.packages = [
-            "git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision",
-            "git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider",
-            "npm:pi-mcp-adapter",
-            "npm:@tintinweb/pi-subagents",
-            "npm:pi-powerline-footer"
-        ]' "${HOME_DIR}/.pi/agent/settings.json" > "${HOME_DIR}/.pi/agent/settings.json.new" 2>/dev/null; then
-            mv "${HOME_DIR}/.pi/agent/settings.json.new" "${HOME_DIR}/.pi/agent/settings.json"
-            chown "$(id -u):$(id -g)" "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null || true
-            echo "[devstack] Packages injected successfully"
-        else
-            echo "[devstack] ERROR: Failed to inject packages via jq"
-            echo "[devstack] Current file: $(cat ${HOME_DIR}/.pi/agent/settings.json 2>&1)"
-            # Fallback: append packages manually using python3 or sed
-            if command -v python3 &>/dev/null; then
-                python3 -c "
-import json, sys
-with open('${HOME_DIR}/.pi/agent/settings.json') as f:
-    data = json.load(f)
-data['packages'] = [
-    'git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision',
-    'git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider',
-    'npm:pi-mcp-adapter',
-    'npm:@tintinweb/pi-subagents',
-    'npm:pi-powerline-footer'
-]
-with open('${HOME_DIR}/.pi/agent/settings.json', 'w') as f:
-    json.dump(data, f, indent=2)
-print('Injected via python3 fallback')
-" 2>&1 || echo "[devstack] ERROR: python3 fallback also failed"
-            else
-                echo "[devstack] SKIP: jq failed and python3 not available"
-            fi
-        fi
-    fi
-
     # Create initialization marker
     touch "${HOME_DIR}/.pi/.initialized"
     echo "[devstack] First run bootstrap complete."
 fi
 
-# ── Ensure extensions are installed (runs on every boot) ──
-if [ -f "${HOME_DIR}/.pi/agent/settings.json" ]; then
-    echo "[devstack] Validating extension installation..."
-    while IFS= read -r ext_entry; do
-        ext_entry="$(echo "$ext_entry" | tr -d '"' | tr -d ' ')"
-        [ -z "$ext_entry" ] && continue
-        case "$ext_entry" in
-            git:https://*)
-                rel_path="${ext_entry#git:}"
-                rel_path="${rel_path#*://}"
-                ;;
-            git://*)
-                rel_path="${ext_entry#git:}"
-                rel_path="${rel_path#*://}"
-                ;;
-            git:*)
-                rel_path="${ext_entry#git:}"
-                ;;
-            *) continue ;;
-        esac
-        # Remove branch/tag suffix (e.g. @patches/qwen-vision, #abc123)
-        path_only="${rel_path%%[@#]*}"
-        check_dir="${HOME_DIR}/.pi/agent/git/${path_only}"
-        if [ ! -d "$check_dir" ]; then
-            echo "[devstack] Installing missing extension: $ext_entry"
-            pi install "$ext_entry" 2>&1 || echo "[devstack] WARN: extension install failed: $ext_entry"
-        fi
-    done < <(jq -r '.packages[]?' "${HOME_DIR}/.pi/agent/settings.json" 2>/dev/null)
+# ── Ensure extensions are installed (via pi) ───────────────────────────────
+# Uses the container's update.sh which checks via `pi list --json` and
+# installs missing extensions via `pi install`. Runs on every boot.
+echo "[devstack] Ensuring extensions are installed..."
+if [ -f /opt/pi-patches/update.sh ]; then
+    /opt/pi-patches/update.sh --extensions 2>&1 || echo "[devstack] WARN: extension install had warnings"
+else
+    echo "[devstack] WARN: /opt/pi-patches/update.sh not found — skipping extension install"
 fi
 
 # ── Start VSCodium server ──────────────────────────────────────────────────
