@@ -11,6 +11,25 @@
 #   - Runtime: NO /opt/pi-src (pi packages installed globally in .npm-global)
 #   - Runtime: NO build-essential, python3, or build deps
 #   - Runtime: user created BEFORE COPY files (correct UID 1000 ownership)
+#
+# Fixes applied vs. previous version:
+#   1. /opt/pi-patches is now COPYed into the BUILDER stage (was only in
+#      runtime stage) — patches were previously silently skipped, so the
+#      "patched" pi build was actually unpatched upstream.
+#   2. Removed `export HOME="/root"` before `pi install git:...` calls —
+#      it caused those two extensions to install into /root/.pi, which is
+#      never copied into the runtime image and was silently discarded.
+#   3. Removed the unused `git remote add localpibox` / `git fetch` lines —
+#      patch files under /opt/pi-patches/*.patch are the preferred,
+#      single mechanism now; no half-wired second patch path.
+#   4. Removed the `rm -rf /opt/pi-src/* /opt/pi-src/.*` glob — `.* ` also
+#      expands to `..` (parent dir); redundant anyway since the dir is
+#      freshly created in the same layer.
+#   5. Added `models.json` to the config-copy step (was missing — this was
+#      the root cause of the earlier Lemonade max-output-tokens issue).
+#   6. Added a build-time smoke test (`pi --version`) so a broken/missing
+#      binary fails the build loudly instead of silently producing a
+#      broken image.
 # ==========================================================================
 
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
@@ -83,27 +102,47 @@ RUN set -eux; \
     npm cache clean --force; \
     chown -R 1000:1000 /home/dev/.npm-global
 
+# ── Builder: Patch files (copied here so the pi build step below can see
+#             them — must be available in the BUILDER stage, not just
+#             runtime, or `git am` silently finds nothing to apply) ────────
+COPY stack-upkeep/patches/ /opt/pi-patches/
+
 # ── Builder: Pi monorepo build (single pass) ───────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
-    rm -rf /opt/pi-src/* /opt/pi-src/.* 2>/dev/null || true; \
     git clone --depth=1 --single-branch --branch main https://github.com/earendil-works/pi .; \
-    git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true; \
-    git fetch localpibox patches/qwen-reasoning-effort 2>/dev/null || true; \
+    git config user.email "build@localpibox.dev"; \
+    git config user.name "LocalPibox Build"; \
     npm ci --ignore-scripts; \
+    \
+    # Patch files under /opt/pi-patches/*.patch are the single, preferred
+    # patch mechanism. Fails loudly (no `|| true`) if a patch is present
+    # but doesn't apply cleanly — a silently-skipped patch is worse than
+    # a failed build.
     if ls /opt/pi-patches/*.patch 1>/dev/null 2>&1; then \
+        echo "=== Applying patches ==="; \
         for patch in /opt/pi-patches/*.patch; do \
-            git am "$patch" 2>&1; \
+            echo "  Applying: $(basename "$patch")"; \
+            git am "$patch"; \
         done; \
+    else \
+        echo "WARN: no *.patch files found in /opt/pi-patches — building unpatched upstream pi"; \
     fi; \
+    \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
     for pkg in ai agent coding-agent tui; do \
       npm pack "./packages/$pkg" --pack-destination /tmp/pi-packs; \
     done; \
     npm install -g /tmp/pi-packs/*.tgz; \
+    \
+    # Smoke test — fail the build immediately if the installed binary
+    # isn't actually functional, instead of finding out at container
+    # runtime.
+    /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary is not functional after install" && exit 1); \
+    \
     ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests /tmp/pi-packs
 
@@ -111,7 +150,7 @@ RUN set -eux; \
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
-    export HOME="/root"; \
+    export HOME="/home/dev"; \
     \
     # ── Install extensions ───────────────────────────────────────────────
     echo "=== Installing extensions ==="; \
@@ -134,6 +173,7 @@ RUN set -eux; \
     mkdir -p /home/dev/.pi/agent; \
     [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ || echo "WARN: no mcp.json"; \
+    [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
     [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
     \
     # ── Copy skills ──────────────────────────────────────────────────────
@@ -216,7 +256,9 @@ RUN set -eux; \
         rm -rf /tmp/ext.vsix /tmp/ext_extracted; \
         echo "  Installed ${publisher}.${name}@${version}"; \
     }; \
-    install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"
+    install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"; \
+    \
+    chown -R 1000:1000 /home/dev/.pi /home/dev/.local /home/dev/.vscodium-server
 
 # ── STAGE 2: RUNTIME ───────────────────────────────────────────────────────
 # Purpose: runtime dependencies + copied artifacts
