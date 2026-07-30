@@ -99,12 +99,13 @@ RUN set -eux; \
         done; \
     fi; \
     npm run build; \
-    for d in packages/ai packages/agent packages/coding-agent packages/tui; do \
-      printf "node_modules\n" > "$d/.npmignore"; \
+    mkdir -p /tmp/pi-packs; \
+    for pkg in ai agent coding-agent tui; do \
+      npm pack "./packages/$pkg" --pack-destination /tmp/pi-packs; \
     done; \
-    npm install -g "./packages/ai" "./packages/agent" "./packages/coding-agent" "./packages/tui"; \
+    npm install -g /tmp/pi-packs/*.tgz; \
     ls -la /home/dev/.npm-global/bin/; \
-    rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
+    rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests /tmp/pi-packs
 
 # ── Builder: Extensions + Config ───────────────────────────────────────────
 USER root
