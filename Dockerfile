@@ -1,13 +1,16 @@
 # ==========================================================================
-# Multi-stage Dockerfile — LocalPibox Devstack (slimmed)
+# Multi-stage Dockerfile — LocalPibox Devstack (minimal)
 # ==========================================================================
 # Stage 1 (builder): compile native modules, clone repos, assemble artifacts
-# Stage 2 (runtime): runtime dependencies + copied artifacts
+# Stage 2 (runtime): lean runtime with only what's needed to run
 #
-# Key changes for size reduction:
-#   - Runtime: NO Chrome/X11 libs (installed via agent-browser install --with-deps)
-#   - Pre-built Chrome removed from builder (deferred to install-browser.sh)
-#   - Runtime user created BEFORE COPY (files use UID 1000)
+# Size savings:
+#   - Builder: NO Chrome/X11/GTK/fonts (deferred to install-browser.sh at runtime)
+#   - Builder: NO runtime-only tools (ripgrep, fzf, jq, tmux, gh, unzip)
+#   - Builder: NO unused DB clients (postgresql-client, redis-tools)
+#   - Runtime: NO /opt/pi-src (pi packages installed globally in .npm-global)
+#   - Runtime: NO build-essential, python3, or build deps
+#   - Runtime: user created BEFORE COPY files (correct UID 1000 ownership)
 # ==========================================================================
 
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
@@ -26,24 +29,15 @@ ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Builder: Build tools + Chrome deps (needed for native module compile) ──
+# ── Builder: Minimal build deps (native module compile) ────────────────────
+# Chrome/X11/GTK fonts dropped — browser installed on-demand at runtime.
+# Runtime-only tools (ripgrep, fzf, jq, tmux, gh, unzip) in runtime stage.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \
-    libxcomposite1 libxcursor1 libxdamage1 libxfixes3 \
-    libxi6 libgtk-3-0t64 libpangocairo-1.0-0 libpango-1.0-0 \
-    libatk1.0-0t64 libcairo-gobject2 libcairo2 \
-    libgdk-pixbuf-2.0-0 libxrender1 libasound2t64 \
-    libfreetype6 libfontconfig1 libdbus-1-3 \
-    libnss3 libnspr4 libatk-bridge2.0-0t64 \
-    libdrm2 libxkbcommon0 libatspi2.0-0 libgbm1 \
-    fonts-noto-color-emoji fonts-freefont-ttf \
     build-essential pkg-config \
-    curl wget unzip \
-    ca-certificates gnupg \
-    git gh \
+    curl ca-certificates gnupg \
+    git \
     python3 python3-pip python3-venv \
-    sqlite3 libsqlite3-dev postgresql-client redis-tools \
-    ripgrep fzf fd-find jq tmux sudo \
+    libsqlite3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Builder: Node.js ───────────────────────────────────────────────────────
@@ -86,7 +80,8 @@ RUN set -eux; \
     npm config set registry https://registry.npmjs.org/; \
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}'; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
-    mkdir -p /home/dev/.npm && chown -R 1000:1000 /home/dev/.npm-global
+    npm cache clean --force; \
+    chown -R 1000:1000 /home/dev/.npm-global
 
 # ── Builder: Pi monorepo build (single pass) ───────────────────────────────
 USER root
@@ -232,11 +227,10 @@ ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Runtime: User's minimal apt list ───────────────────────────────────────
-# Validated on Ubuntu 26.04 — all packages exist in repos.
-# NO Chrome/X11 libs — installed via `agent-browser install --with-deps`
+# ── Runtime: Minimal apt — NO Chrome/X11 libs (installed on-demand) ────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates gnupg sudo \
+    git unzip gh \
     ripgrep fzf fd-find jq tmux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -251,7 +245,6 @@ RUN useradd -m -s /bin/bash -u 1000 dev
 
 # ── Runtime: Copy from builder ─────────────────────────────────────────────
 COPY --from=builder /opt/vscodium /opt/vscodium
-COPY --from=builder /opt/pi-src /opt/pi-src
 COPY --from=builder /home/dev/.npm-global /home/dev/.npm-global
 COPY --from=builder /home/dev/.pi /home/dev/.pi
 COPY --from=builder /home/dev/.local /home/dev/.local
@@ -282,7 +275,7 @@ RUN chmod +x /opt/devstack/start.sh \
 
 # ── Runtime: User ──────────────────────────────────────────────────────────
 # Set ownership on copied directories. Dev user exists (created above).
-RUN chown -R 1000:1000 /home/dev /opt/pi-src /opt/pi-patches \
+RUN chown -R 1000:1000 /home/dev /opt/pi-patches \
     && chmod -R u+rwX /home/dev
 
 USER dev
