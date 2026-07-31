@@ -1,0 +1,94 @@
+From 72979951a082f73afc971ca411efda406959e06c Mon Sep 17 00:00:00 2001
+From: LocalPibox Build <build@localpibox.dev>
+Date: Fri, 31 Jul 2026 21:04:29 +0000
+Subject: [PATCH 1/2] fix: use api_key auth type for Lemonade provider
+ registration
+
+Lemonade uses API-key authentication but the extension passed
+oauth: oauthBlock to pi.registerProvider(), causing Pi to store
+type: "oauth" in auth.json. Pi's provider loader expects type:
+"api_key" for API-key-based providers, so it was skipping the
+Lemonade provider entirely.
+
+Fix: conditionally include oauth block only when no API key is
+present (real OAuth flows). For API-key auth, omit oauth so Pi
+stores type: "api_key" and the provider registers correctly.
+---
+ extensions/index.ts | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/extensions/index.ts b/extensions/index.ts
+index 425da86..9148e6b 100644
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -369,10 +369,14 @@ async function registerLemonadeProvider(
+     baseUrl: baseUrl ? `${baseUrl}/v1` : "http://localhost:8000/v1",
+     api: "openai-completions",
+     models: providerModels,
+-    oauth: oauthBlock,
+   };
+   if (payload?.apiKey) {
+     config.headers = { Authorization: `Bearer ${payload.apiKey}` };
++  } else {
++    // Only include oauth block for real OAuth flows (no API key).
++    // Lemonade uses API-key auth, so omitting oauth causes Pi to
++    // store type: "api_key" in auth.json instead of "oauth".
++    config.oauth = oauthBlock;
+   }
+   pi.registerProvider(PROVIDER_ID, config);
+   return providerModels.length;
+-- 
+2.53.0
+
+
+From 85adc5f0904c9e9f70cb27eb7955e62dcc1b1811 Mon Sep 17 00:00:00 2001
+From: LocalPibox Build <build@localpibox.dev>
+Date: Fri, 31 Jul 2026 21:33:16 +0000
+Subject: [PATCH 2/2] fix: use qwen-chat-template thinking format for Lemonade
+ backend
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Lemonade (llama.cpp backend) does NOT respect top-level enable_thinking
+or reasoning_effort parameters for Qwen models. It only respects
+chat_template_kwargs.{enable_thinking, reasoning_effort}.
+
+Previously, Qwen models were registered with thinkingFormat: "qwen"
+which sent enable_thinking at the top level — silently ignored by
+Lemonade, causing runaway thinking blocks that consume the output
+budget.
+
+Changed to thinkingFormat: "qwen-chat-template" so Pi sends
+chat_template_kwargs.{enable_thinking, reasoning_effort} which
+Lemonade respects. This allows proper control of thinking blocks.
+---
+ extensions/index.ts | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/extensions/index.ts b/extensions/index.ts
+index 9148e6b..b228f25 100644
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -332,6 +332,9 @@ function mapToProviderModel(m: LemonadeModelInfo) {
+   const reasoning = isReasoningByRecipe(m.recipe) || isReasoningByHeuristic(m);
+   const qwenReasoning = isQwenReasoningModel(m);
+ 
++  // Lemonade backend does NOT respect top-level enable_thinking / reasoning_effort.
++  // It only respects chat_template_kwargs.{enable_thinking, reasoning_effort} for Qwen.
++  // Using "qwen-chat-template" thinking format ensures Pi sends the correct params.
+   return {
+     id: m.id,
+     name: m.name || m.id,
+@@ -340,7 +343,7 @@ function mapToProviderModel(m: LemonadeModelInfo) {
+     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+     contextWindow,
+     maxTokens,
+-    compat: qwenReasoning ? { thinkingFormat: "qwen" } : undefined,
++    compat: qwenReasoning ? { thinkingFormat: "qwen-chat-template" } : undefined,
+   };
+ }
+ 
+-- 
+2.53.0
+

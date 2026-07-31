@@ -91,9 +91,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          target: runtime
           push: ${{ github.event_name != 'pull_request' }}
-          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: ${{ steps.meta.outputs.tags }}

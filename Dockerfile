@@ -1,79 +1,59 @@
 # ==========================================================================
-# Multi-stage Dockerfile — LocalPibox Devstack (minimal)
+# Single-stage Dockerfile — LocalPibox Devstack
 # ==========================================================================
-# Stage 1 (builder): compile native modules, clone repos, assemble artifacts
-# Stage 2 (runtime): lean runtime with only what's needed to run
+# All build steps run in one stage. No multi-stage split — the marginal
+# size savings (~100-200MB on a ~1.5GB image) aren't worth the complexity
+# of duplicated user setup, duplicate Node.js install, and split apt layers.
 #
-# Size savings:
-#   - Builder: NO Chrome/X11/GTK/fonts (deferred to install-browser.sh at runtime)
-#   - Builder: NO runtime-only tools (ripgrep, fzf, jq, tmux, gh, unzip)
-#   - Builder: NO unused DB clients (postgresql-client, redis-tools)
-#   - Runtime: NO /opt/pi-src (pi packages installed globally in .npm-global)
-#   - Runtime: build-essential + python3 + libsqlite3-dev for native module rebuild
-#   - Runtime: user created BEFORE COPY files (correct UID 1000 ownership)
+# Design decisions:
+#   - Chrome/X11 deferred to runtime via install-browser.sh (real win)
+#   - Build artifacts cleaned up at end of build (no COPY --from=*)
+#   - All apt packages installed once
+#   - User created once, before COPY
+#   - Everything builds in a single pass
 #
-# Fixes applied vs. previous version:
-#   1. /opt/pi-patches is now COPYed into the BUILDER stage (was only in
-#      runtime stage) — patches were previously silently skipped, so the
-#      "patched" pi build was actually unpatched upstream.
-#   2. Removed `export HOME="/root"` before `pi install git:...` calls —
-#      it caused those two extensions to install into /root/.pi, which is
-#      never copied into the runtime image and was silently discarded.
-#   3. Removed the unused `git remote add localpibox` / `git fetch` lines —
-#      patch files under /opt/pi-patches/*.patch are the preferred,
-#      single mechanism now; no half-wired second patch path.
-#   4. Removed the `rm -rf /opt/pi-src/* /opt/pi-src/.*` glob — `.* ` also
-#      expands to `..` (parent dir); redundant anyway since the dir is
-#      freshly created in the same layer.
-#   5. Added `models.json` to the config-copy step (was missing — this was
-#      the root cause of the earlier Lemonade max-output-tokens issue).
-#   6. Added a build-time smoke test (`pi --version`) so a broken/missing
-#      binary fails the build loudly instead of silently producing a
-#      broken image.
+# Previous fixes (still applied):
+#   1. /opt/pi-patches COPYed so `git am` finds patches during build
+#   2. `HOME="/home/dev"` set before `pi install` — extensions go to dev
+#   3. Patches are the single patch mechanism (no half-wired second path)
+#   4. models.json included in config-copy step
+#   5. Build-time smoke test (`pi --version`) fails loudly on breakage
 # ==========================================================================
 
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
 ARG NODE_VERSION=24
-ARG PI_PATCH_VERSION=20260730-004
-ARG LEMONADE_PATCH_VERSION=20260730-004
 ARG VSCODIUM_VERSION=1.126.04524
 
-# ── STAGE 1: BUILDER ───────────────────────────────────────────────────────
-FROM ubuntu:26.04 AS builder
+FROM ubuntu:26.04
 
 ARG NODE_VERSION
-ARG PI_PATCH_VERSION
-ARG LEMONADE_PATCH_VERSION
 ARG VSCODIUM_VERSION
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Builder: Build deps + tools needed for extension/config install ─────────
-# Chrome/X11/GTK fonts dropped — browser installed on-demand at runtime.
-# jq/unzip kept here — used by extension installer (open-vsx API, VSIX extract).
+# ── Base deps + build tools + dev utilities ─────────────────────────────────
+# Chrome/X11 deferred — browser installed on-demand at runtime via install-browser.sh.
+# build-essential + python3 + libsqlite3-dev — needed for native module rebuilds.
+# ripgrep, fzf, fd-find, tmux, jq — dev tools available in the final image.
+# sudo — needed so the dev user can run apt-get (native module rebuilds, etc.).
+# gh — useful for CI/debugging inside the container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     curl ca-certificates gnupg \
     git jq unzip \
-    python3 python3-pip python3-venv \
-    libsqlite3-dev \
+    python3 python3-pip python3-venv libsqlite3-dev \
+    sudo \
+    gh ripgrep fzf fd-find tmux \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Builder: Node.js ───────────────────────────────────────────────────────
+# ── Node.js ─────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g npm@latest \
     && corepack enable
 
-# ── Builder: VSCodium ──────────────────────────────────────────────────────
-RUN curl -fsSL \
-      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
-    -o /tmp/vscodium.tar.gz \
-    && mkdir -p /opt/vscodium \
-    && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
-    && rm /tmp/vscodium.tar.gz
-
-# ── Builder: User setup (matches runtime UID 1000) ─────────────────────────
+# ── User setup (before any COPY that creates files with UID 1000) ───────────
+# Ubuntu 26.04 may already have a user with UID 1000 (e.g. "ubuntu"); rename it.
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
       oldname="$(getent passwd 1000 | cut -d: -f1)"; \
@@ -89,7 +69,11 @@ RUN set -eux; \
     fi; \
     chown -R 1000:1000 /home/dev
 
-# ── Builder: npm config + global installs ──────────────────────────────────
+# ── NOPASSWD sudo for dev user ──────────────────────────────────────────────
+# Scripts need sudo for apt-get (e.g. post-init native module rebuild).
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
+
+# ── npm config + global installs ────────────────────────────────────────────
 RUN set -eux; \
     npm config set prefix '/home/dev/.npm-global'; \
     npm config set fetch-retries 5; \
@@ -102,12 +86,26 @@ RUN set -eux; \
     npm cache clean --force; \
     chown -R 1000:1000 /home/dev/.npm-global
 
-# ── Builder: Patch files (copied here so the pi build step below can see
-#             them — must be available in the BUILDER stage, not just
-#             runtime, or `git am` silently finds nothing to apply) ────────
-COPY stack-upkeep/patches/ /opt/pi-patches/
+# ── VSCodium ────────────────────────────────────────────────────────────────
+RUN curl -fsSL \
+      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
+    -o /tmp/vscodium.tar.gz \
+    && mkdir -p /opt/vscodium \
+    && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
+    && rm /tmp/vscodium.tar.gz
 
-# ── Builder: Pi monorepo build (single pass) ───────────────────────────────
+# ── Patch files (available for `pi` build and runtime update scripts) ────────
+COPY stack-upkeep/patches/ /opt/pi-patches/
+COPY stack-upkeep/scripts/apply-patches.sh /opt/pi-patches/apply-patches.sh
+COPY stack-upkeep/scripts/update.sh /opt/pi-patches/update.sh
+COPY stack-upkeep/scripts/load-updates.sh /opt/pi-patches/load-updates.sh
+RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
+    /opt/pi-patches/load-updates.sh \
+    && ln -sf /opt/pi-patches/update.sh /usr/local/bin/stack-update \
+    && mkdir -p /opt/pi-internal \
+    && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
+
+# ── Pi monorepo build ───────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
@@ -117,10 +115,7 @@ RUN set -eux; \
     git config user.name "LocalPibox Build"; \
     npm ci --ignore-scripts; \
     \
-    # Patch files under /opt/pi-patches/*.patch are the single, preferred
-    # patch mechanism. Fails loudly (no `|| true`) if a patch is present
-    # but doesn't apply cleanly — a silently-skipped patch is worse than
-    # a failed build.
+    # Apply patches — fails loudly if any patch is present but doesn't apply
     if ls /opt/pi-patches/pi-*.patch 1>/dev/null 2>&1; then \
         echo "=== Applying pi patches ==="; \
         for patch in /opt/pi-patches/pi-*.patch; do \
@@ -138,15 +133,12 @@ RUN set -eux; \
     done; \
     npm install -g /tmp/pi-packs/*.tgz; \
     \
-    # Smoke test — fail the build immediately if the installed binary
-    # isn't actually functional, instead of finding out at container
-    # runtime.
+    # Smoke test — fail the build immediately if pi isn't functional
     /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary is not functional after install" && exit 1); \
     \
     ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests /tmp/pi-packs
-
-# ── Builder: Extensions + Config ───────────────────────────────────────────
+# ── Extensions + Config ─────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
@@ -259,81 +251,14 @@ RUN set -eux; \
     \
     chown -R 1000:1000 /home/dev/.pi /home/dev/.local /home/dev/.vscodium-server
 
-# ── STAGE 2: RUNTIME ───────────────────────────────────────────────────────
-# Purpose: runtime dependencies + copied artifacts
-# Browser installed on-demand: user runs `agent-browser install` + `--with-deps`
-FROM ubuntu:26.04 AS runtime
-
-ARG NODE_VERSION
-ARG PI_PATCH_VERSION
-ARG LEMONADE_PATCH_VERSION
-ARG VSCODIUM_VERSION
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# ── Runtime: Minimal apt — NO Chrome/X11 libs (installed on-demand) ────────
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential python3 libsqlite3-dev \
-    curl ca-certificates gnupg sudo \
-    git unzip gh \
-    ripgrep fzf fd-find jq tmux \
-    && rm -rf /var/lib/apt/lists/*
-
-# ── Runtime: Node.js ───────────────────────────────────────────────────────
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install -g npm@latest \
-    && corepack enable
-
-# ── Runtime: Create dev user (MUST be before COPY — files use UID 1000) ────
-# Ubuntu 26.04 base may already have a user with UID 1000 (e.g. "ubuntu");
-# rename it to "dev" if so.
-RUN set -eux; \
-    if getent passwd 1000 >/dev/null; then \
-      oldname="$(getent passwd 1000 | cut -d: -f1)"; \
-      if [ "$oldname" != "dev" ]; then \
-        usermod -l dev -d /home/dev -m "$oldname"; \
-        if getent group 1000 >/dev/null; then \
-          oldgroup="$(getent group 1000 | cut -d: -f1)"; \
-          [ "$oldgroup" = "dev" ] || groupmod -n dev "$oldgroup"; \
-        fi; \
-      fi; \
-    else \
-      useradd -m -s /bin/bash -u 1000 dev; \
-    fi
-
-# ── Runtime: NOPASSWD sudo ──────────────────────────────────────────────────
-# Containers run as non-root dev user (UID 1000). Scripts need sudo for apt-get
-# (e.g. post-init native module rebuild). Without NOPASSWD, sudo prompts for a
-# password and fails silently in the container entrypoint.
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
-
-# ── Runtime: Copy from builder ─────────────────────────────────────────────
-COPY --from=builder /opt/vscodium /opt/vscodium
-COPY --from=builder /home/dev/.npm-global /home/dev/.npm-global
-COPY --from=builder /home/dev/.pi /home/dev/.pi
-COPY --from=builder /home/dev/.local /home/dev/.local
-COPY --from=builder /home/dev/.vscodium-server /home/dev/.vscodium-server
-COPY --from=builder /opt/pi-support /opt/pi-support
-
-# ── Runtime: Patches + update scripts ──────────────────────────────────────
-COPY stack-upkeep/patches/ /opt/pi-patches/
-COPY stack-upkeep/scripts/apply-patches.sh /opt/pi-patches/apply-patches.sh
-COPY stack-upkeep/scripts/update.sh /opt/pi-patches/update.sh
-COPY stack-upkeep/scripts/load-updates.sh /opt/pi-patches/load-updates.sh
-RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
-    && ln -sf /opt/pi-patches/update.sh /usr/local/bin/stack-update \
-    && mkdir -p /opt/pi-internal \
-    && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
-
-# ── Runtime: Helper scripts ────────────────────────────────────────────────
+# ── Helper scripts ──────────────────────────────────────────────────────────
 COPY support/start.sh /opt/devstack/start.sh
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh
 COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
 COPY build-updates.sh /usr/local/bin/build-updates.sh
-COPY host-load-updates.sh /usr/local/bin/load-updates.sh
+COPY host-load-updates.sh /usr/local/bin/host-load-updates.sh
 # Symlink to PATH for easy shell access
 RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
     && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
@@ -342,10 +267,9 @@ RUN chmod +x /opt/devstack/start.sh \
     /opt/devstack/install-browser.sh \
     /opt/devstack/validate.sh \
     /usr/local/bin/run.sh /usr/local/bin/stack.sh \
-    /usr/local/bin/build-updates.sh /usr/local/bin/load-updates.sh
+    /usr/local/bin/build-updates.sh /usr/local/bin/host-load-updates.sh
 
-# ── Runtime: User ──────────────────────────────────────────────────────────
-# Set ownership on copied directories. Dev user exists (created above).
+# ── Final ownership + browser state dirs ────────────────────────────────────
 RUN chown -R 1000:1000 /home/dev /opt/pi-patches \
     && chmod -R u+rwX /home/dev
 
@@ -353,6 +277,7 @@ RUN chown -R 1000:1000 /home/dev /opt/pi-patches \
 RUN mkdir -p /home/dev/.agent-browser/sessions \
     && chown -R 1000:1000 /home/dev/.agent-browser
 
+# ── Runtime config ──────────────────────────────────────────────────────────
 USER dev
 WORKDIR /home/dev/workspace
 
