@@ -45,6 +45,9 @@ services:
       - pi-agent-state:/home/dev/.pi
       - devstack-npm-cache:/home/dev/.npm
       - browser-states:/browser-states
+      # Agent-browser — persists Chrome download, browser profiles, and state
+      # across container rebuilds (saves download time + avoids reinstall)
+      - ${AGENT_BROWSER_DIR:-$HOME/.localpibox/agent-browser}:/home/dev/.agent-browser:Z,cached
 
 volumes:
   pi-agent-state:

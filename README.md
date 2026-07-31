@@ -12,6 +12,7 @@ podman pull ghcr.io/localpibox/devstack:latest
 podman run -d --name localpibox --network host --userns keep-id \
     -v /path/to/your/project:/home/dev/workspace/myproject:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     -e ED_PORT=3000 \
     ghcr.io/localpibox/devstack:latest
 
@@ -25,6 +26,7 @@ podman run -d --name localpibox --network host --userns keep-id \
 podman run -it --name localpibox --network host --userns keep-id \
     -v /path/to/your/project:/home/dev/workspace/myproject:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     -e ED_PORT=3000 \
     ghcr.io/localpibox/devstack:latest
 ```
@@ -43,7 +45,8 @@ podman exec -it localpibox stack.sh update --pull
 │  Host                                               │
 │                                                     │
 │  ~/projects/myproject/  ──mount──→  /workspace/myproject/  │
-│  ~/.localpibox/state/   ──mount──→  /home/dev/.pi/       │
+│  ~/.localpibox/state/     ──mount──→  /home/dev/.pi/       │
+│  ~/.localpibox/agent-browser/ ──→ /home/dev/.agent-browser/ │
 │  Lemonade (:13305)      ──network→  http://127.0.0.1     │
 └─────────────────────────────────────────────────────┘
 
@@ -90,6 +93,7 @@ podman exec -it localpibox stack.sh update --patches
 podman run -d --name localpibox --network host --userns keep-id \
     -v /home/user/projects/myproject:/home/dev/workspace/myproject:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     ghcr.io/localpibox/devstack:latest
 ```
 
@@ -103,6 +107,7 @@ podman run -d --name localpibox --network host --userns keep-id \
     -e ED_PORT=3000 \
     -v /path/to/project-a:/home/dev/workspace/project-a:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     ghcr.io/localpibox/devstack:latest
 # → http://localhost:3000
 
@@ -114,6 +119,7 @@ podman run -d --name localpibox --network host --userns keep-id \
     -e ED_PORT=3001 \
     -v /path/to/project-b:/home/dev/workspace/project-b:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     ghcr.io/localpibox/devstack:latest
 # → http://localhost:3001
 ```
@@ -185,6 +191,7 @@ podman run -d --name localpibox --network host --userns keep-id \
     -e ED_PORT=8080 \
     -v /path/to/project:/home/dev/workspace/myproject:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     ghcr.io/localpibox/devstack:latest
 # → http://localhost:8080
 ```
@@ -212,6 +219,7 @@ podman stop localpibox && podman rm localpibox
 podman run -d --name localpibox --network host --userns keep-id \
     -v /path/to/project:/home/dev/workspace/myproject:Z \
     -v ~/.localpibox/state:/home/dev/.pi:Z \
+    -v ~/.localpibox/agent-browser:/home/dev/.agent-browser:Z \
     ghcr.io/localpibox/devstack:latest
 ```
 
