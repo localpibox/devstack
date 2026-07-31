@@ -142,7 +142,7 @@ load_extensions() {
     
     # Install extensions from known repos (idempotent)
     local extensions=(
-        "git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision"
+        "git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth"
         "git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider"
         "npm:pi-mcp-adapter"
         "npm:@tintinweb/pi-subagents"

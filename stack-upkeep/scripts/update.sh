@@ -80,7 +80,7 @@ update_extensions() {
     # Extensions that should be in the container
     # Format: name:repo@branch
     declare -A EXTENSIONS=(
-        ["lemonade-provider"]="git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision"
+        ["lemonade-provider"]="git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth"
         ["pi-hermes-memory"]="git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider"
         ["pi-mcp-adapter"]="npm:pi-mcp-adapter"
         ["pi-subagents"]="npm:@tintinweb/pi-subagents"
