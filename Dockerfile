@@ -222,38 +222,7 @@ RUN set -eux; \
     # ── Install extensions (now settings.json exists — each `pi install` extends it) ─
     echo "=== Installing extensions ==="; \
     # pi install clones to ~/.pi/agent/git/ and registers in settings.json
-    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/qwen-vision || echo "WARN: lemonade install failed"; \
-    LEMONADE_DIR="/home/dev/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"; \
-    if [ ! -d "$LEMONADE_DIR" ]; then \
-        echo "WARN: lemonade checkout not found"; \
-        find /home/dev/.pi -maxdepth 6 -iname 'lemonade-pi-plugin' -type d 2>/dev/null | head -5 || echo "  (not found)"; \
-    elif [ -f /opt/pi-patches/lemonade-qwen-vision.patch ] || [ -f /opt/pi-patches/lemonade-api-key-auth.patch ] || [ -f /opt/pi-patches/lemonade-thinking-format.patch ]; then \
-        echo "=== Applying lemonade patches ==="; \
-        cd "$LEMONADE_DIR"; \
-        if [ -f /opt/pi-patches/lemonade-qwen-vision.patch ]; then \
-            if git apply --check /opt/pi-patches/lemonade-qwen-vision.patch 2>/dev/null; then \
-                git apply /opt/pi-patches/lemonade-qwen-vision.patch; \
-                echo "  Applied lemonade-qwen-vision.patch"; \
-            else \
-                echo "  lemonade-qwen-vision patch already applied or not applicable"; \
-            fi; \
-        fi; \
-        if [ -f /opt/pi-patches/lemonade-api-key-auth.patch ]; then \
-            if git apply --check /opt/pi-patches/lemonade-api-key-auth.patch 2>/dev/null; then \
-                git apply /opt/pi-patches/lemonade-api-key-auth.patch; \
-                echo "  Applied lemonade-api-key-auth.patch"; \
-            else \
-                echo "  lemonade-api-key-auth patch already applied or not applicable"; \
-            fi; \
-        fi; \
-        if [ -f /opt/pi-patches/lemonade-thinking-format.patch ]; then \
-            if git apply --check /opt/pi-patches/lemonade-thinking-format.patch 2>/dev/null; then \
-                git apply /opt/pi-patches/lemonade-thinking-format.patch; \
-                echo "  Applied lemonade-thinking-format.patch"; \
-            else \
-                echo "  lemonade-thinking-format patch already applied or not applicable"; \
-            fi; \
-        fi; \
+    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth || echo "WARN: lemonade install failed"; \
     fi; \
     pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
     # Global npm packages: use NPM_CONFIG_PREFIX to set install dir regardless of HOME
