@@ -92,8 +92,7 @@ for ext_dir in "${EXT_BASE}"/*/*/node_modules/better-sqlite3; do
     fi
 done
 
-if [ ! -f "${EXT_BASE}"/*/node_modules/better-sqlite3/build/Release/better_sqlite3.node ] && \
-   [ ! -f "${EXT_BASE}"/*/node_modules/better-sqlite3/build/Release/better_sqlite3.node ]; then
+if [ ! -f "${EXT_BASE}"/*/node_modules/better-sqlite3/build/Release/better_sqlite3.node ] 2>/dev/null; then
     warn "No better-sqlite3 extensions found (expected for non-memory extensions)"
 fi
 echo ""

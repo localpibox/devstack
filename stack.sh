@@ -79,14 +79,14 @@ build_cmd() {
     local CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
     echo -e "${CYAN}Building with $CMD...${NC}"
     cd "$SCRIPT_DIR"
-    $CMD build -t ghcr.io/localpibox/devstack:latest .
+    $CMD build --build-arg "PI_PATCH_VERSION=${pi_patch_version:-20260730-004}" --build-arg "LEMONADE_PATCH_VERSION=${lemonade_patch_version:-20260730-004}" -t ghcr.io/localpibox/devstack:latest .
 }
 
 rebuild_cmd() {
     source_versions
     
-    local PI_PATCH_VER="${pi_patch_version:-20260730-001}"
-    local LEMONADE_PATCH_VER="${lemonade_patch_version:-20260730-001}"
+    local PI_PATCH_VER="${pi_patch_version:-20260730-004}"
+    local LEMONADE_PATCH_VER="${lemonade_patch_version:-20260730-004}"
     
     # Bump counters
     local PI_DATE="${PI_PATCH_VER%%-*}"
@@ -112,7 +112,7 @@ rebuild_cmd() {
     echo -e "${CYAN}Rebuilding with $CMD...${NC}"
     
     cd "$SCRIPT_DIR"
-    $CMD build -t ghcr.io/localpibox/devstack:latest .
+    $CMD build --build-arg "PI_PATCH_VERSION=${PI_NEW}" --build-arg "LEMONADE_PATCH_VERSION=${LEMONADE_NEW}" -t ghcr.io/localpibox/devstack:latest .
 }
 
 patch_cmd() {
@@ -122,8 +122,8 @@ patch_cmd() {
     echo -e "${CYAN}── Pi ─────────────────────────────────────────────────────${NC}"
     for p in "$STACK_DIR/patches"/pi-*.patch; do
         [ -f "$p" ] || continue
-        local name=$(basename "$p" .patch)
-        local lines=$(wc -l < "$p")
+        name=$(basename "$p" .patch)
+        lines=$(wc -l < "$p")
         echo "  $name ($lines lines)"
         echo ""
         head -3 "$p" | sed 's/^/    /'
@@ -133,8 +133,8 @@ patch_cmd() {
     echo -e "${CYAN}── Lemonade ───────────────────────────────────────────────${NC}"
     for p in "$STACK_DIR/patches"/lemonade-*.patch; do
         [ -f "$p" ] || continue
-        local name=$(basename "$p" .patch)
-        local lines=$(wc -l < "$p")
+        name=$(basename "$p" .patch)
+        lines=$(wc -l < "$p")
         echo "  $name ($lines lines)"
         echo ""
         head -3 "$p" | sed 's/^/    /'

@@ -225,24 +225,40 @@ load_config() {
 
 # ── Pull from GHCR ──────────────────────────────────────────────────────────
 
+detect_container_cmd() {
+    if command -v podman &>/dev/null; then
+        echo podman
+    elif command -v docker &>/dev/null; then
+        echo docker
+    else
+        echo ""
+    fi
+}
+
 pull_from_ghcr() {
     local IMAGE="ghcr.io/localpibox/devstack-updates"
-    
-    echo -e "${CYAN}Pulling tarballs from GHCR...${NC}"
-    
+    local CTR
+    CTR=$(detect_container_cmd)
+
+    if [ -z "$CTR" ]; then
+        echo -e "${RED}ERROR: Neither podman nor docker found.${NC}"
+        return 1
+    fi
+
+    echo -e "${CYAN}Pulling tarballs from GHCR using $CTR...${NC}"
+
     # Create tarballs directory if it doesn't exist
     mkdir -p "$TARBALLS_DIR"
-    
+
     for name in pi lemonade memory config; do
-        local tag=$(podman or docker)
         echo -n "  Pulling $name... "
-        if podman pull "$IMAGE:$name" 2>/dev/null || \
-           docker pull "$IMAGE:$name" 2>/dev/null; then
+        if $CTR pull "$IMAGE:$name" 2>/dev/null; then
             # Extract from image
-            local container=$(podman create "$IMAGE:$name" 2>/dev/null || docker create "$IMAGE:$name" 2>/dev/null)
-            podman cp "$container:/$(basename "$name").tar.gz" "$TARBALLS_DIR/$name.tar.gz" 2>/dev/null || \
-            docker cp "$container:/$(basename "$name").tar.gz" "$TARBALLS_DIR/$name.tar.gz" 2>/dev/null
-            podman rm "$container" 2>/dev/null || docker rm "$container" 2>/dev/null
+            local container
+            container=$($CTR create "$IMAGE:$name" 2>/dev/null)
+            $CTR cp "$container:/$(basename "$name").tar.gz" "$TARBALLS_DIR/$name.tar.gz" 2>/dev/null || \
+                print_warn "$name (extract failed)"
+            $CTR rm "$container" 2>/dev/null || true
             print_ok "$name"
         else
             print_warn "$name (not found on GHCR)"
@@ -278,4 +294,4 @@ echo ""
 echo -e "${GREEN}${BOLD}Update complete.${NC}"
 echo ""
 echo "You may need to restart the editor for changes to take effect:"
-echo "  $CONTAINER_CMD exec -it localpibox systemctl restart vscodium-server"
+echo "  docker exec -it localpibox systemctl restart vscodium-server"

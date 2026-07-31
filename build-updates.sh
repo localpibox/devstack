@@ -96,8 +96,9 @@ if [ "$push" = true ]; then
     echo "Pushing to GHCR..."
     # Configure GHCR push (requires gh auth)
     IMAGE="ghcr.io/localpibox/devstack-updates"
+    CONTAINER_CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
     for tarball in "$OUTPUT_DIR"/*.tar.gz; do
-        local name=$(basename "$tarball" .tar.gz)
+        name=$(basename "$tarball" .tar.gz)
         $CONTAINER_CMD tag "$tarball" "$IMAGE:$name" 2>/dev/null || true
         $CONTAINER_CMD push "$IMAGE:$name" 2>/dev/null || echo "  ⚠ Push failed for $name"
     done

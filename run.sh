@@ -104,6 +104,12 @@ fi
 
 # ── Build podman run command ────────────────────────────────────────────────
 
+# Userns flags only available with podman
+USERNS_FLAG=""
+if [[ "$CONTAINER_CMD" == *"podman"* ]]; then
+    USERNS_FLAG="--userns keep-id"
+fi
+
 echo -e "Starting LocalPibox devstack..."
 echo "  Project:  $PROJECT_DIR → /home/dev/workspace/$PROJECT_NAME/"
 echo "  State:    $DEFAULT_STATE_DIR → /home/dev/.pi/"
@@ -119,7 +125,7 @@ mkdir -p "$DEFAULT_STATE_DIR" "$DEFAULT_BROWSER_DIR"
 $CONTAINER_CMD run -d \
     --name "$CONTAINER_NAME" \
     --network host \
-    --userns keep-id \
+    $USERNS_FLAG \
     -e LPB_ED_PORT="$ED_PORT" \
     -e LPB_EDITOR_HOST=0.0.0.0 \
     -e LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace/$PROJECT_NAME" \
@@ -131,7 +137,7 @@ $CONTAINER_CMD run -d \
 # Wait for container to start and editor to be ready
 echo "Waiting for editor to be ready..."
 for i in $(seq 1 30); do
-    if curl -sf "http://localhost:$ED_PORT/health" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:$ED_PORT/?tkn=devsession" >/dev/null 2>&1; then
         echo ""
         echo "✓ Devstack ready at http://localhost:$ED_PORT?tkn=devsession"
         echo ""

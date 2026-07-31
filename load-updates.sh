@@ -19,7 +19,8 @@ echo "Loading updates from $TARBALLS_DIR..."
 for tarball in "$TARBALLS_DIR"/*.tar.gz; do
     [ -f "$tarball" ] || continue
     
-    local name=$(basename "$tarball" .tar.gz)
+    local name
+    name=$(basename "$tarball" .tar.gz)
     echo "Loading $name..."
     
     # Extract to appropriate location
@@ -41,8 +42,10 @@ for tarball in "$TARBALLS_DIR"/*.tar.gz; do
             echo "  Extracting config..."
             tar xzf "$tarball" -C /home/dev/.local/pi-config 2>/dev/null || true
             # Copy config files
-            cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/settings.json
-            cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/mcp.json
+            [ -f /home/dev/.local/pi-config/settings.json ] && \
+                cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/settings.json
+            [ -f /home/dev/.local/pi-config/mcp.json ] && \
+                cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/mcp.json
             ;;
     esac
     
