@@ -1,0 +1,51 @@
+From 85adc5f0904c9e9f70cb27eb7955e62dcc1b1811 Mon Sep 17 00:00:00 2001
+From: LocalPibox Build <build@localpibox.dev>
+Date: Fri, 31 Jul 2026 21:33:16 +0000
+Subject: [PATCH] fix: use qwen-chat-template thinking format for Lemonade
+ backend
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Lemonade (llama.cpp backend) does NOT respect top-level enable_thinking
+or reasoning_effort parameters for Qwen models. It only respects
+chat_template_kwargs.{enable_thinking, reasoning_effort}.
+
+Previously, Qwen models were registered with thinkingFormat: "qwen"
+which sent enable_thinking at the top level — silently ignored by
+Lemonade, causing runaway thinking blocks that consume the output
+budget.
+
+Changed to thinkingFormat: "qwen-chat-template" so Pi sends
+chat_template_kwargs.{enable_thinking, reasoning_effort} which
+Lemonade respects. This allows proper control of thinking blocks.
+---
+ extensions/index.ts | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/extensions/index.ts b/extensions/index.ts
+index 9148e6b..b228f25 100644
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -332,6 +332,9 @@ function mapToProviderModel(m: LemonadeModelInfo) {
+   const reasoning = isReasoningByRecipe(m.recipe) || isReasoningByHeuristic(m);
+   const qwenReasoning = isQwenReasoningModel(m);
+ 
++  // Lemonade backend does NOT respect top-level enable_thinking / reasoning_effort.
++  // It only respects chat_template_kwargs.{enable_thinking, reasoning_effort} for Qwen.
++  // Using "qwen-chat-template" thinking format ensures Pi sends the correct params.
+   return {
+     id: m.id,
+     name: m.name || m.id,
+@@ -340,7 +343,7 @@ function mapToProviderModel(m: LemonadeModelInfo) {
+     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+     contextWindow,
+     maxTokens,
+-    compat: qwenReasoning ? { thinkingFormat: "qwen" } : undefined,
++    compat: qwenReasoning ? { thinkingFormat: "qwen-chat-template" } : undefined,
+   };
+ }
+ 
+-- 
+2.53.0
+

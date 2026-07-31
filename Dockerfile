@@ -227,7 +227,7 @@ RUN set -eux; \
     if [ ! -d "$LEMONADE_DIR" ]; then \
         echo "WARN: lemonade checkout not found"; \
         find /home/dev/.pi -maxdepth 6 -iname 'lemonade-pi-plugin' -type d 2>/dev/null | head -5 || echo "  (not found)"; \
-    elif [ -f /opt/pi-patches/lemonade-qwen-vision.patch ] || [ -f /opt/pi-patches/lemonade-api-key-auth.patch ]; then \
+    elif [ -f /opt/pi-patches/lemonade-qwen-vision.patch ] || [ -f /opt/pi-patches/lemonade-api-key-auth.patch ] || [ -f /opt/pi-patches/lemonade-thinking-format.patch ]; then \
         echo "=== Applying lemonade patches ==="; \
         cd "$LEMONADE_DIR"; \
         if [ -f /opt/pi-patches/lemonade-qwen-vision.patch ]; then \
@@ -244,6 +244,14 @@ RUN set -eux; \
                 echo "  Applied lemonade-api-key-auth.patch"; \
             else \
                 echo "  lemonade-api-key-auth patch already applied or not applicable"; \
+            fi; \
+        fi; \
+        if [ -f /opt/pi-patches/lemonade-thinking-format.patch ]; then \
+            if git apply --check /opt/pi-patches/lemonade-thinking-format.patch 2>/dev/null; then \
+                git apply /opt/pi-patches/lemonade-thinking-format.patch; \
+                echo "  Applied lemonade-thinking-format.patch"; \
+            else \
+                echo "  lemonade-thinking-format patch already applied or not applicable"; \
             fi; \
         fi; \
     fi; \
