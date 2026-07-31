@@ -348,6 +348,10 @@ COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
 COPY build-updates.sh /usr/local/bin/build-updates.sh
 COPY load-updates.sh /usr/local/bin/load-updates.sh
+# Symlink to PATH for easy shell access
+RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
+    && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
+    && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack
 RUN chmod +x /opt/devstack/start.sh \
     /opt/devstack/install-browser.sh \
     /opt/devstack/validate.sh \
