@@ -1,0 +1,41 @@
+From 72979951a082f73afc971ca411efda406959e06c Mon Sep 17 00:00:00 2001
+From: LocalPibox Build <build@localpibox.dev>
+Date: Fri, 31 Jul 2026 21:04:29 +0000
+Subject: [PATCH] fix: use api_key auth type for Lemonade provider registration
+
+Lemonade uses API-key authentication but the extension passed
+oauth: oauthBlock to pi.registerProvider(), causing Pi to store
+type: "oauth" in auth.json. Pi's provider loader expects type:
+"api_key" for API-key-based providers, so it was skipping the
+Lemonade provider entirely.
+
+Fix: conditionally include oauth block only when no API key is
+present (real OAuth flows). For API-key auth, omit oauth so Pi
+stores type: "api_key" and the provider registers correctly.
+---
+ extensions/index.ts | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/extensions/index.ts b/extensions/index.ts
+index 425da86..9148e6b 100644
+--- a/extensions/index.ts
++++ b/extensions/index.ts
+@@ -369,10 +369,14 @@ async function registerLemonadeProvider(
+     baseUrl: baseUrl ? `${baseUrl}/v1` : "http://localhost:8000/v1",
+     api: "openai-completions",
+     models: providerModels,
+-    oauth: oauthBlock,
+   };
+   if (payload?.apiKey) {
+     config.headers = { Authorization: `Bearer ${payload.apiKey}` };
++  } else {
++    // Only include oauth block for real OAuth flows (no API key).
++    // Lemonade uses API-key auth, so omitting oauth causes Pi to
++    // store type: "api_key" in auth.json instead of "oauth".
++    config.oauth = oauthBlock;
+   }
+   pi.registerProvider(PROVIDER_ID, config);
+   return providerModels.length;
+-- 
+2.53.0
+
