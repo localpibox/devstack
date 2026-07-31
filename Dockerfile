@@ -341,12 +341,14 @@ RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
 # ── Runtime: Helper scripts ────────────────────────────────────────────────
 COPY support/start.sh /opt/devstack/start.sh
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
+COPY support/validate.sh /opt/devstack/validate.sh
 COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
 COPY build-updates.sh /usr/local/bin/build-updates.sh
 COPY load-updates.sh /usr/local/bin/load-updates.sh
 RUN chmod +x /opt/devstack/start.sh \
     /opt/devstack/install-browser.sh \
+    /opt/devstack/validate.sh \
     /usr/local/bin/run.sh /usr/local/bin/stack.sh \
     /usr/local/bin/build-updates.sh /usr/local/bin/load-updates.sh
 
