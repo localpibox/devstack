@@ -14,9 +14,10 @@
 #     ghcr.io/localpibox/devstack:latest
 #
 # Environment variables:
-#   ED_PORT                — Editor port (default: 3000)
-#   DEVCONTAINER_WORKSPACE_DIR — Workspace directory
-#   HOST                   — Bind host for VSCodium server (default: 0.0.0.0)
+#   LPB_ED_PORT              — Editor port (default: 3000)
+#   LPB_DEVCONTAINER_WORKSPACE_DIR — Workspace directory
+#   LPB_EDITOR_HOST          — Bind host for VSCodium server (default: 0.0.0.0)
+#   LPB_CONNECTION_TOKEN     — VSCodium connection token
 #
 # Inside the container, these commands are available:
 #   pi              — Start Pi CLI
@@ -27,17 +28,54 @@ set -euo pipefail
 
 # ── Configuration ───────────────────────────────────────────────────────────
 export PATH="/opt/vscodium/bin:/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-WORKSPACE_DIR="${DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
+
+# ── Load .env from workspace (LPB_ prefixed vars) ──────────────────────────
+# Sources .env file from the mounted workspace directory.
+# All variables use LPB_ prefix to avoid conflicts with user env vars.
+# If .env doesn't exist, uses defaults for all LPB_* vars.
+if [ -f "${HOME_DIR}/workspace/myproject/.env" ]; then
+    echo "[devstack] Loading environment from ${HOME_DIR}/workspace/myproject/.env"
+    set -a
+    source "${HOME_DIR}/workspace/myproject/.env"
+    set +a
+else
+    echo "[devstack] No .env found at ${HOME_DIR}/workspace/myproject/.env — using defaults"
+fi
+
+export LPB_LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
+export LPB_OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
+export LPB_PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR:-/opt/pi-support}"
+export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-devsession}"
+export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
+export LPB_ED_PORT="${LPB_ED_PORT:-3000}"
+
+# Backwards-compat aliases (used by scripts that may reference old names)
+export ED_PORT="${LPB_ED_PORT}"
+export HOST="${LPB_EDITOR_HOST}"
+export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
+export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
+export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
+export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
+
+WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 HOME_DIR=/home/dev
-LEMONADE_BASE_URL="${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
-PI_SUPPORT_DIR="${PI_SUPPORT_DIR:-/opt/pi-support}"
-ED_PORT="${ED_PORT:-3000}"
-HOST="${HOST:-0.0.0.0}"
+ED_PORT="${LPB_ED_PORT}"
+HOST="${LPB_EDITOR_HOST}"
+CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
+LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
+PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
+ED_PORT="${LPB_ED_PORT}"
+HOST="${LPB_EDITOR_HOST}"
+CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
+LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
+PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
+
 SLEEP_INTERVAL=2
 MAX_RETRIES=30
 
-# Auto-detect mounted project subfolder when DEVCONTAINER_WORKSPACE_DIR not set
-if [ -z "${DEVCONTAINER_WORKSPACE_DIR:-}" ]; then
+# Auto-detect mounted project subfolder when LPB_DEVCONTAINER_WORKSPACE_DIR not set
+if [ -z "${LPB_DEVCONTAINER_WORKSPACE_DIR:-}" ]; then
     subdir="$(find /home/dev/workspace -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
     if [ -n "$subdir" ]; then
         WORKSPACE_DIR="$subdir"

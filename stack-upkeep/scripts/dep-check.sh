@@ -11,7 +11,7 @@ REQUIRED_TOOLS=(bash git)
 
 # ── Optional tools ─────────────────────────────────────────────────────────
 OPTIONAL_WARNINGS=(
-    "podman-compose or docker-compose required for container builds"
+    "podman or docker required for container builds"
     "jq required for gh API calls (install jq)"
 )
 
@@ -33,9 +33,9 @@ for tool in "${REQUIRED_TOOLS[@]}"; do
     check_tool "$tool"
 done
 
-# Container compose (at least one required)
-if ! command -v podman-compose &>/dev/null && ! command -v docker-compose &>/dev/null; then
-    WARNINGS+=("podman-compose or docker-compose required for container builds")
+# Container runtime (podman or docker required)
+if ! command -v podman &>/dev/null && ! command -v docker &>/dev/null; then
+    WARNINGS+=("podman or docker required for container builds")
 fi
 
 # gh requires jq

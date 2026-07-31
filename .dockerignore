@@ -37,6 +37,6 @@ biome.base.json
 
 # Keep these:
 # Dockerfile
-# docker-compose.yml
+# docker-compose.yml (removed — use podman build instead)
 # support/
 # stack-upkeep/

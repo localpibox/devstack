@@ -12,7 +12,6 @@
 #
 # Container backend (auto-detected: podman > docker):
 #   Override: export CONTAINER_CMD=podman
-#             export CONTAINER_COMPOSE=podman-compose
 
 set -euo pipefail
 
@@ -53,7 +52,6 @@ usage() {
     echo "    podman preferred on Fedora/Ubuntu, docker on macOS/Windows"
     echo ""
     echo "  Override: export CONTAINER_CMD=podman"
-    echo "            export CONTAINER_COMPOSE=podman-compose"
     echo ""
     echo "  Examples:"
     echo "    $0 check              # See what's behind upstream"
@@ -70,19 +68,18 @@ source_versions() {
             value=$(echo "$value" | sed 's/^"//;s/"$//')
             export "$key"="$value"
         done < "$VERSIONS_FILE"
-        # Also sync .env-patches for container-compose build
+        # Also sync .env-patches for container build
         grep -v '^#' "$VERSIONS_FILE" | grep -v '^$' | grep '=' > "$ENV_PATCHES" 2>/dev/null || true
     fi
 }
 
 build_cmd() {
     source_versions
-    # Auto-detect container command
+    # Auto-detect container command (podman preferred)
     local CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
-    local COMPOSE="${CONTAINER_COMPOSE:-$(command -v podman-compose 2>/dev/null || command -v docker-compose 2>/dev/null || echo docker-compose)}"
-    echo -e "${CYAN}Building with $COMPOSE...${NC}"
+    echo -e "${CYAN}Building with $CMD...${NC}"
     cd "$SCRIPT_DIR"
-    $COMPOSE build
+    $CMD build -t ghcr.io/localpibox/devstack:latest .
 }
 
 rebuild_cmd() {
@@ -105,18 +102,17 @@ rebuild_cmd() {
     sed -i "s/^lemonade_patch_version=.*/lemonade_patch_version=$LEMONADE_NEW/" "$VERSIONS_FILE"
     grep -v '^#' "$VERSIONS_FILE" | grep -v '^$' | grep '=' > "$ENV_PATCHES" 2>/dev/null || true
     
-    # Auto-detect container command
+    # Auto-detect container command (podman preferred)
     local CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
-    local COMPOSE="${CONTAINER_COMPOSE:-$(command -v podman-compose 2>/dev/null || command -v docker-compose 2>/dev/null || echo docker-compose)}"
     
     echo -e "${CYAN}Versions bumped:${NC}"
     echo "  Pi:      $PI_PATCH_VER → $PI_NEW"
     echo "  Lemonade: $LEMONADE_PATCH_VER → $LEMONADE_NEW"
     echo ""
-    echo -e "${CYAN}Rebuilding with $COMPOSE...${NC}"
+    echo -e "${CYAN}Rebuilding with $CMD...${NC}"
     
     cd "$SCRIPT_DIR"
-    $COMPOSE build
+    $CMD build -t ghcr.io/localpibox/devstack:latest .
 }
 
 patch_cmd() {

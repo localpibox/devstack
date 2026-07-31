@@ -10,6 +10,8 @@
 # Mount structure:
 #   Host: $PROJECT → Container: /home/dev/workspace/<project-name>/
 #   Host: ~/.localpibox/ → Container: /home/dev/.localpibox/
+#
+# Environment: reads LPB_* vars from project's .env file
 
 set -euo pipefail
 
@@ -17,7 +19,8 @@ set -euo pipefail
 IMAGE_NAME="${IMAGE_NAME:-ghcr.io/localpibox/devstack:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-localpibox}"
 DEFAULT_PORT=3000
-DEFAULT_STATE_DIR="${HOME}/.localpibox/devstack-state"
+DEFAULT_STATE_DIR="${HOME}/.localpibox/state"
+DEFAULT_BROWSER_DIR="${HOME}/.localpibox/agent-browser"
 
 # ── Container backend ──────────────────────────────────────────────────────
 CONTAINER_CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo podman)}"
@@ -83,9 +86,14 @@ fi
 # Derive project name from directory basename
 PROJECT_NAME=$(basename "$PROJECT_DIR")
 
-# ── Setup state directory ───────────────────────────────────────────────────
-
-STATE_DIR="${1:-$DEFAULT_STATE_DIR}"
+# ── Load .env if present ────────────────────────────────────────────────────
+# Sources LPB_* vars from .env file in project directory.
+# These get passed as -e flags to the container.
+LOAD_ENV=""
+if [ -f "$PROJECT_DIR/.env" ]; then
+    echo "Loading .env from $PROJECT_DIR"
+    LOAD_ENV="$PROJECT_DIR/.env"
+fi
 
 # ── Pull if requested ──────────────────────────────────────────────────────
 
@@ -98,24 +106,26 @@ fi
 
 echo -e "Starting LocalPibox devstack..."
 echo "  Project:  $PROJECT_DIR → /home/dev/workspace/$PROJECT_NAME/"
-echo "  State:    $STATE_DIR → /home/dev/.pi/"
+echo "  State:    $DEFAULT_STATE_DIR → /home/dev/.pi/"
+echo "  Browser:  $DEFAULT_BROWSER_DIR → /home/dev/.agent-browser/"
 echo "  Editor:   http://localhost:$ED_PORT"
 echo "  Image:    $IMAGE_NAME"
 echo ""
 
-# Ensure state directory exists
-mkdir -p "$STATE_DIR"
+# Ensure state directories exist
+mkdir -p "$DEFAULT_STATE_DIR" "$DEFAULT_BROWSER_DIR"
 
 # Run the container
 $CONTAINER_CMD run -d \
     --name "$CONTAINER_NAME" \
     --network host \
     --userns keep-id \
-    -e ED_PORT="$ED_PORT" \
-    -e DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace/$PROJECT_NAME" \
+    -e LPB_ED_PORT="$ED_PORT" \
+    -e LPB_EDITOR_HOST=0.0.0.0 \
+    -e LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace/$PROJECT_NAME" \
     -v "$PROJECT_DIR:/home/dev/workspace/$PROJECT_NAME:Z" \
-    -v "$STATE_DIR:/home/dev/.pi:Z" \
-    -v "$HOME/.config/podman:/home/dev/.config/containers:Z" \
+    -v "$DEFAULT_STATE_DIR:/home/dev/.pi:Z" \
+    -v "$DEFAULT_BROWSER_DIR:/home/dev/.agent-browser:Z" \
     "$IMAGE_NAME" &
 
 # Wait for container to start and editor to be ready

@@ -66,10 +66,10 @@ stack-upkeep/
    pi_patch_version=20260730-002
    ```
 
-5. **Rebuild Docker:**
+5. **Rebuild container:**
    ```bash
    cd /home/dev/workspace
-   docker compose build
+   podman build -t ghcr.io/localpibox/devstack:latest .
    ```
 
 ### Adding a new patch

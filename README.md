@@ -228,7 +228,6 @@ podman run -d --name localpibox --network host --userns keep-id \
 ```
 devstack/
 ├── Dockerfile                 # Multi-stage build (builder → runtime)
-├── docker-compose.yml         # Compose config (for local builds)
 ├── run.sh                     # Local launcher script (optional)
 ├── stack.sh                   # Stack management (copied into image)
 ├── .github/workflows/         # CI/CD pipeline
@@ -236,8 +235,12 @@ devstack/
 │   ├── versions.env           # Version tracking
 │   ├── patches/               # Git patch files
 │   └── scripts/               # Maintenance scripts
-└── support/                   # Entrypoint script
-    └── start.sh               # Container entrypoint
+├── support/                   # Entrypoint scripts
+│   ├── start.sh               # Container entrypoint
+│   ├── install-browser.sh     # Browser setup script
+│   └── validate.sh            # Health validation
+├── .env.example               # Template — copy to .env for real values
+└── .env                       # Local env vars (gitignored)
 ```
 
 ## Related Repositories

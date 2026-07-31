@@ -15,17 +15,12 @@ fi
 
 # ── Container command ──────────────────────────────────────────────────────
 if [ -n "${CONTAINER_CMD:-}" ] && [ "$CONTAINER_CMD" != "" ]; then
-    case "$(basename "$CONTAINER_CMD")" in
-        podman|podman-*) CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-podman-compose}" ;;
-        *) CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-docker-compose}" ;;
-    esac
+    CONTAINER_CMD="${CONTAINER_CMD}"
 else
     if command -v podman &>/dev/null; then
         CONTAINER_CMD=podman
-        CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-podman-compose}"
     else
         CONTAINER_CMD=docker
-        CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-docker-compose}"
     fi
 fi
 
@@ -223,7 +218,7 @@ LEMONADE_PATCH_VER="${lemonade_patch_version:-not-set}"
 echo -e "  Pi patch version:    ${PI_PATCH_VER}"
 echo -e "  Lemonade patch ver:  ${LEMONADE_PATCH_VER}"
 echo ""
-echo -e "  ${CYAN}To invalidate cache: change version in versions.env, then $CONTAINER_COMPOSE build${NC}"
+echo -e "  ${CYAN}To invalidate cache: change version in versions.env, then $CONTAINER_CMD build${NC}"
 
 echo ""
 echo -e "${CYAN}=== End Report ===${NC}"

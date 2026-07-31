@@ -99,9 +99,12 @@ fi
 echo ""
 
 # ── 4. VSCodium server ──────────────────────────────────────────────────────
+# ED_PORT and CONNECTION_TOKEN are set by start.sh from LPB_* vars
+# (backwards-compat aliases)
 ED_PORT="${ED_PORT:-3000}"
+CONNECTION_TOKEN="${CONNECTION_TOKEN:-devsession}"
 echo -e "${CYAN}── VSCodium server ───────────────────────────────────────${NC}"
-if curl -sf "http://localhost:${ED_PORT}/health" >/dev/null 2>&1; then
+if curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN}" >/dev/null 2>&1; then
     pass "VSCodium server responsive on port $ED_PORT"
 else
     fail "VSCodium server not responsive on port $ED_PORT"

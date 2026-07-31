@@ -363,14 +363,18 @@ RUN chmod +x /opt/devstack/start.sh \
 RUN chown -R 1000:1000 /home/dev /opt/pi-patches \
     && chmod -R u+rwX /home/dev
 
+# Create browser state directories (persisted via -v ~/.localpibox/agent-browser)
+RUN mkdir -p /home/dev/.agent-browser/sessions \
+    && chown -R 1000:1000 /home/dev/.agent-browser
+
 USER dev
 WORKDIR /home/dev/workspace
 
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
-ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
-ENV PI_SUPPORT_DIR="/opt/pi-support"
+ENV LPB_LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
+ENV LPB_OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+ENV LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
+ENV LPB_PI_SUPPORT_DIR="/opt/pi-support"
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack" \
       org.opencontainers.image.description="AI-powered dev environment with Pi coding agent" \

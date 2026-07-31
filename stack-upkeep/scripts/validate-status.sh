@@ -17,17 +17,12 @@ fi
 
 # ── Container command ──────────────────────────────────────────────────────
 if [ -n "${CONTAINER_CMD:-}" ] && [ "$CONTAINER_CMD" != "" ]; then
-    case "$(basename "$CONTAINER_CMD")" in
-        podman|podman-*) CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-podman-compose}" ;;
-        *) CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-docker-compose}" ;;
-    esac
+    CONTAINER_CMD="${CONTAINER_CMD}"
 else
     if command -v podman &>/dev/null; then
         CONTAINER_CMD=podman
-        CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-podman-compose}"
     else
         CONTAINER_CMD=docker
-        CONTAINER_COMPOSE="${CONTAINER_COMPOSE:-docker-compose}"
     fi
 fi
 
@@ -158,13 +153,13 @@ fi
 print_header "CACHE PRESERVATION"
 
 echo "  Volume strategy:"
-echo "    pi-agent-state    — Persistent (survives image rebuilds) ${GREEN}✓${NC}"
-echo "    devstack-npm-cache — Persistent (survives image rebuilds) ${GREEN}✓${NC}"
-echo "    browser-states     — Persistent (survives image rebuilds) ${GREEN}✓${NC}"
+echo "    pi-agent-state      — Persistent via ~/.localpibox/state:${GREEN}✓${NC}"
+echo "    devstack-npm-cache   — Persistent via ~/.npm:${GREEN}✓${NC}"
+echo "    browser-state        — Persistent via ~/.localpibox/agent-browser:${GREEN}✓${NC}"
 echo ""
 echo "  Cache invalidation:"
 echo "    Change pi_patch_version or lemonade_patch_version in versions.env"
-echo "    then run: $CONTAINER_COMPOSE build"
+echo "    then run: $CONTAINER_CMD build"
 
 # ── Summary ─────────────────────────────────────────────────────────────────
 
@@ -176,7 +171,7 @@ if [ "$errors" -eq 0 ] && [ "$warnings" -eq 0 ]; then
     echo ""
     echo "  To rebuild with updated patches:"
     echo "    cd $ROOT_DIR"
-    echo "    $CONTAINER_COMPOSE build"
+    echo "    $CONTAINER_CMD build -t ghcr.io/localpibox/devstack:latest ."
 elif [ "$warnings" -gt 0 ]; then
     echo -e "  ${YELLOW}⚠ Stack has $warnings warning(s) — review above${NC}"
 else
