@@ -97,20 +97,30 @@ verify_installation() {
 
     local errors=0
 
-    # Check Chrome binary
-    local chrome_paths=(
-        "/home/dev/.agent-browser/browsers/chrome-*/chrome-linux64/chrome"
-        "/opt/google/chrome/chrome"
-    )
+    # Check Chrome binary — agent-browser stores it under ~/.cache/ms-playwright
     local chrome_found=false
-    for p in "${chrome_paths[@]}"; do
-        if ls "$p" &>/dev/null; then
-            info "  Chrome: $p"
-            "$p" --version 2>/dev/null || true
-            chrome_found=true
-            break
-        fi
-    done
+    local chrome_bin=""
+    
+    # Try agent-browser's browser cache first
+    chrome_bin=$(ls /home/dev/.cache/ms-playwright/*/chrome-linux64/chrome 2>/dev/null | head -1 || true)
+    if [ -z "$chrome_bin" ]; then
+        chrome_bin=$(ls /home/dev/.cache/ms-playwright/*/chromium-linux64/chrome 2>/dev/null | head -1 || true)
+    fi
+    # Fallback to manual install path
+    if [ -z "$chrome_bin" ]; then
+        chrome_bin=$(ls /home/dev/.agent-browser/browsers/chrome-*/chrome-linux64/chrome 2>/dev/null | head -1 || true)
+    fi
+    # Fallback to system Chrome
+    if [ -z "$chrome_bin" ] && [ -f /opt/google/chrome/chrome ]; then
+        chrome_bin="/opt/google/chrome/chrome"
+    fi
+    
+    if [ -n "$chrome_bin" ] && [ -f "$chrome_bin" ]; then
+        info "  Chrome: $chrome_bin"
+        $chrome_bin --version 2>/dev/null || true
+        chrome_found=true
+    fi
+    
     $chrome_found || { error "  Chrome binary not found"; errors=$((errors + 1)); }
 
     # Check agent-browser binary
