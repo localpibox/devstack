@@ -223,7 +223,6 @@ RUN set -eux; \
     echo "=== Installing extensions ==="; \
     # pi install clones to ~/.pi/agent/git/ and registers in settings.json
     pi install git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth || echo "WARN: lemonade install failed"; \
-    fi; \
     pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
     # Global npm packages: use NPM_CONFIG_PREFIX to set install dir regardless of HOME
     NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
