@@ -51,8 +51,8 @@ export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
 
 # ── Load .env from workspace (filtered to LPB_* vars) ───────────────────────
 WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-if [ -f "${WORKSPACE_DIR}/.env" ]; then
-    echo "[devstack] Loading environment from ${WORKSPACE_DIR}/.env"
+if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
+    echo "[devstack] Loading environment from ${WORKSPACE_DIR}/myproject/.env"
     while IFS='=' read -r key value; do
         # Skip comments, empty lines, and non-exportable entries
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -63,9 +63,9 @@ if [ -f "${WORKSPACE_DIR}/.env" ]; then
             LPB_*) export "$key"="$value" ;;
             *)     echo "[devstack]   skipped non-LPB variable: $key" ;;
         esac
-    done < "${WORKSPACE_DIR}/.env"
+    done < "${WORKSPACE_DIR}/myproject/.env"
 else
-    echo "[devstack] No .env found at ${WORKSPACE_DIR}/.env — using defaults"
+    echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env — using defaults"
 fi
 
 # ── Auto-detect mounted project subfolder when LPB_DEVCONTAINER_WORKSPACE_DIR not set ──
