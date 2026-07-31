@@ -144,7 +144,7 @@ echo "[devstack] Server PID: ${SERVER_PID}"
 
 echo "[devstack] Waiting for server to be ready..."
 for i in $(seq 1 ${MAX_RETRIES}); do
-    if curl -sf "http://localhost:${ED_PORT}/health" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}" >/dev/null 2>&1; then
         echo ""
         echo "╔═══════════════════════════════════════════════════════════╗"
         echo "║  LocalPibox Devstack                                      ║"
