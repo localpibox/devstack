@@ -110,13 +110,12 @@ for ext in "${EXT_BASE}"/*/*/; do
 done
 
 if [ "$NEED_REBUILD" = "true" ]; then
-    echo "[devstack] Need to recompile native modules for this architecture..."
-    sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential python3 libsqlite3-dev 2>&1 | tail -3
+    echo "[devstack] Recompile native modules (better-sqlite3) for this architecture..."
     for ext in "${EXT_BASE}"/*/*/; do
         [ -f "$ext/package.json" ] || continue
         if grep -q better-sqlite3 "$ext/package.json" 2>/dev/null; then
             echo "[devstack] Rebuilding native module: $(basename "$(dirname "$ext")")..."
-            (cd "$ext" && sudo npm rebuild better-sqlite3 --build-from-source 2>&1 | tail -2) || \
+            (cd "$ext" && npm rebuild better-sqlite3 2>&1 | tail -2) || \
             echo "[devstack] WARN: rebuild failed for $(basename "$(dirname "$ext")")"
         fi
     done

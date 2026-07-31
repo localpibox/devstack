@@ -9,7 +9,7 @@
 #   - Builder: NO runtime-only tools (ripgrep, fzf, jq, tmux, gh, unzip)
 #   - Builder: NO unused DB clients (postgresql-client, redis-tools)
 #   - Runtime: NO /opt/pi-src (pi packages installed globally in .npm-global)
-#   - Runtime: NO build-essential, python3, or build deps
+#   - Runtime: build-essential + python3 + libsqlite3-dev for native module rebuild
 #   - Runtime: user created BEFORE COPY files (correct UID 1000 ownership)
 #
 # Fixes applied vs. previous version:
@@ -287,6 +287,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # ── Runtime: Minimal apt — NO Chrome/X11 libs (installed on-demand) ────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential python3 libsqlite3-dev \
     curl ca-certificates gnupg sudo \
     git unzip gh \
     ripgrep fzf fd-find jq tmux \
@@ -313,7 +314,11 @@ RUN set -eux; \
       fi; \
     else \
       useradd -m -s /bin/bash -u 1000 dev; \
-    fi
+    fi; \
+    # NOPASSWD for dev: containers run as non-root, so scripts need sudo
+    # for apt-get (e.g. post-init native module rebuild). Without NOPASSWD,
+    # sudo prompts for a password → fails silently in container entrypoint.
+    echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
 # ── Runtime: Copy from builder ─────────────────────────────────────────────
 COPY --from=builder /opt/vscodium /opt/vscodium
