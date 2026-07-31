@@ -1,0 +1,79 @@
+From be2a0ef331edd5d4715ed815dacd831424e8ec29 Mon Sep 17 00:00:00 2001
+From: LocalPibox Build <build@localpibox.dev>
+Date: Fri, 31 Jul 2026 21:32:12 +0000
+Subject: [PATCH] fix(ai): add Case 4 to isContextOverflow for Qwen/Llama.cpp
+ reasoning overflow
+
+Models that auto-generate thinking/reasoning blocks (Qwen, some llama.cpp
+backends) can silently consume the output token budget, producing
+stopReason=length with non-zero output when input is near the context
+window.
+
+Previously, isContextOverflow() only detected:
+  - Case 1: Error-based overflow
+  - Case 2: Silent overflow (stopReason=stop, input>contextWindow)
+  - Case 3: MiMo-style (stopReason=length, output=0)
+
+Added Case 4: stopReason=length + output>0 + input>=90% contextWindow
+
+This fixes the issue where Pi treats the overflow as threshold-based
+compaction (willRetry=false), leaving the session in a dead state after
+compaction instead of retrying with a smaller context.
+
+Verified across Qwen3.6, Qwen3.5, Qwen2.5 on DashScope and llama.cpp
+(Lemonade, Ollama, vLLM). Also reproduced with GPT-5.6-sol on Pi 0.80.6.
+---
+ packages/ai/src/utils/overflow.ts | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/packages/ai/src/utils/overflow.ts b/packages/ai/src/utils/overflow.ts
+index 6554b0b0..f6f27541 100644
+--- a/packages/ai/src/utils/overflow.ts
++++ b/packages/ai/src/utils/overflow.ts
+@@ -31,6 +31,9 @@ import type { AssistantMessage } from "../types.ts";
+  * - Xiaomi MiMo: Truncates input to fill contextWindow exactly, then returns finish_reason "length"
+  *   with output=0 (no room left to generate). Detected via stopReason "length" + zero output +
+  *   input filling the context window.
++ * - Qwen/Llama.cpp (llama.cpp backend): Auto-generates reasoning/thinking blocks that consume
++ *   the output token budget, producing stopReason "length" with non-zero output but near-full
++ *   input context. Detected via stopReason "length" + output > 0 + input >= 90% of context.
+  * - DashScope/Qwen: "Range of input length should be [1, X]" (HTTP 400 invalid_parameter_error)
+  * - Ollama: Some deployments truncate silently, others return errors like "prompt too long; exceeded max context length by X tokens"
+  */
+@@ -110,6 +113,10 @@ const NON_OVERFLOW_PATTERNS = [
+  *   sometimes returns rate limit errors. Pass contextWindow param to detect silent overflow.
+  * - Xiaomi MiMo: Truncates input to fit contextWindow then returns stopReason "length" with
+  *   output=0. Pass contextWindow param to detect via the "filled context + zero output" signal.
++ * - Qwen/Llama.cpp (llama.cpp backend): Auto-generates reasoning/thinking blocks that consume
++ *   the output token budget, producing stopReason "length" with non-zero output. Detected via
++ *   stopReason "length" + output > 0 + input >= 90% of context. Pass contextWindow param to
++ *   detect this style of overflow.
+  * - Ollama: May truncate input silently for some setups, but may also return explicit
+  *   overflow errors that match the patterns above. Silent truncation still cannot be
+  *   detected here because we do not know the expected token count.
+@@ -157,6 +164,22 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
+ 		}
+ 	}
+ 
++	// Case 4: Qwen/Llama.cpp reasoning overflow — models auto-generate thinking/reasoning
++	// blocks that silently consume the output token budget. This produces stopReason "length"
++	// with non-zero output (all thinking tokens, no text/tool calls) when input is near the
++	// context window. Without this check, Pi treats it as threshold-based compaction (willRetry=
++	// false), which leaves the session in a dead state after compaction.
++	//
++	// Verified across Qwen3.6, Qwen3.5, and Qwen2.5 models on both DashScope and llama.cpp
++	// backends (Lemonade, Ollama, vLLM, etc.). Also reproduced with GPT-5.6-sol on Pi 0.80.6
++	// with --no-extensions.
++	if (contextWindow && message.stopReason === "length" && message.usage.output > 0) {
++		const inputTokens = message.usage.input + message.usage.cacheRead;
++		if (inputTokens >= contextWindow * 0.90) {
++			return true;
++		}
++	}
++
+ 	return false;
+ }
+ 
+-- 
+2.53.0
+
