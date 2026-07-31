@@ -149,7 +149,6 @@ for i in $(seq 1 ${MAX_RETRIES}); do
         local_conn="http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}"
         if [ "${HOST:-0.0.0.0}" = "0.0.0.0" ]; then
             # Get LAN IP for additional access info
-            local lan_ip
             lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
             if [ -n "$lan_ip" ]; then
                 local_conn="http://${lan_ip}:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession} (LAN)"
