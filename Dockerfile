@@ -376,6 +376,10 @@ ENV LPB_OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV LPB_PI_SUPPORT_DIR="/opt/pi-support"
 
+# Health check — matches start.sh readiness probe
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
+    CMD curl -sf "http://localhost:${LPB_ED_PORT:-3000}/?tkn=devsession" >/dev/null 2>&1 || exit 1
+
 LABEL org.opencontainers.image.title="LocalPibox Devstack" \
       org.opencontainers.image.description="AI-powered dev environment with Pi coding agent" \
       org.opencontainers.image.source="https://github.com/localpibox/devstack" \

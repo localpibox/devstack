@@ -172,7 +172,7 @@ sleep 1
     --accept-server-license-terms \
     --host "${HOST}" \
     --port "${ED_PORT}" \
-    --connection-token devsession \
+    --connection-token "${CONNECTION_TOKEN:-devsession}" \
     --default-folder "${WORKSPACE_DIR}" &
 
 SERVER_PID=$!
