@@ -314,11 +314,13 @@ RUN set -eux; \
       fi; \
     else \
       useradd -m -s /bin/bash -u 1000 dev; \
-    fi; \
-    # NOPASSWD for dev: containers run as non-root, so scripts need sudo
-    # for apt-get (e.g. post-init native module rebuild). Without NOPASSWD,
-    # sudo prompts for a password → fails silently in container entrypoint.
-    echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
+    fi
+
+# ── Runtime: NOPASSWD sudo ──────────────────────────────────────────────────
+# Containers run as non-root dev user (UID 1000). Scripts need sudo for apt-get
+# (e.g. post-init native module rebuild). Without NOPASSWD, sudo prompts for a
+# password and fails silently in the container entrypoint.
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
 # ── Runtime: Copy from builder ─────────────────────────────────────────────
 COPY --from=builder /opt/vscodium /opt/vscodium

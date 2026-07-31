@@ -145,12 +145,21 @@ echo "[devstack] Server PID: ${SERVER_PID}"
 echo "[devstack] Waiting for server to be ready..."
 for i in $(seq 1 ${MAX_RETRIES}); do
     if curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}" >/dev/null 2>&1; then
+        # Build the connection URL with the configured token
+        local_conn="http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}"
+        if [ "${HOST:-0.0.0.0}" = "0.0.0.0" ]; then
+            # Get LAN IP for additional access info
+            local lan_ip
+            lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+            if [ -n "$lan_ip" ]; then
+                local_conn="http://${lan_ip}:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession} (LAN)"
+            fi
+        fi
         echo ""
         echo "╔═══════════════════════════════════════════════════════════╗"
         echo "║  LocalPibox Devstack                                      ║"
         echo "║  ╔═══════════════════════════════════════════════════════╗║"
-        echo "║  ║  Editor:    http://localhost:${ED_PORT}                ║║"
-        echo "║  ║  Token:     devsession                                 ║║"
+        echo "║  ║  Editor:    ${local_conn}                      ║║"
         echo "║  ║  Workspace: ${WORKSPACE_DIR}                  ║║"
         echo "║  ╚═══════════════════════════════════════════════════════╝║"
         echo "╚═══════════════════════════════════════════════════════════╝"
