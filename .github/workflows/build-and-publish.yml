@@ -123,7 +123,7 @@ jobs:
         run: |
           mkdir -p updates
           cd updates
-          git clone --depth=1 --branch main https://github.com/earendil-works/pi pi
+          git clone --depth=1 --branch main https://github.com/localpibox/pi pi
           cd pi
           git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true
           git fetch localpibox 2>/dev/null || true
@@ -135,7 +135,7 @@ jobs:
             --owner=1000 --group=1000 \
             $(git ls-files)
           cd ..
-          git clone --depth=1 --branch patches/qwen-vision https://github.com/localpibox/lemonade-pi-plugin lemonade
+          git clone --depth=1 --branch patches/api-key-auth https://github.com/localpibox/lemonade-pi-plugin lemonade
           tar czf lemonade-$(git -C lemonade rev-parse --short HEAD).tar.gz \
             --owner=1000 --group=1000 \
             -C lemonade $(cd lemonade && git ls-files)
