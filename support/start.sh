@@ -76,6 +76,17 @@ if [ "$FIRST_RUN" = "true" ]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}' 2>/dev/null || true
 
+    # Copy config from repo (volume may have overwritten build-time copies)
+    if [ -d /home/dev/.local/pi-config ]; then
+        echo "[devstack] Syncing config from /home/dev/.local/pi-config/..."
+        [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ 2>/dev/null
+        [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/mcp.json 2>/dev/null && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json
+        [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ 2>/dev/null
+        [ -d /home/dev/.local/pi-config/skills ] && cp -r /home/dev/.local/pi-config/skills/* /home/dev/.pi/agent/skills/ 2>/dev/null || true
+        [ -d /home/dev/.local/pi-config/agents ] && cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true
+        echo "[devstack] Config synced."
+    fi
+
     # Create initialization marker
     touch "${HOME_DIR}/.pi/.initialized"
     echo "[devstack] First run bootstrap complete."
