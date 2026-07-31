@@ -27,7 +27,11 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 # ── Detect if running inside container ──────────────────────────────────────
 IS_CONTAINER=false
-if [ -f /.dockerenv ] || grep -qs docker /proc/1/cgroup 2>/dev/null; then
+if [ -f /.dockerenv ] || \
+   grep -qs docker /proc/1/cgroup 2>/dev/null || \
+   grep -qs podman /proc/1/cgroup 2>/dev/null || \
+   [ -f /run/.containerenv ] || \
+   command -v systemd-detect-virt &>/dev/null && systemd-detect-virt -qc 2>/dev/null; then
     IS_CONTAINER=true
 fi
 
