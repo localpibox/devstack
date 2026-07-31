@@ -347,7 +347,7 @@ COPY support/validate.sh /opt/devstack/validate.sh
 COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
 COPY build-updates.sh /usr/local/bin/build-updates.sh
-COPY load-updates.sh /usr/local/bin/load-updates.sh
+COPY host-load-updates.sh /usr/local/bin/load-updates.sh
 # Symlink to PATH for easy shell access
 RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
     && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \

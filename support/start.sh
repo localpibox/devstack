@@ -49,13 +49,21 @@ export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
 export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
 
-# ── Load .env from workspace (LPB_ prefixed vars) ──────────────────────────
+# ── Load .env from workspace (filtered to LPB_* vars) ───────────────────────
 WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 if [ -f "${WORKSPACE_DIR}/.env" ]; then
     echo "[devstack] Loading environment from ${WORKSPACE_DIR}/.env"
-    set -a
-    source "${WORKSPACE_DIR}/.env"
-    set +a
+    while IFS='=' read -r key value; do
+        # Skip comments, empty lines, and non-exportable entries
+        [[ "$key" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "$key" ]] && continue
+        key=$(echo "$key" | xargs)
+        # Only allow LPB_* prefixed variables
+        case "$key" in
+            LPB_*) export "$key"="$value" ;;
+            *)     echo "[devstack]   skipped non-LPB variable: $key" ;;
+        esac
+    done < "${WORKSPACE_DIR}/.env"
 else
     echo "[devstack] No .env found at ${WORKSPACE_DIR}/.env — using defaults"
 fi
@@ -70,6 +78,24 @@ fi
 
 SLEEP_INTERVAL=2
 MAX_RETRIES=30
+
+# ── Validate workspace directory ────────────────────────────────────────────
+
+if [ ! -d "${WORKSPACE_DIR}" ]; then
+    echo "[devstack] WARNING: Workspace path does not exist: ${WORKSPACE_DIR}"
+    echo "[devstack]   Mount: /home/dev/workspace → ${WORKSPACE_DIR}"
+    echo "[devstack]   VSCodium will open an empty directory."
+    echo "[devstack]   Expected: run.sh /path/to/project"
+    echo ""
+elif [ -z "$(ls -A "${WORKSPACE_DIR}" 2>/dev/null)" ]; then
+    echo "[devstack] WARNING: Workspace directory is empty: ${WORKSPACE_DIR}"
+    echo "[devstack]   VSCodium will open an empty directory."
+    echo "[devstack]   Expected: a mounted project folder."
+    echo ""
+else
+    file_count=$(find "${WORKSPACE_DIR}" -maxdepth 1 -type f | wc -l)
+    echo "[devstack] Workspace: ${WORKSPACE_DIR} (${file_count} files)"
+fi
 
 # ── First-run bootstrap ────────────────────────────────────────────────────
 

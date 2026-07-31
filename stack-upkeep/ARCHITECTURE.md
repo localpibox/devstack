@@ -1,125 +1,85 @@
-# Single Image Architecture — Analysis & Plan
+# Single Image Architecture — Status & Notes
 
-## Current State
+## Current State (Resolved)
 
-The system uses Docker Compose with:
-- **Named volumes** for `.pi` (agent state), `.npm` (cache), browser states
-- **Bind mount** for workspace (`$WORKSPACE_DIR:/home/dev/workspace`)
-- **`network_mode: host`** for direct host service access (Lemonade)
-- **User namespace** (`userns_mode: keep-id`) for rootless Podman
-- **First-run init** in `start.sh` (extensions, auth config, directories)
-
-## Proposed: Single Reusable Image
-
-A single image that users pull and run with a project folder mount:
+The system uses a **single image** pulled with `run.sh` or direct podman/docker:
 
 ```bash
-podman run --rm -it \
-  --network host \
-  -v $HOME/projects/myproject:/home/dev/workspace:Z \
-  -v $HOME/.localpibox/pi-state:/home/dev/.pi \
+run.sh /path/to/project
+podman run -it --network host --userns keep-id \
+  -v /path/to/project:/home/dev/workspace/<project>:Z \
   ghcr.io/localpibox/devstack:latest
 ```
 
-## Key Issues & Risks
+- **Bind mount** for workspace (`$PROJECT:/home/dev/workspace/<project>:Z`)
+- **`network_mode: host`** for direct host service access (Lemonade)
+- **User namespace** (`--userns keep-id` for podman, no-op for docker)
+- **First-run init** in `start.sh` (extensions, directories, auto-detect)
+- **Runtime extension updates** via `stack.sh update` or `./host-load-updates.sh`
+- **Multi-stage Dockerfile** with build-time extension install
+- **Published** to GitHub Container Registry (`ghcr.io/localpibox/devstack:latest`)
 
-### 1. UID/GID Mismatch ⚠️ (Medium Risk)
-**Problem**: Image creates `dev` user with UID 1000. If host user has a different UID, bind-mounted files are owned by the wrong user.
-**Impact**: Permission errors on workspace files after container stops.
-**Fix**: Accept UID as runtime arg, or set workspace ownership on first run.
+## Known & Resolved Items
 
-### 2. Persistent State Location ⚠️ (Medium Risk)
-**Problem**: Current named volumes (`pi-agent-state`, etc.) don't work with bare `podman run` without compose.
-**Impact**: Need to decide between:
-- Named volumes (managed by podman, opaque)
-- Bind mounts (user-controlled, easy to backup/clone)
-**Recommendation**: Use bind mounts for state directories — user controls backup.
+| Item | Status | Notes |
+|------|--------|-------|
+| UID/GID Mismatch | **Resolved** | `--userns keep-id` (podman) / `--user=1000` (docker) |
+| Persistent State | **Resolved** | Bind mount `$HOME/.localpibox/state:/home/dev/.pi:Z` |
+| Docker Compose removed | **Resolved** | Single image + `run.sh` is the canonical path |
+| Extension updates | **Resolved** | `stack.sh update` / `./host-load-updates.sh` handles runtime updates |
+| Image size | **Partial** | Multi-stage build implemented; Chrome deferred to runtime |
+| First-run slowness | **Partial** | `start.sh` has fast bootstrap; extensions installed at build time |
+| VSCodium port | **Resolved** | `LPB_ED_PORT` env var accepted (defaults: 3000) |
+| Config repo sync | **Resolved** | `github.com/localpibox/config` cloned at build time, synced at first run |
 
-### 3. Extension Updates 🔴 (High Risk)
-**Problem**: Extensions are installed at **build time**. Updating an extension requires rebuilding the image.
-**Impact**: Extensions become stale quickly; every extension update means a new image build.
-**Fix**: Install extensions at **runtime** from a config file, or add an `/update-extensions` command.
-
-### 4. Image Size 🔴 (High Risk)
-**Problem**: Current image is large (~2GB+) due to VSCodium, Chrome, Node, Pi, build deps.
-**Impact**: Pull takes time; storage adds up with multiple tags.
-**Fix**: Use multi-stage build to strip build deps from final image.
-
-### 5. First-Run Slowness 🔴 (High Risk)
-**Problem**: `start.sh` has idempotent install with retries (4 attempts, 10s delays). On a fresh volume this takes ~60s.
-**Impact**: Every new user feels a long startup.
-**Fix**: Pre-install common extensions in image, only do runtime config.
-
-### 6. Host Service Discovery ⚠️ (Low Risk)
-**Problem**: `network_mode: host` requires Lemonade on host. No discovery fallback.
-**Impact**: Fails silently if Lemonade isn't running.
-**Fix**: Already handled by `start.sh` (waits 60s with health check).
-
-### 7. VSCodium Port Conflict ⚠️ (Low Risk)
-**Problem**: Editor always uses port 3000. Can't run two instances on same host.
-**Impact**: Limits parallel usage.
-**Fix**: Accept `ED_PORT` env var (already exists in compose).
-
-### 8. Auth Persistence ⚠️ (Low Risk)
-**Problem**: `auth.json` is written at every container start. Stale tokens may not refresh.
-**Impact**: Auth failures after token expiry.
-**Fix**: Add token refresh logic, or accept that users need to `/login` periodically.
-
-## Recommended Architecture
+## Current Architecture
 
 ```
 Host:
   ~/.localpibox/
-    pi-state/          ← bind-mounted to /home/dev/.pi (persistent agent state)
-    extensions/        ← bind-mounted optional extensions (runtime install)
-    config.json        ← per-user overrides (merged with image defaults)
+    state/           ← bind-mounted to /home/dev/.pi (agent state, skills, agents)
+    agent-browser/   ← bind-mounted to /home/dev/.agent-browser (browser sessions)
 
 Image (localpibox/devstack:latest):
   ── baked in ──────
   Ubuntu 26.04 + Node 24
   Pi monorepo (built, with patches)
   Lemonade plugin + memory extension
-  VSCodium server (headless)
-  Chrome (for agent-browser)
-  agent-browser + exa-mcp + extensions
-  All config (settings, mcp, skills, agents)
-  Support tools
-  
-  ── runtime ───────
-  /home/dev/workspace    ← bind mount (project folder)
-  /home/dev/.pi          ← bind mount or named volume (state)
-  LEMONADE_BASE_URL      ← env var or auto-discovery
-  ED_PORT                ← env var for editor port
+  VSCodium server (headless, no Chrome)
+  agent-browser + exa-mcp + global npm packages
+  All config (settings.json, mcp.json, skills, agents)
+  Support tools (install-browser, validate, load-updates)
 
-Run:
-  podman run -it --network host \
-    -v $HOME/projects/myproject:/home/dev/workspace:Z \
-    -v $HOME/.localpibox/pi-state:/home/dev/.pi \
-    -e ED_PORT=3000 \
-    ghcr.io/localpibox/devstack:latest
+  ── runtime ───────
+  /home/dev/workspace   ← bind mount (project folder)
+  /home/dev/.pi         ← bind mount (state)
+  CHROME_PATH           ← set automatically by install-browser
+  LPB_ED_PORT           ← env var for editor port
+  LPB_DEVCONTAINER_WORKSPACE_DIR ← workspace path
 ```
 
-## Migration Path
+## Run (via run.sh)
 
-1. **Keep Docker Compose** for now — it works and the compose file can become the
-   "recommended run recipe" while the image matures.
+```bash
+./run.sh /path/to/project          # Run with defaults
+./run.sh /path/to/project --port 8080  # Custom editor port
+./run.sh /path/to/project --pull    # Pull latest image first
+```
 
-2. **Create a `run.sh` wrapper** that generates the `podman run` command:
-   ```bash
-   ./run.sh /path/to/project          # Run with defaults
-   ./run.sh /path/to/project --port 8080  # Custom editor port
-   ./run.sh /path/to/project --pull    # Pull latest image first
-   ```
+Mount structure:
+- Host: `$PROJECT → /home/dev/workspace/<project>/`
+- Host: `~/.localpibox/state → /home/dev/.pi` (persistent agent state)
+- Host: `~/.localpibox/agent-browser → /home/dev/.agent-browser` (browser sessions)
 
-3. **Move extension install to runtime** (or add `/stack.sh update` command).
+## Remaining Risks
 
-4. **Add multi-stage Dockerfile** to reduce final image size.
+### 1. Browser availability ⚠️ (Low risk)
+Chrome is installed on-demand via `install-browser`. If a user tries browser
+automation without running it first, they'll get a cryptic Playwright error.
 
-5. **Publish image** to GitHub Container Registry (`ghcr.io`).
+### 2. No ARM support (planned)
+Current CI builds only `linux/amd64`. QEMU setup exists but ARM not targeted.
 
-## Immediate Actions
-
-1. Create `run.sh` script for single-image usage
-2. Add `/stack.sh update` for runtime extension updates
-3. Convert compose file to `run.sh` example
-4. Start planning multi-stage Dockerfile (deferred — image size is nice-to-have)
+### 3. Version defaults duplicated (planned)
+Patch version numbers live in 4 places: Dockerfile ARGs, versions.env, stack.sh
+fallbacks, .env-patches. A central defaults file would reduce maintenance burden.

@@ -68,7 +68,11 @@ git fetch localpibox 2>/dev/null
 # Apply patches
 for patch in stack-upkeep/patches/pi-*.patch; do
     [ -f "$patch" ] || continue
-    git am "$patch" 2>/dev/null || true
+    echo "  Applying patch: $(basename "$patch")"
+    if ! git am "$patch"; then
+        echo "ERROR: patch $(basename "$patch") failed to apply"
+        exit 1
+    fi
 done
 build_tarball "pi" "$PI_DIR" "Pi monorepo"
 

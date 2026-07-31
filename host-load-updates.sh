@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# load-updates.sh — Load update tarballs into running container
+# host-load-updates.sh — Load update tarballs into running container
 #
 # Usage:
-#   ./load-updates.sh /path/to/tarballs/    # Load all tarballs
-#   ./load-updates.sh /path/to/tarballs/ --push  # Load and verify
+#   ./host-load-updates.sh /path/to/tarballs/    # Load all tarballs
+#   ./host-load-updates.sh /path/to/tarballs/ --push  # Load and verify
 
 set -euo pipefail
 
