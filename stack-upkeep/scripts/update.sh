@@ -95,20 +95,34 @@ update_extensions() {
         return 0
     fi
     
-    # Install each extension (idempotent)
+    # Use Pi's native update command — checks all configured packages and
+    # installs/updates only those that differ from the latest release.
+    # The old `pi list | grep → skip` pattern only checks existence, never triggers updates.
+    echo -n "  Running pi update --extensions... "
+    if pi update --extensions 2>&1; then
+        echo -e "${GREEN}✓${NC} extensions updated"
+    else
+        print_warn "pi update --extensions reported errors (some extensions may need manual attention)"
+    fi
+
+    # Verify all expected extensions are present
+    local all_present=true
     for name in "${!EXTENSIONS[@]}"; do
         local pkg="${EXTENSIONS[$name]}"
-        echo -n "  Checking $name... "
-        
-        # Check if extension is already installed and up to date
-        if pi list --json 2>/dev/null | grep -q "\"${name}\"" 2>/dev/null || \
-           pi list --json 2>/dev/null | grep -q "$(basename "$pkg" | cut -d@ -f1)" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC} already installed"
+        local pkg_name
+        pkg_name=$(echo "$pkg" | sed 's|.*:||' | sed 's|@.*||')
+        echo -n "  Verifying $name... "
+        if pi list --json 2>/dev/null | grep -q "$pkg_name" 2>/dev/null; then
+            echo -e "${GREEN}✓${NC} installed"
         else
-            pi install "$pkg" 2>&1 | tail -1 | sed 's/^/    /'
-            echo -e "  ${GREEN}✓${NC} installed"
+            echo -e "${RED}✗${NC} missing"
+            all_present=false
         fi
     done
+
+    if [ "$all_present" = false ]; then
+        print_warn "Some extensions are missing — run 'pi install <source>' to install them"
+    fi
 }
 
 # ── Update Patches ──────────────────────────────────────────────────────────

@@ -146,8 +146,9 @@ if [ "$FIRST_RUN" = "true" ]; then
 fi
 
 # ── Ensure extensions are installed (via pi) ───────────────────────────────
-# Uses the container's update.sh which checks via `pi list --json` and
-# installs missing extensions via `pi install`. Runs on every boot.
+# Uses the container's update.sh which runs `pi update --extensions`.
+# This checks all configured packages and installs/updates only those
+# that differ from the latest release. Runs on every boot for fresh versions.
 echo "[devstack] Ensuring extensions are installed..."
 if [ -f /opt/pi-patches/update.sh ]; then
     /opt/pi-patches/update.sh --extensions 2>&1 || echo "[devstack] WARN: extension install had warnings"

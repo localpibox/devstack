@@ -211,15 +211,11 @@ RUN set -eux; \
         cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true; \
     fi; \
     \
-    # ── Install extensions (now settings.json exists — each `pi install` extends it) ─
-    echo "=== Installing extensions ==="; \
-    # pi install clones to ~/.pi/agent/git/ and registers in settings.json
-    pi install git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth || echo "WARN: lemonade install failed"; \
-    pi install git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider || echo "WARN: memory install failed"; \
-    # Global npm packages: use NPM_CONFIG_PREFIX to set install dir regardless of HOME
-    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g pi-mcp-adapter || echo "WARN: pi-mcp-adapter install failed"; \
-    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g @tintinweb/pi-subagents || echo "WARN: pi-subagents install failed"; \
-    NPM_CONFIG_PREFIX=/home/dev/.npm-global npm install -g pi-powerline-footer || echo "WARN: pi-powerline-footer install failed"; \
+    # Extensions are NOT installed at build time — they are installed at runtime
+    # by start.sh → update.sh --extensions → `pi update --extensions`.
+    # This saves ~250MB in the image (no nested global deps per extension)
+    # and ensures fresh versions on every container boot.
+    echo "=== Extensions deferred to runtime (start.sh handles install + update) ==="; \
     \
     # ── Install VSCode extension ─────────────────────────────────────────
     echo "=== Installing VSCode extension ==="; \

@@ -140,7 +140,17 @@ load_extensions() {
         return 0
     fi
     
-    # Install extensions from known repos (idempotent)
+    # Use Pi's native update command — checks all configured packages and
+    # installs/updates only those that differ from the latest release.
+    # The old `pi list | grep → skip` pattern only checks existence, never triggers updates.
+    echo -n "  Running pi update --extensions... "
+    if pi update --extensions 2>&1; then
+        print_ok "extensions updated"
+    else
+        print_warn "pi update --extensions reported errors (some extensions may need manual attention)"
+    fi
+
+    # Verify all expected extensions are present
     local extensions=(
         "git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth"
         "git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider"
@@ -148,15 +158,13 @@ load_extensions() {
         "npm:@tintinweb/pi-subagents"
         "npm:pi-powerline-footer"
     )
-    
     for ext in "${extensions[@]}"; do
         local name=$(echo "$ext" | sed 's|.*:||' | sed 's|@.*||')
-        echo -n "  Checking $name... "
+        echo -n "  Verifying $name... "
         if pi list --json 2>/dev/null | grep -q "$name" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC} already installed"
-        else
-            pi install "$ext" 2>&1 | tail -1 | sed 's/^/    /'
             print_ok "installed"
+        else
+            print_warn "missing — run: pi install ${ext}"
         fi
     done
 }
