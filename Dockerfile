@@ -13,9 +13,9 @@
 #   - Everything builds in a single pass
 #
 # Previous fixes (still applied):
-#   1. /opt/pi-patches COPYed so `git am` finds patches during build
+#   1. /opt/pi-patches COPYed for runtime reference by update.sh
 #   2. `HOME="/home/dev"` set before `pi install` — extensions go to dev
-#   3. Patches are the single patch mechanism (no half-wired second path)
+#   3. Patches baked into fork branches — no git am needed at build time
 #   4. models.json included in config-copy step
 #   5. Build-time smoke test (`pi --version`) fails loudly on breakage
 # ==========================================================================
@@ -23,11 +23,16 @@
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
 ARG NODE_VERSION=24
 ARG VSCODIUM_VERSION=1.126.04524
+# Pi fork + branch (from stack-upkeep/versions.env)
+ARG PI_FORK=https://github.com/localpibox/pi.git
+ARG PI_BRANCH=patches/qwen-reasoning-effort
 
 FROM ubuntu:26.04
 
 ARG NODE_VERSION
 ARG VSCODIUM_VERSION
+ARG PI_FORK
+ARG PI_BRANCH
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -94,11 +99,10 @@ RUN curl -fsSL \
     && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
     && rm /tmp/vscodium.tar.gz
 
-# ── Patch files (available for `pi` build and runtime update scripts) ────────
+# ── Patch files (available for runtime `update.sh --patches` reference) ─────
 COPY stack-upkeep/patches/ /opt/pi-patches/
-COPY stack-upkeep/scripts/apply-patches.sh /opt/pi-patches/apply-patches.sh
 COPY stack-upkeep/scripts/update.sh /opt/pi-patches/update.sh
-RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
+RUN chmod +x /opt/pi-patches/update.sh \
     && ln -sf /opt/pi-patches/update.sh /usr/local/bin/stack-update \
     && mkdir -p /opt/pi-internal \
     && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
@@ -108,27 +112,26 @@ USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
-    git clone --depth=1 --single-branch --branch main https://github.com/earendil-works/pi .; \
+    git clone --depth=1 --single-branch --branch ${PI_BRANCH} ${PI_FORK} .; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
     npm ci --ignore-scripts; \
     \
-    # Apply patches — fails loudly if any patch is present but doesn't apply
-    if ls /opt/pi-patches/pi-*.patch 1>/dev/null 2>&1; then \
-        echo "=== Applying pi patches ==="; \
-        for patch in /opt/pi-patches/pi-*.patch; do \
-            echo "  Applying: $(basename "$patch")"; \
-            git am "$patch"; \
-        done; \
-    else \
-        echo "No pi-*.patch files found — building unpatched upstream pi"; \
-    fi; \
+    # Patches are baked into fork branches (e.g. patches/qwen-reasoning-effort)
+    # — no git am needed at build time. Patch files remain in /opt/pi-patches
+    # for runtime reference by update.sh --patches.
+    echo "=== Building from pre-patched fork branch ==="; \
     \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
+    # Pack all locally-built Pi packages (with patches baked in) \
     for pkg in ai agent coding-agent tui; do \
       npm pack "./packages/$pkg" --pack-destination /tmp/pi-packs; \
     done; \
+    # Pack client if present (upstream main has it; fork branches may not) \
+    if [ -d "./packages/client" ]; then \
+      npm pack "./packages/client" --pack-destination /tmp/pi-packs; \
+    fi; \
     npm install -g /tmp/pi-packs/*.tgz; \
     \
     # Smoke test — fail the build immediately if pi isn't functional

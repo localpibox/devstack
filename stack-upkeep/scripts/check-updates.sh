@@ -208,17 +208,16 @@ echo -e "  Status:         ${GREEN}✓ Active branch${NC}"
 
 echo ""
 
-# ── Container Build Cache ──────────────────────────────────────────────────
+# ── Build Configuration ─────────────────────────────────────────────────────
 
-echo -e "${CYAN}── Container Build Cache ─────────────────────────────────${NC}"
+echo -e "${CYAN}── Build Configuration ────────────────────────────────────${NC}"
 
-PI_PATCH_VER="${pi_patch_version:-not-set}"
-LEMONADE_PATCH_VER="${lemonade_patch_version:-not-set}"
-
-echo -e "  Pi patch version:    ${PI_PATCH_VER}"
-echo -e "  Lemonade patch ver:  ${LEMONADE_PATCH_VER}"
+echo -e "  Pi fork:    ${GREEN}${pi_fork:-github.com/localpibox/pi.git}${NC}"
+echo -e "  Pi branch:  ${GREEN}${pi_branch:-patches/qwen-reasoning-effort}${NC}"
+echo -e "  Node:       ${node_version:-24}"
+echo -e "  VSCodium:   ${vscodium_version:-latest}"
 echo ""
-echo -e "  ${CYAN}To invalidate cache: change version in versions.env, then $CONTAINER_CMD build${NC}"
+echo -e "  ${CYAN}To invalidate cache: change pi_branch or pi_fork in versions.env${NC}"
 
 echo ""
 echo -e "${CYAN}=== End Report ===${NC}"

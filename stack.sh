@@ -43,7 +43,7 @@ usage() {
     echo "    check        Check upstream repos for new updates"
     echo "    status       Full stack health check"
     echo "    build        Rebuild container with current versions"
-    echo "    rebuild      Bump version + rebuild"
+    echo "    rebuild      Rebuild container"
     echo "    patch        Show active patches"
     echo "    update       Update extensions in running container"
     echo "    help         Show this help"
@@ -55,7 +55,7 @@ usage() {
     echo ""
     echo "  Examples:"
     echo "    $0 check              # See what's behind upstream"
-    echo "    $0 rebuild            # New upstream release? bump + rebuild"
+    echo "    $0 rebuild            # Rebuild container"
     echo "    $0 status             # Validate everything is ready"
     echo "    $0 update             # Update extensions in container"
 }
@@ -79,40 +79,16 @@ build_cmd() {
     local CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
     echo -e "${CYAN}Building with $CMD...${NC}"
     cd "$SCRIPT_DIR"
-    $CMD build --build-arg "PI_PATCH_VERSION=${pi_patch_version:-20260730-004}" --build-arg "LEMONADE_PATCH_VERSION=${lemonade_patch_version:-20260730-004}" -t ghcr.io/localpibox/devstack:latest .
+    $CMD build -t ghcr.io/localpibox/devstack:latest .
 }
 
 rebuild_cmd() {
     source_versions
-    
-    local PI_PATCH_VER="${pi_patch_version:-20260730-004}"
-    local LEMONADE_PATCH_VER="${lemonade_patch_version:-20260730-004}"
-    
-    # Bump counters
-    local PI_DATE="${PI_PATCH_VER%%-*}"
-    local PI_COUNTER=$(echo "$PI_PATCH_VER" | cut -d- -f2 | sed 's/^0*//')
-    local LEMONADE_DATE="${LEMONADE_PATCH_VER%%-*}"
-    local LEMONADE_COUNTER=$(echo "$LEMONADE_PATCH_VER" | cut -d- -f2 | sed 's/^0*//')
-    
-    local PI_NEW="${PI_DATE}-$(printf '%03d' $((PI_COUNTER + 1)))"
-    local LEMONADE_NEW="${LEMONADE_DATE}-$(printf '%03d' $((LEMONADE_COUNTER + 1)))"
-    
-    # Update versions.env and .env-patches
-    sed -i "s/^pi_patch_version=.*/pi_patch_version=$PI_NEW/" "$VERSIONS_FILE"
-    sed -i "s/^lemonade_patch_version=.*/lemonade_patch_version=$LEMONADE_NEW/" "$VERSIONS_FILE"
-    grep -v '^#' "$VERSIONS_FILE" | grep -v '^$' | grep '=' > "$ENV_PATCHES" 2>/dev/null || true
-    
     # Auto-detect container command (podman preferred)
     local CMD="${CONTAINER_CMD:-$(command -v podman 2>/dev/null || command -v docker 2>/dev/null || echo docker)}"
-    
-    echo -e "${CYAN}Versions bumped:${NC}"
-    echo "  Pi:      $PI_PATCH_VER → $PI_NEW"
-    echo "  Lemonade: $LEMONADE_PATCH_VER → $LEMONADE_NEW"
-    echo ""
     echo -e "${CYAN}Rebuilding with $CMD...${NC}"
-    
     cd "$SCRIPT_DIR"
-    $CMD build --build-arg "PI_PATCH_VERSION=${PI_NEW}" --build-arg "LEMONADE_PATCH_VERSION=${LEMONADE_NEW}" -t ghcr.io/localpibox/devstack:latest .
+    $CMD build -t ghcr.io/localpibox/devstack:latest .
 }
 
 patch_cmd() {

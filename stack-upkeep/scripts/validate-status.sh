@@ -76,18 +76,11 @@ fi
 print_header "PI MONOREPO"
 
 PI_PATCH_FILE="$PATCH_DIR/pi-qwen-chat-template.patch"
-PI_PATCH_VER="${pi_patch_version}"
 
 if [ -f "$PI_PATCH_FILE" ]; then
     print_ok "Patch file exists: pi-qwen-chat-template.patch"
 else
     print_warn "No patch file found — upstream may have absorbed the changes"
-fi
-
-if [ -n "$PI_PATCH_VER" ]; then
-    print_ok "Patch version pinned: $PI_PATCH_VER"
-else
-    print_warn "No patch version set"
 fi
 
 echo "  Branch:    ${GREEN}${pi_branch:-patches/qwen-reasoning-effort}${NC}"
@@ -97,19 +90,12 @@ echo "  Branch:    ${GREEN}${pi_branch:-patches/qwen-reasoning-effort}${NC}"
 print_header "LEMONADE PLUGIN"
 
 LEMONADE_PATCH_FILE="$PATCH_DIR/lemonade-qwen-vision.patch"
-LEMONADE_PATCH_VER="${lemonade_patch_version}"
 
 if [ -f "$LEMONADE_PATCH_FILE" ]; then
     patch_lines=$(wc -l < "$LEMONADE_PATCH_FILE")
     print_ok "Patch file exists: lemonade-qwen-vision.patch ($patch_lines lines)"
 else
     print_warn "No patch file found for lemonade"
-fi
-
-if [ -n "$LEMONADE_PATCH_VER" ]; then
-    print_ok "Patch version pinned: $LEMONADE_PATCH_VER"
-else
-    print_warn "No patch version set"
 fi
 
 echo "  Branch:    ${GREEN}${lemonade_branch:-patches/qwen-vision}${NC}"
@@ -127,15 +113,15 @@ print_header "CONTAINER BUILD READINESS"
 
 DOCKERFILE="$ROOT_DIR/Dockerfile"
 if [ -f "$DOCKERFILE" ]; then
-    if grep -q "earendil-works/pi" "$DOCKERFILE" 2>/dev/null; then
-        print_ok "Dockerfile clones from upstream (not fork)"
+    if grep -q "${pi_fork:-https://github.com/localpibox/pi.git}" "$DOCKERFILE" 2>/dev/null; then
+        print_ok "Dockerfile uses fork (patches baked in)"
     else
-        print_warn "Dockerfile does not reference upstream"
+        print_warn "Dockerfile does not reference fork"
     fi
     if grep -q "pi-patches" "$DOCKERFILE" 2>/dev/null; then
-        print_ok "Dockerfile applies local patches"
+        print_ok "Dockerfile includes patch files for runtime reference"
     else
-        print_warn "Dockerfile does not apply patches"
+        print_warn "Dockerfile does not include patch files"
     fi
 else
     print_warn "Dockerfile not found at $DOCKERFILE"
@@ -158,7 +144,7 @@ echo "    devstack-npm-cache   — Persistent via ~/.npm:${GREEN}✓${NC}"
 echo "    browser-state        — Persistent via ~/.localpibox/agent-browser:${GREEN}✓${NC}"
 echo ""
 echo "  Cache invalidation:"
-echo "    Change pi_patch_version or lemonade_patch_version in versions.env"
+echo "    Change pi_branch or pi_fork in versions.env"
 echo "    then run: $CONTAINER_CMD build"
 
 # ── Summary ─────────────────────────────────────────────────────────────────
