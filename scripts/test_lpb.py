@@ -160,8 +160,10 @@ def make_module():
 
     # Use unique name to bypass sys.modules cache
     mod_name = f"lpb_test_{_module_counter}_{id(make_module)}"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    lpb_path = os.path.join(script_dir, "lpb.py")
     spec = importlib.util.spec_from_file_location(
-        mod_name, "/home/dev/workspace/myproject/scripts/lpb.py"
+        mod_name, lpb_path
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

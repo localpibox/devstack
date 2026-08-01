@@ -635,13 +635,14 @@ def _build_url():
     """Build the URL to use for the health check.
 
     Uses cfg.host directly since curl must connect to the address the server
-    is actually listening on.
+    is actually listening on. Uses 127.0.0.1 (IPv4) instead of localhost to
+    avoid IPv6 ::1 resolution failures.
     """
     check_host = cfg.host
     if check_host == "0.0.0.0":
-        check_host = "localhost"  # always check on localhost first
+        check_host = "127.0.0.1"  # IPv4 loopback (avoids ::1 IPv6 issues)
     if check_host in ("localhost", "127.0.0.1"):
-        check_host = "localhost"
+        check_host = "127.0.0.1"
     port = cfg.port
     token_part = "" if cfg.without_token else f"?tkn={cfg.token}"
     return f"http://{check_host}:{port}/{token_part}"
@@ -650,6 +651,7 @@ def _build_url():
 def cmd_run():
     ensure_container_cmd()
     c = client()
+    verbose = cfg.interactive
 
     # ── 1. Resolve project directory ─────────────────────────────────────
     project_dir = cfg.project_dir
@@ -682,25 +684,23 @@ def cmd_run():
     else:
         mount_path = f"/home/dev/workspace/{cfg.project_name}"
 
-    # ── 4. Show summary ──────────────────────────────────────────────────
-    # At this point cfg.port, cfg.host, cfg.token are already resolved from
-    # .env / overrides / CLI, so we show the ACTUAL values the container
-    # will use.
-    info(f"Devstack: {cfg.project_name}")
-    info(f"  Image:    {cfg.image_name}")
-    info(f"  Project:  {project_dir} \u2192 {mount_path}")
-    display_host = _get_host_for_url()
-    info(f"  Editor:   http://{display_host}:{cfg.port}")
-    if cfg.without_token:
-        info("  Auth:     none (\u26a0 unsecured)")
-    else:
-        info(f"  Token:    {cfg.token}")
-    info("")
-    if cfg.open_home:
-        info("Starting VSCodium \u2014 select a project in the welcome screen.")
-    else:
-        info(f"Starting VSCodium \u2014 opening {cfg.project_name}.")
-    info("")
+    # ── 4. Show summary (verbose only) ──────────────────────────────────
+    if verbose:
+        info(f"Devstack: {cfg.project_name}")
+        info(f"  Image:    {cfg.image_name}")
+        info(f"  Project:  {project_dir} \u2192 {mount_path}")
+        display_host = _get_host_for_url()
+        info(f"  Editor:   http://{display_host}:{cfg.port}")
+        if cfg.without_token:
+            info("  Auth:     none (\u26a0 unsecured)")
+        else:
+            info(f"  Token:    {cfg.token}")
+        info("")
+        if cfg.open_home:
+            info("Starting VSCodium \u2014 select a project in the welcome screen.")
+        else:
+            info(f"Starting VSCodium \u2014 opening {cfg.project_name}.")
+        info("")
 
     # ── 5. Resolve & ensure state dirs ───────────────────────────────────
     resolved_state = resolve_path(cfg.state_dir)
@@ -710,13 +710,13 @@ def cmd_run():
 
     # ── 6. Stop existing container ───────────────────────────────────────
     if c.container_running(cfg.container_name):
-        info("Stopping existing devstack container...")
+        if verbose:
+            info("Stopping existing devstack container...")
         c.containers_stop(cfg.container_name)
 
-    # ── 7. Pull image ────────────────────────────────────────────────────
-    # ── 7. Pull image ────────────────────────────────────────────────────
     if not c.images_exists(cfg.image_name):
-        info(f"Pulling {cfg.image_name}...")
+        if verbose:
+            info(f"Pulling {cfg.image_name}...")
         _, eo, rc = c.images_pull(cfg.image_name)
         if rc != 0:
             err("Failed to pull image", eo.strip().splitlines()[-1][:200] if eo.strip() else "")
@@ -727,11 +727,13 @@ def cmd_run():
 
     # ── 9. Remove stale stopped containers ───────────────────────────────
     if c.container_exists(cfg.container_name):
-        info(f"Removing stale container '{cfg.container_name}'...")
+        if verbose:
+            info(f"Removing stale container '{cfg.container_name}'...")
         c.containers_remove(cfg.container_name)
 
     # ── 10. Run container via client ─────────────────────────────────────
-    info("Running...")
+    if verbose:
+        info("Running...")
 
     env_vars = [
         f"LPB_ED_PORT={cfg.port}",
@@ -739,7 +741,18 @@ def cmd_run():
         f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
         f"LPB_CONNECTION_TOKEN={cfg.token}",
         "LPB_STATE_DIR=/home/dev/.pi",
+        # Exa MCP key — stripped by start.sh → EXA_API_KEY
+        f"LPB_EXA_API_KEY={os.environ.get('LPB_EXA_API_KEY', os.environ.get('EXA_API_KEY', ''))}",
     ]
+
+    # Agent-browser env vars (passed through so start.sh exports them)
+    for k in ("PI_WORKTREE_ID", "LPB_AGENT_BROWSER_ARGS",
+              "LPB_AGENT_BROWSER_MAX_OUTPUT", "LPB_AGENT_BROWSER_CONTENT_BOUNDARIES",
+              "LPB_AGENT_BROWSER_CONFIRM_ACTIONS", "LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS",
+              "LPB_AGENT_BROWSER_SESSION"):
+        val = os.environ.get(k)
+        if val:
+            env_vars.append(f"{k}={val}")
     volumes = [
         f"{project_dir}:{mount_path}{mount_flags}",
         f"{resolved_state}:/home/dev/.pi{mount_flags}",
@@ -781,15 +794,15 @@ def cmd_run():
         c.containers_exec(cfg.container_name, "/bin/bash")
         return
 
-    # ── 13. Health check (wait for VSCodium server) ──────────────────────
+    # ── 13. Health check (shorter timeout for non-interactive) ───────────
     health_url = _build_url()
-    info("Waiting for editor to be ready...")
     ready = False
+    timeout = 60 if verbose else 30
     try:
-        for _ in range(60):
+        for _ in range(timeout):
             try:
                 r = subprocess.run(
-                    ["curl", "-sf", "--max-time", "3", health_url],
+                    ["curl", "-sf", "--max-time", "2", health_url],
                     capture_output=True, timeout=5,
                 )
                 if r.returncode == 0:
@@ -797,51 +810,55 @@ def cmd_run():
                     break
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 pass
-            sys.stdout.write(".")
-            sys.stdout.flush()
+            if verbose:
+                sys.stdout.write(".")
+                sys.stdout.flush()
             time.sleep(1)
     except KeyboardInterrupt:
         print()
         info("Aborted.")
         sys.exit(130)
-    print()  # newline after dots
+    if verbose:
+        print()
 
     if ready:
-        print()
-        urls = _build_urls()
-        # Show all URLs, prioritizing LAN IP when host was 0.0.0.0
-        if len(urls) == 1:
-            label, url = list(urls.items())[0]
-            info(f"\u2713 Devstack ready at {url}")
+        if verbose:
+            urls = _build_urls()
+            if len(urls) == 1:
+                label, url = list(urls.items())[0]
+                info(f"\u2713 Devstack ready at {url}")
+            else:
+                items = list(urls.items())
+                info(f"\u2713 Devstack ready")
+                for label, url in items:
+                    if label == "localhost" or label.startswith("127."):
+                        info(f"    Local:   {url}")
+                    else:
+                        info(f"    LAN:     {url}")
+            print()
+            info("  lpb --logs     \u2014 View logs")
+            info("  lpb --stop     \u2014 Stop")
+            info("  lpb --remove   \u2014 Remove everything")
+            info("  lpb            \u2014 Reconnect to last project")
         else:
-            # Multiple URLs — show primary first, then others
-            items = list(urls.items())
-            primary = items[0]
-            info(f"\u2713 Devstack ready")
-            for label, url in items:
-                if label == "localhost" or label.startswith("127."):
-                    info(f"    Local:   {url}")
-                else:
-                    info(f"    LAN:     {url}")
-
-        print()
-        info("  lpb --logs     \u2014 View logs")
-        info("  lpb --stop     \u2014 Stop")
-        info("  lpb --remove   \u2014 Remove everything")
-        info("  lpb            \u2014 Reconnect to last project")
+            label, url = list(_build_urls().items())[0]
+            info(f"{cfg.project_name} ready at {url}")
     else:
-        print()
-        info("⚠ Container is running but the editor may not be ready yet.")
-        print()
-        info("  Check logs:       lpb --logs")
-        info(f"  Container status: {cfg.container_cmd} ps --filter name={cfg.container_name}")
-        info("  Stop container:   lpb --stop")
-        info("  Remove & restart: lpb --remove")
-        print()
-        info("  Common issues:")
-        info(f"    - Port {cfg.port} already in use \u2192 use --port <new-port>")
-        info("    - Container start failed \u2192 check lpb --logs")
-        info("    - SELinux blocking mounts \u2192 try running on a filesystem that supports it")
+        if verbose:
+            print()
+            info("\u26a0 Container is running but the editor may not be ready yet.")
+            print()
+            info("  Check logs:       lpb --logs")
+            info(f"  Container status: {cfg.container_cmd} ps --filter name={cfg.container_name}")
+            info("  Stop container:   lpb --stop")
+            info("  Remove & restart: lpb --remove")
+            print()
+            info("  Common issues:")
+            info(f"    - Port {cfg.port} already in use \u2192 use --port <new-port>")
+            info("    - Container start failed \u2192 check lpb --logs")
+            info("    - SELinux blocking mounts \u2192 try running on a filesystem that supports it")
+        else:
+            info(f"{cfg.container_name} started (editor may still be booting)")
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────

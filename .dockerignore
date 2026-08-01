@@ -1,4 +1,4 @@
-# Stack Upkeep — Ignore patterns for Docker build
+# Docker build ignore patterns
 
 # Git
 .git
@@ -20,7 +20,7 @@ package-lock.json
 .DS_Store
 Thumbs.db
 
-# Docs (not needed in build)
+# Docs (not needed in image)
 *.md
 
 # Env files
@@ -28,15 +28,10 @@ Thumbs.db
 .env.*
 !.env.example
 
-# Scripts (not needed in build)
-localpistack.sh
-docker-patch-pi.sh
-
 # Biome
 biome.base.json
 
 # Keep these:
 # Dockerfile
-# docker-compose.yml (removed — use podman build instead)
 # support/
-# stack-upkeep/
+# versions.env

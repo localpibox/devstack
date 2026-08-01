@@ -98,8 +98,8 @@ Once the container is running, these commands are available:
 # Update extensions to latest release
 podman exec -it localpobox update --extensions
 
-# Update only patches
-podman exec -it localpibox stack.sh update --patches
+# Patches are baked into the image — to update, rebuild the container
+# with updated fork branches in versions.env.
 ```
 
 ## Usage
@@ -174,15 +174,17 @@ podman run -d --name localpibox --network host --userns keep-id \
 | Extensions | `pi update --extensions` (at boot) | Every container start |
 | Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
 
-## Current Patches Baked Into the Image
+## Version Configuration
 
-Patches are **baked into fork branches** at Docker build time. The
-Dockerfile clones Pi from a pre-patched fork branch, so no `git am` runs at
-build or runtime, and `update --patches` is reference-only inside the running
-container (the source tree is not shipped). The `.patch` files in
-`stack-upkeep/patches/` are **reference documentation** of what each fork
-branch contains; the authoritative branch list lives in
-`stack-upkeep/versions.env`. Run `./stack.sh status` for a live validation.
+Fork branches and versions are tracked in `versions.env` at the repo root.
+Change these to rebuild with different versions. Extensions inside the container
+are updated with: `podman exec -it localpibox pi update --extensions`
+
+### Pi monorepo — `localpibox/pi` @ `patches/qwen-reasoning-effort`
+
+Installed version: **0.83.0** (`pi --version`). Fork branch contains cumulative
+patches including: reasoning effort for Qwen models, Case 4 context overflow
+detection, Qwen chat-template thinking format support.
 
 ### Pi monorepo — `localpibox/pi` @ `patches/qwen-reasoning-effort`
 
@@ -195,12 +197,8 @@ Installed version: **0.83.0** (`pi --version`).
 
 ### Lemonade plugin — `localpibox/lemonade-pi-plugin` @ `patches/api-key-auth`
 
-| Patch (reference file) | What it does | File affected |
-|---|---|---|
-| `lemonade-api-key-auth.patch` | Register the Lemonade provider with API-key auth type (not oauth), so Pi actually loads the provider | `extensions/index.ts` |
-| `lemonade-thinking-format.patch` | Switch Qwen models on the Lemonade (llama.cpp) backend to the `qwen-chat-template` thinking format; Lemonade ignores top-level `enable_thinking`/`reasoning_effort` and only honours `chat_template_kwargs` | `extensions/index.ts` |
-| `lemonade-qwen-vision.patch` | Detect vision capability from model labels and expose `image` input support | `extensions/index.ts` |
-| `lemonade-qwen-thinking-format.patch` (multi-patch series) | Companion reasoning/vision-detection changes for Qwen on Lemonade | `extensions/index.ts` |
+Fork branch includes: API-key auth type registration, Qwen thinking format
+support, vision capability detection, and reasoning format handling.
 
 ### Memory extension — `localpibox/pi-hermes-memory` @ `fix/subprocess-provider`
 
@@ -218,7 +216,7 @@ direction stay on the LocalPibox fork branch.
 ## CI/CD
 
 Built automatically on GitHub Actions when:
-- Push to `main` (Dockerfile, support/, stack-upkeep/)
+- Push to `main` (Dockerfile, support/, versions.env)
 - Weekly (Monday 3am UTC) — keeps image fresh
 - Manual dispatch with flags
 
@@ -286,17 +284,11 @@ podman run -d --name localpibox --network host --userns keep-id \
 ```
 devstack/
 ├── Dockerfile                 # Single-stage build (all in one image)
-├── run.sh                     # Local launcher script (optional)
-├── stack.sh                   # Stack management (copied into image)
-├── .github/workflows/         # CI/CD pipeline
-├── stack-upkeep/              # Patch management system
-│   ├── versions.env           # Version tracking
-│   ├── patches/               # Git patch files
-│   └── scripts/               # Maintenance scripts
+├── versions.env           # Version tracking (forks, branches, base versions)
+├── doc/                   # Architecture and operational docs
 ├── scripts/                   # Launcher and installer
 │   ├── lpb                    # lpb launcher (bash wrapper → lpb.py)
 │   ├── lpb.py                 # lpb launcher (Python implementation)
-│   ├── ds.sh                  # Deprecated — use lpb instead
 │   └── install.sh             # One-line installer script
 ├── support/                   # Entrypoint scripts
 │   ├── start.sh               # Container entrypoint

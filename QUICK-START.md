@@ -14,44 +14,62 @@ podman pull ghcr.io/localpibox/devstack:latest
 cd ~/projects/myproject
 
 # Launch devstack for this project
-./run.sh /home/user/projects/myproject
+lpb /home/user/projects/myproject
 ```
 
 ### With options
 
 ```bash
 # Custom editor port
-./run.sh /path/to/project --port 8080
+lpb /path/to/project --port 8080
 
-# Pull latest image first
-./run.sh /path/to/project --pull --port 3000
+# LAN access with custom token
+lpb /path/to/project --host 0.0.0.0 --token mysecret
 ```
 
-### Manual podman command (without run.sh)
+### Using lpb.py directly (local dev)
+
+```bash
+# From the devstack directory
+cd ~/devstack/localpibox/devstack
+python3 scripts/lpb.py /path/to/project --port 8080
+```
+
+### Manual podman command (without lpb)
 
 ```bash
 PROJECT_NAME=myproject
 PROJECT_DIR=/home/user/projects/myproject
-STATE_DIR=$HOME/.localpibox/devstack-state
+STATE_DIR=$HOME/.localpibox/state
+BROWSER_DIR=$HOME/.localpibox/agent-browser
 
 podman run -d \
     --name localpibox \
     --network host \
     --userns keep-id \
-    -e ED_PORT=3000 \
+    -e LPB_ED_PORT=3000 \
+    -e LPB_EDITOR_HOST=0.0.0.0 \
+    -e LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace/$PROJECT_NAME" \
+    -e LPB_CONNECTION_TOKEN=devsession \
+    -e LPB_EXA_API_KEY=your-exa-key \
     -v "$PROJECT_DIR:/home/dev/workspace/$PROJECT_NAME:Z" \
     -v "$STATE_DIR:/home/dev/.pi:Z" \
-    -v "$HOME/.config/podman:/home/dev/.config/containers:Z" \
+    -v "$BROWSER_DIR:/home/dev/.agent-browser:Z" \
     ghcr.io/localpibox/devstack:latest
+```
+
+## Install lpb system-wide
+
+```bash
+# Download and install to ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/localpibox/devstack/main/scripts/install.sh | bash
 ```
 
 ## Update extensions (no rebuild)
 
 ```bash
 # Update extensions to latest release (installs missing, upgrades stale)
-./stack.sh update --extensions
-# or directly inside the container:
-# podman exec -it localpibox update --extensions
+podman exec -it localpibox pi update --extensions
 ```
 
 ## Useful commands
@@ -61,10 +79,10 @@ podman run -d \
 podman logs -f localpibox
 
 # Stop container
-podman stop localpibox
+lpb --stop
 
-# Remove container
-podman rm localpibox
+# Remove container + state
+lpb --remove
 
 # Open browser to editor
 xdg-open http://localhost:3000

@@ -13,17 +13,16 @@
 #   - Everything builds in a single pass
 #
 # Previous fixes (still applied):
-#   1. /opt/pi-patches COPYed for runtime reference by update.sh
-#   2. `HOME="/home/dev"` set before `pi install` — extensions go to dev
-#   3. Patches baked into fork branches — no git am needed at build time
-#   4. models.json included in config-copy step
-#   5. Build-time smoke test (`pi --version`) fails loudly on breakage
+#   1. `HOME="/home/dev"` set before `pi install` — extensions go to dev
+#   2. Patches baked into fork branches — no git am needed at build time
+#   3. models.json included in config-copy step
+#   4. Build-time smoke test (`pi --version`) fails loudly on breakage
 # ==========================================================================
 
 # ── ARGUMENTS ───────────────────────────────────────────────────────────────
 ARG NODE_VERSION=24
 ARG VSCODIUM_VERSION=1.126.04524
-# Pi fork + branch (from stack-upkeep/versions.env)
+# Pi fork + branch (from versions.env)
 ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_BRANCH=patches/qwen-reasoning-effort
 # Pi fork HEAD SHA — busts build cache whenever the fork branch advances
@@ -103,14 +102,6 @@ RUN curl -fsSL \
     && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
     && rm /tmp/vscodium.tar.gz
 
-# ── Patch files (available for runtime `update.sh --patches` reference) ─────
-COPY stack-upkeep/patches/ /opt/pi-patches/
-COPY stack-upkeep/scripts/update.sh /opt/pi-patches/update.sh
-RUN chmod +x /opt/pi-patches/update.sh \
-    && ln -sf /opt/pi-patches/update.sh /usr/local/bin/stack-update \
-    && mkdir -p /opt/pi-internal \
-    && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
-
 # ── Pi monorepo build ───────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
@@ -122,8 +113,7 @@ RUN set -eux; \
     npm ci --ignore-scripts; \
     \
     # Patches are baked into fork branches (e.g. patches/qwen-reasoning-effort)
-    # — no git am needed at build time. Patch files remain in /opt/pi-patches
-    # for runtime reference by update.sh --patches.
+    # — no git am needed at build time.
     echo "=== Building from pre-patched fork branch: ${PI_FORK} @ ${PI_BRANCH} (${PI_HEAD_SHA}) ==="; \
     \
     npm run build; \
@@ -172,7 +162,11 @@ RUN set -eux; \
     [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
     [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
-    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
+    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md";
+    # System prompt — replaces Pi's default system prompt with LocalPibox Operator persona
+    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no SYSTEM.md";
+    # Append system prompt — operational rules added after Pi's default prompt
+    [ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no APPEND_SYSTEM.md"; \
     mkdir -p /home/dev/.pi/agent/skills; \
     if [ -d /home/dev/.local/pi-config/skills ]; then \
         for d in /home/dev/.local/pi-config/skills/*/; do \
@@ -264,20 +258,16 @@ RUN set -eux; \
 COPY support/start.sh /opt/devstack/start.sh
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh
-COPY run.sh /usr/local/bin/run.sh
-COPY stack.sh /usr/local/bin/stack.sh
 # Symlink to PATH for easy shell access
 RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
     && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
     && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack
 RUN chmod +x /opt/devstack/start.sh \
     /opt/devstack/install-browser.sh \
-    /opt/devstack/validate.sh \
-    /usr/local/bin/run.sh /usr/local/bin/stack.sh
+    /opt/devstack/validate.sh
 
 # ── Final ownership + browser state dirs ────────────────────────────────────
-RUN chown -R 1000:1000 /home/dev /opt/pi-patches \
-    && chmod -R u+rwX /home/dev
+RUN chown -R 1000:1000 /home/dev
 
 # Create browser state directories (persisted via -v ~/.localpibox/agent-browser)
 RUN mkdir -p /home/dev/.agent-browser/sessions \

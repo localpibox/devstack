@@ -21,7 +21,6 @@
 #
 # Inside the container, these commands are available:
 #   pi              — Start Pi CLI
-#   stack.sh update — Update extensions/patches
 #   exit            — Stop and exit
 
 set -euo pipefail
@@ -43,8 +42,15 @@ export LPB_ED_PORT="${LPB_ED_PORT:-3000}"
 
 # ── Load .env from workspace (filtered to LPB_* vars) ───────────────────────
 WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
+ENV_FILE=""
 if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
-    echo "[devstack] Loading environment from ${WORKSPACE_DIR}/myproject/.env"
+    ENV_FILE="${WORKSPACE_DIR}/myproject/.env"
+elif [ -f "${WORKSPACE_DIR}/.env" ]; then
+    ENV_FILE="${WORKSPACE_DIR}/.env"
+fi
+
+if [ -n "$ENV_FILE" ]; then
+    echo "[devstack] Loading environment from ${ENV_FILE}"
     while IFS='=' read -r key value; do
         # Skip comments, empty lines, and non-exportable entries
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
@@ -64,9 +70,9 @@ if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
                 echo "[devstack]   skipped non-LPB variable: $key"
                 ;;
         esac
-    done < "${WORKSPACE_DIR}/myproject/.env"
+    done < "$ENV_FILE"
 else
-    echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env — using defaults"
+    echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env or ${WORKSPACE_DIR}/.env — using defaults"
 fi
 
 # Backwards-compat LPB_* aliases (MUST come after .env load so stripped values are final)
@@ -100,7 +106,7 @@ if [ ! -d "${WORKSPACE_DIR}" ]; then
     echo "[devstack] WARNING: Workspace path does not exist: ${WORKSPACE_DIR}"
     echo "[devstack]   Mount: /home/dev/workspace → ${WORKSPACE_DIR}"
     echo "[devstack]   VSCodium will open an empty directory."
-    echo "[devstack]   Expected: run.sh /path/to/project"
+    echo "[devstack]   Expected: lpb /path/to/project"
     echo ""
 elif [ -z "$(ls -A "${WORKSPACE_DIR}" 2>/dev/null)" ]; then
     echo "[devstack] WARNING: Workspace directory is empty: ${WORKSPACE_DIR}"
@@ -160,16 +166,10 @@ if [ "$FIRST_RUN" = "true" ]; then
     echo "[devstack] First run bootstrap complete."
 fi
 
-# ── Ensure extensions are installed (via pi) ───────────────────────────────
-# Uses the container's update.sh which runs `pi update --extensions`.
-# This checks all configured packages and installs/updates only those
-# that differ from the latest release. Runs on every boot for fresh versions.
-echo "[devstack] Ensuring extensions are installed..."
-if [ -f /opt/pi-patches/update.sh ]; then
-    /opt/pi-patches/update.sh --extensions 2>&1 || echo "[devstack] WARN: extension install had warnings"
-else
-    echo "[devstack] WARN: /opt/pi-patches/update.sh not found — skipping extension install"
-fi
+# ── Extensions ──────────────────────────────────────────────────────────────
+# Extensions are managed by `pi update --extensions` (configured via
+# github.com/localpibox/config.git). To update manually:
+#   podman exec -it localpibox pi update --extensions
 
 # ── Post-initialization: native modules ─────────────────────────────────────
 # Docker build compiles native modules for x86_64. At runtime they may be
@@ -245,7 +245,6 @@ for i in $(seq 1 ${MAX_RETRIES}); do
         echo ""
         echo "  Available commands:"
         echo "    pi              — Start Pi CLI"
-        echo "    stack.sh update — Update extensions/patches"
         echo "    exit            — Stop the server and exit"
         echo ""
         break

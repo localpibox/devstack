@@ -2,7 +2,7 @@
 
 ## Current State
 
-The system uses a **single image** pulled with `run.sh` or direct podman/docker:
+The system uses a **single image** pulled with `lpb` or direct podman/docker:
 
 ```bash
 podman run -it --network host --userns keep-id \
@@ -24,7 +24,7 @@ podman run -it --network host --userns keep-id \
 |------|--------|-------|
 | UID/GID Mismatch | **Resolved** | `--userns keep-id` (podman) / `--user=1000` (docker) |
 | Persistent State | **Resolved** | Bind mount `~/.localpibox/state:/home/dev/.pi:Z` |
-| Docker Compose removed | **Resolved** | Single image + `run.sh` is canonical |
+| Docker Compose removed | **Resolved** | Single image + `lpb` is canonical |
 | Extension updates | **Resolved** | `pi update --extensions` at every boot — installs missing, upgrades stale |
 | Image size | **Resolved** | Extensions installed at runtime (not baked in) — saves ~250MB |
 | First-run slowness | **Partial** | Bootstrap is fast; extensions download on first boot |
@@ -73,13 +73,14 @@ Container boot (start.sh)
          Only updates what differs from latest.
 ```
 
-## Run (via run.sh)
+## Run (via lpb)
 
 ```bash
-./run.sh /path/to/project          # Run with defaults
-./run.sh /path/to/project --port 8080  # Custom editor port
-./run.sh /path/to/project --pull    # Pull latest image first
+lpb /path/to/project          # Run with defaults
+lpb /path/to/project --port 8080  # Custom editor port
 ```
+
+### Manual podman command
 
 Mount structure:
 - Host: `$PROJECT → /home/dev/workspace/<project>/`
@@ -97,4 +98,4 @@ Current CI builds only `linux/amd64`. QEMU setup exists but ARM not targeted.
 
 ### 3. Version defaults duplicated (planned)
 Patch version numbers live in 3 places: Dockerfile ARGs, versions.env,
-stack.sh fallbacks. A central defaults file would reduce maintenance burden.
+and the runtime scripts. A central defaults file would reduce maintenance burden.

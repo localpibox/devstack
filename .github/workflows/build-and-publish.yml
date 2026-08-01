@@ -5,7 +5,7 @@
 # Extensions update at runtime via pi update --extensions
 #
 # Triggers:
-#   - Push to main (Dockerfile, support/, stack-upkeep/)
+#   - Push to main (Dockerfile, support/, versions.env)
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
 #   - Manual dispatch
 #
@@ -23,14 +23,14 @@ on:
     paths:
       - 'Dockerfile'
       - 'support/**'
-      - 'stack-upkeep/**'
+      - 'versions.env'
       - '.github/workflows/*.yml'
   pull_request:
     branches: [main]
     paths:
       - 'Dockerfile'
       - 'support/**'
-      - 'stack-upkeep/**'
+      - 'versions.env'
   schedule:
     - cron: '0 3 * * 1'
   workflow_dispatch:
@@ -89,7 +89,7 @@ jobs:
       - name: Resolve Pi fork HEAD (cache invalidation)
         id: pi_head
         run: |
-          set -a; . stack-upkeep/versions.env; set +a
+          set -a; . versions.env; set +a
           sha=$(git ls-remote "$pi_fork" "refs/heads/$pi_branch" | awk '{print $1}')
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
           echo "Pi fork: ${pi_fork} @ ${pi_branch} (${sha:-unknown})"

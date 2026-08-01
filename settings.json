@@ -1,7 +1,0 @@
-{
-  "pi0.vscode.enableSelectionSync": true,
-  "pi0.vscode.enableDiagnosticSync": true,
-  "pi0.vscode.enableHoverSync": true,
-  "pi0.vscode.enableNotificationsSync": true,
-  "editor.formatOnSave": true
-}
