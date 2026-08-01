@@ -293,6 +293,11 @@ devstack/
 │   ├── versions.env           # Version tracking
 │   ├── patches/               # Git patch files
 │   └── scripts/               # Maintenance scripts
+├── scripts/                   # Launcher and installer
+│   ├── lpb                    # lpb launcher (bash wrapper → lpb.py)
+│   ├── lpb.py                 # lpb launcher (Python implementation)
+│   ├── ds.sh                  # Deprecated — use lpb instead
+│   └── install.sh             # One-line installer script
 ├── support/                   # Entrypoint scripts
 │   ├── start.sh               # Container entrypoint
 │   ├── install-browser.sh     # Browser setup script
