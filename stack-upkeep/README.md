@@ -21,13 +21,12 @@ This directory contains tools for maintaining the LocalPibox stack. It handles:
 ```
 stack-upkeep/
 ├── versions.env              # Version tracking + config
-├── patches/                  # Git patch files for Docker build
+├── patches/                  # Patch files (reference + runtime use)
 │   ├── pi-qwen-chat-template.patch    # Pi: reasoning_effort for qwen-chat-template
 │   └── lemonade-qwen-vision.patch     # Lemonade: Qwen reasoning + vision
 ├── scripts/
 │   ├── check-updates.sh      # Check upstream status
 │   ├── validate-status.sh    # Full stack health check
-│   └── apply-patches.sh      # Apply patches (called from Dockerfile)
 └── README.md                 # This file
 ```
 
@@ -58,15 +57,9 @@ stack-upkeep/
 3. **If a patch conflicts:**
    - Resolve conflicts manually in the working tree
    - `git add <resolved-files>` then `git rebase --continue`
-   - Re-extract the patch: `git format-patch upstream/main --stdout > patches/xxx.patch`
+   - Re-extract the patch: `git format-patch upstream/main --stdout > patches/xxx.patch` (for reference)
 
-4. **Update the version string:**
-   ```bash
-   # In versions.env, change:
-   pi_patch_version=20260730-002
-   ```
-
-5. **Rebuild container:**
+4. **Rebuild container (if you changed versions.env):**
    ```bash
    cd /home/dev/workspace
    podman build -t ghcr.io/localpibox/devstack:latest .
@@ -92,17 +85,20 @@ git push origin patches/qwen-reasoning-effort
 
 1. Check if the upstream already has the functionality
 2. If yes, remove the patch file from `patches/`
-3. Update `versions.env` with a new patch version
-4. Push and rebuild
+3. Push the branch and rebuild
 
-## Docker Build Cache
+## Cache Invalidation
 
 The Dockerfile uses `ARG` variables for cache invalidation:
 
-- `PI_PATCH_VERSION` — change to invalidate the Pi build layer
-- `LEMONADE_PATCH_VERSION` — change to invalidate the Lemonade build layer
+- `PI_BRANCH` / `PI_FORK` — change to invalidate the Pi build layer (clones a different branch)
+- `LEMONADE_BRANCH` / `LEMONADE_FORK` — change to invalidate the Lemonade layer
 
-When either changes, only the affected layers rebuild — the `pi-agent-state` volume (containing your memory, extensions, and config) is preserved.
+Patches are baked into fork branches — no version counter needed. The fork branch
+(e.g. `patches/qwen-reasoning-effort`) already contains all patches as commits.
+Changing `pi_branch` in `versions.env` automatically picks up new patches on next build.
+
+The `pi-agent-state` volume (containing your memory, extensions, and config) is preserved across rebuilds.
 
 ## Repository Branch Structure
 

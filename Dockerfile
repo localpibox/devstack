@@ -124,21 +124,23 @@ RUN set -eux; \
     \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
-    # Pack all locally-built Pi packages (with patches baked in) \
+    # Pack core Pi packages (with patches baked in via fork branch)
+    # coding-agent provides the `pi` CLI and depends on agent+ai+tui
     for pkg in ai agent coding-agent tui; do \
       npm pack "./packages/$pkg" --pack-destination /tmp/pi-packs; \
     done; \
-    # Pack client if present (upstream main has it; fork branches may not) \
+    # Pack client if present (upstream main has it; fork branches do not)
     if [ -d "./packages/client" ]; then \
       npm pack "./packages/client" --pack-destination /tmp/pi-packs; \
     fi; \
     npm install -g /tmp/pi-packs/*.tgz; \
+    rm -rf /tmp/pi-packs; \
     \
     # Smoke test — fail the build immediately if pi isn't functional
     /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary is not functional after install" && exit 1); \
     \
     ls -la /home/dev/.npm-global/bin/; \
-    rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests /tmp/pi-packs
+    rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 # ── Extensions + Config ─────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
