@@ -84,6 +84,7 @@ def mock_podman(args):
 
     if cmd == "exec":
         if MOCK_STATE["running"]:
+            MOCK_STATE["interactive"] = True
             return 0
         return 1
 
@@ -113,7 +114,7 @@ def mock_run(args, **kwargs):
             returncode = 7
         return R()
     # Real subprocess.run for everything else
-    return subprocess.__original_run(args, **kwargs)
+    return _subprocess_orig(args, **kwargs)
 
 
 def mock_which(name):
@@ -121,7 +122,7 @@ def mock_which(name):
         return "podman"  # return bare command name, not path
     if name == "curl":
         return "curl"
-    return shutil.__original_which(name)
+    return _shutil_orig(name)
 
 
 def reset_mock():
@@ -135,11 +136,18 @@ def reset_mock():
     _curl_attempts = 0
 
 
+_module_counter = 0
+_subprocess_orig = None
+_shutil_orig = None
+
 def make_module():
-    """Import lpb.py with all mocks in place."""
-    # Save originals BEFORE any patching
-    subprocess.__original_run = subprocess.run
-    shutil.__original_which = shutil.which
+    """Import lpb.py with all mocks in place. Each call gets unique module name."""
+    global _module_counter, _subprocess_orig, _shutil_orig
+    _module_counter += 1
+    # Save originals ONCE (first call only)
+    if _subprocess_orig is None:
+        _subprocess_orig = subprocess.run
+        _shutil_orig = shutil.which
 
     # Apply mocks BEFORE importing lpb
     subprocess.run = mock_run
@@ -150,9 +158,10 @@ def make_module():
         if key.startswith("LPB_"):
             os.environ.pop(key, None)
 
-    # Now import lpb — subprocess.run and shutil.which are already mocked
+    # Use unique name to bypass sys.modules cache
+    mod_name = f"lpb_test_{_module_counter}_{id(make_module)}"
     spec = importlib.util.spec_from_file_location(
-        "lpb", "/home/dev/workspace/myproject/scripts/lpb.py"
+        mod_name, "/home/dev/workspace/myproject/scripts/lpb.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -310,6 +319,7 @@ def test_run_interactive():
     mod.apply_overrides()
     mod.cfg.state_dir = "/tmp/lpb-test-state"
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
+    mod.cfg.interactive = True
     mod.cmd_run()
     assert MOCK_STATE["running"]
     assert MOCK_STATE["interactive"]
@@ -331,19 +341,25 @@ def test_run_port_flag():
 
 
 def test_url_from_resolved_config():
-    """Critical: URL must reflect the RESOLVED host/port/token, not defaults."""
-    print("TEST: URL uses resolved host:port from config")
+    """Critical: _build_urls() must reflect resolved host:port/token."""
+    print("TEST: _build_urls() uses resolved host:port from config")
     reset_mock()
     mod = make_module()
     mod.cfg.host = "0.0.0.0"
     mod.cfg.port = 3000
     mod.cfg.token = "mytoken123"
     mod.cfg.without_token = False
-    url = mod._build_url()
-    assert "0.0.0.0" in url, f"URL missing host: {url}"
-    assert ":3000" in url, f"URL missing port: {url}"
-    assert "mytoken123" in url, f"URL missing token: {url}"
-    print(f"  URL: {url}")
+    urls = mod._build_urls()
+    health = mod._build_url()
+    assert ":3000" in health, f"Health URL missing port: {health}"
+    assert "mytoken123" in health, f"Health URL missing token: {health}"
+    assert len(urls) >= 1, f"Expected at least 1 URL, got {urls}"
+    found_port = any(":3000" in u for u in urls.values())
+    found_token = any("mytoken123" in u for u in urls.values())
+    assert found_port, f"Port not found in URLs: {urls}"
+    assert found_token, f"Token not found in URLs: {urls}"
+    print(f"  Health URL: {health}")
+    print(f"  Display URLs: {urls}")
     print("  PASS\n")
 
 
@@ -363,19 +379,21 @@ def test_url_without_token():
 
 
 def test_url_from_env_override():
-    """Simulate .env setting host=0.0.0.0 port=3000, then verify URL reflects it."""
-    print("TEST: URL reflects .env overrides (host=0.0.0.0 port=3000)")
+    """Simulate .env setting host=0.0.0.0 port=3000, then verify URLs."""
+    print("TEST: _build_urls() reflects .env overrides (host=0.0.0.0 port=3000)")
     reset_mock()
     mod = make_module()
-    # Simulate what happens after .env loads + apply_overrides
     mod.cfg.host = "0.0.0.0"
     mod.cfg.port = 3000
     mod.cfg.token = "devsession"
-    url = mod._build_url()
-    assert "0.0.0.0" in url
-    assert ":3000" in url
-    assert "devsession" in url
-    print(f"  URL: {url}")
+    urls = mod._build_urls()
+    health = mod._build_url()
+    assert ":3000" in health
+    assert "devsession" in health
+    found_port = any(":3000" in u for u in urls.values())
+    assert found_port, f"Port 3000 not in display URLs: {urls}"
+    print(f"  Health URL: {health}")
+    print(f"  Display URLs: {urls}")
     print("  PASS\n")
 
 

@@ -85,6 +85,7 @@ def run_cmd(args, timeout=120):
         return "", f"not found: {args[0]}", 127
 
 def ensure_container_cmd():
+    """Ensure cfg.container_cmd is set by finding podman or docker on PATH."""
     if cfg.container_cmd:
         return
     cfg.container_cmd = shutil.which("podman") or shutil.which("docker") or ""
@@ -94,51 +95,200 @@ def ensure_container_cmd():
         sys.exit(1)
 
 def is_podman():
+    """Return True if the detected container engine is podman."""
     return "podman" in cfg.container_cmd
 
-# ─── Container lifecycle ─────────────────────────────────────────────────────
 
-def _list_names(flags=None):
-    ensure_container_cmd()
-    cmd = [cfg.container_cmd, "ps"]
-    if flags:
-        cmd.extend(flags)
-    cmd += ["--format", "{{.Names}}"]
-    out, _, rc = run_cmd(cmd)
-    return [n.strip() for n in out.strip().splitlines() if n.strip()] if rc == 0 else []
+# ─── Container client (SDK-like wrapper around podman/docker CLI) ─────────────
+# Provides object-oriented methods for container lifecycle without requiring
+# pip install. Only needs the podman or docker CLI binary on PATH.
 
-def container_running():
-    return cfg.container_name in _list_names()
+class ContainerClient:
+    """Thin wrapper around podman/docker CLI providing SDK-like methods.
 
-def container_exists():
-    return cfg.container_name in _list_names(["-a"])
+    Methods mirror docker-py / podman-py conventions:
+      client.containers.list(all=False)  → ["name1", "name2"]
+      client.containers.run(image, ...)  → container_id
+      client.containers.stop(name)       → True
+      client.containers.remove(name)     → True
+      client.images.pull(name)           → (stdout, stderr, rc)
+      client.images.exists(name)         → True/False
 
-def stop_container():
-    ensure_container_cmd()
-    run_cmd([cfg.container_cmd, "stop", "-t", "30", cfg.container_name])
+    Usage:
+        client = ContainerClient("podman")  # or "docker"
+    """
 
-def remove_container():
-    ensure_container_cmd()
-    run_cmd([cfg.container_cmd, "rm", "-f", cfg.container_name])
+    def __init__(self, cmd):
+        """Initialize with the container CLI binary name."""
+        self.cmd = cmd
 
-def ensure_stopped():
-    if container_running():
-        stop_container()
-    if container_exists():
-        remove_container()
-        return True
-    return False
+    # ── Container queries ────────────────────────────────────────────────
 
-def pull_image():
-    ensure_container_cmd()
-    _, _, rc = run_cmd([cfg.container_cmd, "image", "inspect", cfg.image_name])
-    if rc != 0:
-        info(f"Pulling {cfg.image_name}...")
-        _, eo, rc = run_cmd([cfg.container_cmd, "pull", cfg.image_name])
-        if rc != 0:
-            short = eo.strip().splitlines()[-1] if eo.strip() else "unknown"
-            err("Failed to pull image", short[:200])
-            sys.exit(1)
+    def containers_list(self, all=False):
+        """Return list of container names.
+
+        Args:
+            all: If True, include stopped containers.
+
+        Returns:
+            List of container name strings.
+        """
+        args = [self.cmd, "ps", "--format", "{{.Names}}"]
+        if all:
+            args.insert(2, "-a")
+        out, _, rc = run_cmd(args)
+        return [n.strip() for n in out.strip().splitlines() if n.strip()] if rc == 0 else []
+
+    def container_exists(self, name):
+        """Check if a container (running or stopped) exists by name."""
+        return name in self.containers_list(all=True)
+
+    def container_running(self, name):
+        """Check if a container is currently running."""
+        return name in self.containers_list()
+
+    # ── Container lifecycle ──────────────────────────────────────────────
+
+    def containers_run(self, image, name=None, network="host", env=None,
+                       volumes=None, userns=None, detach=True, tty=False,
+                       interactive=False, command=None, port_bindings=None):
+        """Start a container, similar to docker-py's ContainerManager.run().
+
+        Args:
+            image:   Image name (e.g. "myimage:latest")
+            name:    Container name
+            network: Network mode (default: "host")
+            env:     List of "KEY=VALUE" environment variables
+            volumes: List of "host:container:flags" mount strings
+            userns:  User namespace flag (e.g. "keep-id" for podman)
+            detach:  Run in background (default: True)
+            tty:     Allocate TTY
+            interactive: Interactive mode (-i flag)
+            command: Override default command
+            port_bindings: Dict of {container_port: host_port}
+
+        Returns:
+            (container_id, stdout, stderr, rc)
+        """
+        args = [self.cmd, "run"]
+        if detach:
+            args.append("-d")
+
+        if name:
+            args += ["--name", name]
+        args += ["--network", network]
+
+        if userns:
+            args += ["--userns", userns]
+        if tty:
+            args.append("-t")
+        if interactive:
+            args.append("-i")
+
+        for e in (env or []):
+            args += ["-e", str(e)]
+
+        for v in (volumes or []):
+            args += ["-v", str(v)]
+
+        for cp, hp in (port_bindings or {}).items():
+            args += ["-p", f"{hp}:{cp}"]
+
+        if command:
+            if isinstance(command, list):
+                args += command
+            else:
+                args.append(command)
+        else:
+            args.append(image)
+
+        stdout, stderr, rc = run_cmd(args)
+        container_id = stdout.strip()
+        return (container_id, stdout, stderr, rc)
+
+    def containers_stop(self, name, timeout=30):
+        """Stop a running container.
+
+        Returns:
+            True if stopped successfully.
+        """
+        _, _, rc = run_cmd([self.cmd, "stop", "-t", str(timeout), name])
+        return rc == 0
+
+    def containers_remove(self, name, force=True):
+        """Remove a container.
+
+        Returns:
+            True if removed successfully.
+        """
+        args = [self.cmd, "rm"]
+        if force:
+            args.append("-f")
+        args.append(name)
+        _, _, rc = run_cmd(args)
+        return rc == 0
+
+    def containers_exec(self, name, command, tty=True, interactive=True):
+        """Execute a command inside a running container.
+
+        Unlike other methods this is interactive — output goes to the
+        caller's stdout/stderr, so we don't capture it.
+        """
+        args = [self.cmd, "exec"]
+        if tty:
+            args.append("-t")
+        if interactive:
+            args.append("-i")
+        args.append(name)
+        if isinstance(command, list):
+            args += command
+        else:
+            args.append(command)
+        return subprocess.run(args, check=False).returncode
+
+    def containers_logs(self, name, follow=True, tail=None):
+        """Follow or retrieve container logs."""
+        args = [self.cmd, "logs"]
+        if follow:
+            args.append("-f")
+        if tail:
+            args += ["--tail", str(tail)]
+        args.append(name)
+        _, _, rc = run_cmd(args)
+        return rc == 0
+
+    # ── Image operations ─────────────────────────────────────────────────
+
+    def images_pull(self, name):
+        """Pull an image.
+
+        Returns:
+            (stdout, stderr, rc)
+        """
+        return run_cmd([self.cmd, "pull", name])
+
+    def images_inspect(self, name):
+        """Inspect an image. Returns rc — 0 means present."""
+        _, _, rc = run_cmd([self.cmd, "image", "inspect", name])
+        return rc
+
+    def images_exists(self, name):
+        """Check if an image is available locally."""
+        return self.images_inspect(name) == 0
+
+    # ── Version ──────────────────────────────────────────────────────────
+
+    def version(self):
+        """Return client version string."""
+        _, out, rc = run_cmd([self.cmd, "version", "--format", "{{.Client.Version}}"])
+        return out.strip() if rc == 0 else ""
+
+
+# ─── Convenience helpers ─────────────────────────────────────────────────────
+
+def client():
+    """Get a ContainerClient for the configured container engine."""
+    return ContainerClient(cfg.container_cmd)
 
 # ─── Path / mount ────────────────────────────────────────────────────────────
 
@@ -146,13 +296,14 @@ def resolve_path(p):
     return os.path.abspath(os.path.expanduser(p).replace("${HOME}", HOME))
 
 def detect_mount_flags(project_dir):
-    ensure_container_cmd()
-    _, stderr, _ = run_cmd([
-        cfg.container_cmd, "run", "--rm", "--name", "_lpb_mnt_test",
-        "-v", f"{project_dir}:/tmp/mnt:Z",
-        "alpine:latest", "sh", "-c", "echo ok",
-    ])
-    run_cmd([cfg.container_cmd, "rm", "-f", "_lpb_mnt_test"])
+    c = client()
+    _, _, stderr, _ = c.containers_run(
+        image="alpine:latest",
+        name="_lpb_mnt_test",
+        detach=True,
+        volumes=[f"{project_dir}:/tmp/mnt:Z"],
+    )
+    c.containers_remove("_lpb_mnt_test")
     if stderr and re.search(r"selinux|relabeling|permission", stderr, re.IGNORECASE):
         return ":z"
     return ":Z"
@@ -328,18 +479,20 @@ def cmd_help():
 
 def cmd_stop():
     ensure_container_cmd()
-    if not container_running():
+    c = client()
+    if not c.container_running(cfg.container_name):
         info(f"Container '{cfg.container_name}' is not running.")
         sys.exit(0)
     info(f"Stopping {cfg.container_name}...")
-    _, _, rc = run_cmd([cfg.container_cmd, "stop", "-t", "30", cfg.container_name])
-    if rc != 0: err("Failed to stop", "Check: lpb --logs"); sys.exit(1)
-    remove_container()
+    if not c.containers_stop(cfg.container_name):
+        err("Failed to stop", "Check: lpb --logs"); sys.exit(1)
+    c.containers_remove(cfg.container_name)
     info("Stopped and removed.")
 
 def cmd_remove():
     ensure_container_cmd()
-    remove_container()
+    c = client()
+    c.containers_remove(cfg.container_name)
     for d in (cfg.state_dir, cfg.browser_dir):
         if os.path.isdir(resolve_path(d)):
             shutil.rmtree(resolve_path(d), ignore_errors=True)
@@ -347,16 +500,18 @@ def cmd_remove():
 
 def cmd_logs():
     ensure_container_cmd()
-    if not container_exists():
+    c = client()
+    if not c.container_exists(cfg.container_name):
         err("Container not found", "Run 'lpb --remove' then 'lpb' to start fresh.")
         sys.exit(0)
-    _, _, rc = run_cmd([cfg.container_cmd, "logs", "-f", cfg.container_name])
-    if rc != 0: err("Failed to follow logs"); sys.exit(1)
+    if not c.containers_logs(cfg.container_name):
+        err("Failed to follow logs"); sys.exit(1)
 
 def cmd_update():
     ensure_container_cmd()
+    c = client()
     info(f"Pulling {cfg.image_name}...")
-    _, _, rc = run_cmd([cfg.container_cmd, "pull", cfg.image_name])
+    _, eo, rc = c.images_pull(cfg.image_name)
     if rc != 0: err("Failed to pull image"); sys.exit(1)
 
 def cmd_config():
@@ -368,25 +523,129 @@ def cmd_config():
 
 # ─── cmd_run ─────────────────────────────────────────────────────────────────
 
-def _build_url():
-    """Build the connection URL from the RESOLVED cfg.host and cfg.port.
+def _get_lan_ips():
+    """Return a list of non-loopback IPv4 addresses on this machine.
 
-    These values come from:
-      1. CLI --host / --port flags
-      2. Project .env (LPB_EDITOR_HOST / LPB_ED_PORT)
-      3. Global config
-      4. Defaults
-
-    The server inside the container will be listening on exactly these values,
-    so the URL must match.
+    Tries multiple methods in order of reliability:
+      1. hostname -I (most common)
+      2. ip -4 addr show (Linux)
+      3. ifconfig (macOS/BSD)
+    Only IPv4 addresses are returned.
     """
-    if cfg.without_token:
-        return f"http://{cfg.host}:{cfg.port}/"
-    return f"http://{cfg.host}:{cfg.port}/?tkn={cfg.token}"
+    ipv4_re = re.compile(r'^(\d+\.\d+\.\d+\.\d+)$')
+    ips = []
+
+    # Method 1: hostname -I (Linux, widely available)
+    try:
+        r = subprocess.run(
+            ["hostname", "-I"], capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            for addr in r.stdout.split():
+                if ipv4_re.match(addr) and not addr.startswith("127."):
+                    ips.append(addr)
+    except (FileNotFoundError, OSError):
+        pass
+
+    if ips:
+        return ips
+
+    # Method 2: ip -4 addr show (Linux systemd)
+    try:
+        r = subprocess.run(
+            ["ip", "-4", "addr", "show"], capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                m = re.search(r'(?:inet)\s+(\d+\.\d+\.\d+\.\d+)', line)
+                if m and not m.group(1).startswith("127."):
+                    ips.append(m.group(1))
+    except (FileNotFoundError, OSError):
+        pass
+
+    if ips:
+        return ips
+
+    # Method 3: ifconfig (macOS/BSD)
+    try:
+        r = subprocess.run(
+            ["ifconfig"], capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            for m in re.finditer(r'inet\s+(\d+\.\d+\.\d+\.\d+)', r.stdout):
+                ip = m.group(1)
+                if not ip.startswith("127."):
+                    ips.append(ip)
+    except (FileNotFoundError, OSError):
+        pass
+
+    return ips
+
+
+def _get_host_for_url():
+    """Return the display host for the URL based on cfg.host.
+
+    - host=0.0.0.0 → show first LAN IP
+    - host=localhost → show localhost
+    - host=127.0.0.1 → show localhost
+    - host=<specific IP> → show that IP
+    """
+    h = cfg.host
+    if h in ("0.0.0.0", "::"):
+        lan = _get_lan_ips()
+        return lan[0] if lan else h
+    if h in ("localhost", "127.0.0.1"):
+        return h
+    return h
+
+
+def _build_urls():
+    """Return a dict of label → URL for all accessible endpoints.
+
+    Examples:
+      host=localhost        → {"Local": "http://localhost:8000/..."}
+      host=0.0.0.0          → {"Local": "http://localhost:8000/...",
+                                 "LAN": "http://192.168.1.5:8000/..."}
+      host=192.168.1.100    → {"Server": "http://192.168.1.100:8000/..."}
+    """
+    host = _get_host_for_url()
+    port = cfg.port
+    token_part = "" if cfg.without_token else f"?tkn={cfg.token}"
+    base = f"http://{host}:{port}/{token_part}"
+
+    urls = {host: base}
+
+    # When binding on 0.0.0.0, also show localhost + each LAN IP
+    if cfg.host in ("0.0.0.0", "::"):
+        lan_ips = _get_lan_ips()
+        localhost_url = f"http://localhost:{port}/{token_part}"
+        urls["localhost"] = localhost_url
+        for ip in lan_ips:
+            lan_url = f"http://{ip}:{port}/{token_part}"
+            urls[ip] = lan_url
+
+    return urls
+
+
+def _build_url():
+    """Build the URL to use for the health check.
+
+    Uses cfg.host directly since curl must connect to the address the server
+    is actually listening on.
+    """
+    check_host = cfg.host
+    if check_host == "0.0.0.0":
+        check_host = "localhost"  # always check on localhost first
+    if check_host in ("localhost", "127.0.0.1"):
+        check_host = "localhost"
+    port = cfg.port
+    token_part = "" if cfg.without_token else f"?tkn={cfg.token}"
+    return f"http://{check_host}:{port}/{token_part}"
 
 
 def cmd_run():
     ensure_container_cmd()
+    c = client()
 
     # ── 1. Resolve project directory ─────────────────────────────────────
     project_dir = cfg.project_dir
@@ -445,49 +704,54 @@ def cmd_run():
     os.makedirs(dir_browser, exist_ok=True)
 
     # ── 6. Stop existing container ───────────────────────────────────────
-    if container_running():
+    if c.container_running(cfg.container_name):
         info("Stopping existing devstack container...")
-        stop_container()
+        c.containers_stop(cfg.container_name)
 
     # ── 7. Pull image ────────────────────────────────────────────────────
-    pull_image()
+    # ── 7. Pull image ────────────────────────────────────────────────────
+    if not c.images_exists(cfg.image_name):
+        info(f"Pulling {cfg.image_name}...")
+        _, eo, rc = c.images_pull(cfg.image_name)
+        if rc != 0:
+            err("Failed to pull image", eo.strip().splitlines()[-1][:200] if eo.strip() else "")
+            sys.exit(1)
 
     # ── 8. Detect SELinux mount flags ────────────────────────────────────
     mount_flags = detect_mount_flags(project_dir)
 
     # ── 9. Remove stale stopped containers ───────────────────────────────
-    if container_exists():
+    if c.container_exists(cfg.container_name):
         info(f"Removing stale container '{cfg.container_name}'...")
-        remove_container()
+        c.containers_remove(cfg.container_name)
 
-    # ── 10. Build & run container ────────────────────────────────────────
+    # ── 10. Run container via client ─────────────────────────────────────
     info("Running...")
 
-    run_args = [cfg.container_cmd, "run", "-d",
-                "--name", cfg.container_name,
-                "--network", "host"]
-
-    if is_podman():
-        run_args += ["--userns", "keep-id"]
-
-    if cfg.interactive:
-        run_args += ["-it"]
-
-    run_args += [
-        "-e", f"LPB_ED_PORT={cfg.port}",
-        "-e", f"LPB_EDITOR_HOST={cfg.host}",
-        "-e", f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
-        "-e", f"LPB_CONNECTION_TOKEN={cfg.token}",
-        "-e", "LPB_STATE_DIR=/home/dev/.pi",
-        "-v", f"{project_dir}:{mount_path}{mount_flags}",
-        "-v", f"{resolved_state}:/home/dev/.pi{mount_flags}",
-        "-v", f"{dir_browser}:/home/dev/.agent-browser{mount_flags}",
+    env_vars = [
+        f"LPB_ED_PORT={cfg.port}",
+        f"LPB_EDITOR_HOST={cfg.host}",
+        f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
+        f"LPB_CONNECTION_TOKEN={cfg.token}",
+        "LPB_STATE_DIR=/home/dev/.pi",
     ]
+    volumes = [
+        f"{project_dir}:{mount_path}{mount_flags}",
+        f"{resolved_state}:/home/dev/.pi{mount_flags}",
+        f"{dir_browser}:/home/dev/.agent-browser{mount_flags}",
+    ]
+    userns = "keep-id" if is_podman() else None
 
-    run_args.append(cfg.image_name)
-
-    stdout, stderr, rc = run_cmd(run_args)
-    container_id = stdout.strip()
+    container_id, stdout, stderr, rc = c.containers_run(
+        image=cfg.image_name,
+        name=cfg.container_name,
+        network="host",
+        env=env_vars,
+        volumes=volumes,
+        userns=userns,
+        interactive=cfg.interactive,
+        detach=True,
+    )
 
     if rc != 0 or not container_id:
         err("failed to start container")
@@ -509,7 +773,7 @@ def cmd_run():
     if cfg.interactive:
         info(f"\nEntering interactive shell in {cfg.container_name}...")
         print()
-        run_cmd([cfg.container_cmd, "exec", "-it", cfg.container_name, "/bin/bash"])
+        c.containers_exec(cfg.container_name, "/bin/bash")
         return
 
     # ── 13. Health check (wait for VSCodium server) ──────────────────────
@@ -534,7 +798,22 @@ def cmd_run():
 
     if ready:
         print()
-        info(f"\u2713 Devstack ready at {health_url}")
+        urls = _build_urls()
+        # Show all URLs, prioritizing LAN IP when host was 0.0.0.0
+        if len(urls) == 1:
+            label, url = list(urls.items())[0]
+            info(f"\u2713 Devstack ready at {url}")
+        else:
+            # Multiple URLs — show primary first, then others
+            items = list(urls.items())
+            primary = items[0]
+            info(f"\u2713 Devstack ready")
+            for label, url in items:
+                if label == "localhost" or label.startswith("127."):
+                    info(f"    Local:   {url}")
+                else:
+                    info(f"    LAN:     {url}")
+
         print()
         info("  lpb --logs     \u2014 View logs")
         info("  lpb --stop     \u2014 Stop")
