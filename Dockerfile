@@ -98,9 +98,7 @@ RUN curl -fsSL \
 COPY stack-upkeep/patches/ /opt/pi-patches/
 COPY stack-upkeep/scripts/apply-patches.sh /opt/pi-patches/apply-patches.sh
 COPY stack-upkeep/scripts/update.sh /opt/pi-patches/update.sh
-COPY stack-upkeep/scripts/load-updates.sh /opt/pi-patches/load-updates.sh
 RUN chmod +x /opt/pi-patches/apply-patches.sh /opt/pi-patches/update.sh \
-    /opt/pi-patches/load-updates.sh \
     && ln -sf /opt/pi-patches/update.sh /usr/local/bin/stack-update \
     && mkdir -p /opt/pi-internal \
     && ln -sf /opt/pi-patches /opt/pi-internal/stack-upkeep
@@ -253,8 +251,6 @@ COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh
 COPY run.sh /usr/local/bin/run.sh
 COPY stack.sh /usr/local/bin/stack.sh
-COPY build-updates.sh /usr/local/bin/build-updates.sh
-COPY host-load-updates.sh /usr/local/bin/host-load-updates.sh
 # Symlink to PATH for easy shell access
 RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
     && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
@@ -262,8 +258,7 @@ RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
 RUN chmod +x /opt/devstack/start.sh \
     /opt/devstack/install-browser.sh \
     /opt/devstack/validate.sh \
-    /usr/local/bin/run.sh /usr/local/bin/stack.sh \
-    /usr/local/bin/build-updates.sh /usr/local/bin/host-load-updates.sh
+    /usr/local/bin/run.sh /usr/local/bin/stack.sh
 
 # ── Final ownership + browser state dirs ────────────────────────────────────
 RUN chown -R 1000:1000 /home/dev /opt/pi-patches \

@@ -45,17 +45,13 @@ podman run -d \
     ghcr.io/localpibox/devstack:latest
 ```
 
-## Update extensions/patches (no rebuild)
+## Update extensions (no rebuild)
 
 ```bash
-# Pull latest tarballs from GHCR and load
-./stack.sh update --pull
-
-# Update only extensions
+# Update extensions to latest release (installs missing, upgrades stale)
 ./stack.sh update --extensions
-
-# Update only patches
-./stack.sh update --patches
+# or directly inside the container:
+# podman exec -it localpibox update --extensions
 ```
 
 ## Useful commands
@@ -89,4 +85,4 @@ Tools see `myproject` as the project name, not `workspace`.
 - **Built on**: GitHub Actions (fast connection)
 - **Published to**: `ghcr.io/localpibox/devstack:latest`
 - **Triggers**: push to main, weekly cron, manual
-- **Update tarballs**: built separately, loaded without rebuild
+- **Extension updates**: `pi update --extensions` (no rebuild needed)

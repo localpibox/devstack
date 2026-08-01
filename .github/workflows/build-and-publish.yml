@@ -2,7 +2,7 @@
 # LocalPibox Devstack — CI/CD Build & Publish
 # ═══════════════════════════════════════════════════════════
 # Builds on GitHub (fast connection) → publishes to GHCR
-# Update tarballs built separately, loaded on demand
+# Extensions update at runtime via pi update --extensions
 #
 # Triggers:
 #   - Push to main (Dockerfile, support/, stack-upkeep/)
@@ -37,10 +37,6 @@ on:
     inputs:
       publish_latest:
         description: 'Publish as :latest tag'
-        type: boolean
-        default: true
-      push_tarballs:
-        description: 'Build and push update tarballs'
         type: boolean
         default: true
 
@@ -99,65 +95,9 @@ jobs:
           provenance: false
           platforms: linux/amd64
 
-  build-tarballs:
-    name: Build update tarballs
-    runs-on: ubuntu-latest
-    needs: build
-    if: ${{ github.event.inputs.push_tarballs != false && github.event_name != 'pull_request' }}
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Login to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build tarballs
-        run: |
-          mkdir -p updates
-          cd updates
-          git clone --depth=1 --branch main https://github.com/localpibox/pi pi
-          cd pi
-          git remote add localpibox https://github.com/localpibox/pi.git 2>/dev/null || true
-          git fetch localpibox 2>/dev/null || true
-          mkdir -p /tmp/patches
-          for patch in /home/runner/work/devstack/devstack/stack-upkeep/patches/pi-*.patch; do
-            [ -f "$patch" ] && git am "$patch" 2>/dev/null || true
-          done
-          tar czf pi-$(git rev-parse --short HEAD).tar.gz \
-            --owner=1000 --group=1000 \
-            $(git ls-files)
-          cd ..
-          git clone --depth=1 --branch patches/api-key-auth https://github.com/localpibox/lemonade-pi-plugin lemonade
-          tar czf lemonade-$(git -C lemonade rev-parse --short HEAD).tar.gz \
-            --owner=1000 --group=1000 \
-            -C lemonade $(cd lemonade && git ls-files)
-          git clone --depth=1 --branch fix/subprocess-provider https://github.com/localpibox/pi-hermes-memory memory
-          tar czf memory-$(git -C memory rev-parse --short HEAD).tar.gz \
-            --owner=1000 --group=1000 \
-            -C memory $(cd memory && git ls-files)
-          git clone --depth=1 https://github.com/localpibox/config config
-          tar czf config-$(git -C config rev-parse --short HEAD).tar.gz \
-            --owner=1000 --group=1000 \
-            -C config $(cd config && git ls-files)
-          echo "=== Tarballs ==="
-          ls -lh /home/runner/work/devstack/devstack/updates/
-
-      - name: Upload tarballs as artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: update-tarballs
-          path: updates/
-          retention-days: 14
-
   status:
     name: Build status
-    needs: [build, build-tarballs]
+    needs: [build]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -167,8 +107,3 @@ jobs:
             exit 1
           fi
           echo "Build complete"
-          if [ "${{ needs.build-tarballs.result }}" = "skipped" ]; then
-            echo "Tarballs skipped (PR build or disabled)"
-          else
-            echo "Tarballs built and published"
-          fi

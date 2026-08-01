@@ -1,228 +1,58 @@
 #!/usr/bin/env bash
-# update.sh — Update extensions, patches, and pi within the container
-#
-# This script runs INSIDE the container to keep things up-to-date without
-# rebuilding the image. It can be invoked via:
-#   podman exec -it localpibox /stack.sh update
-#
-# Usage:
-#   ./update.sh [--dry-run] [--extensions] [--patches] [--all]
-#
-# Options:
-#   --dry-run        Show what would be updated without making changes
-#   --extensions     Update only pi extensions
-#   --patches        Update only git patches
-#   --all            Update everything (default)
+# update.sh — Update extensions and patches in the running container
+# Usage: update.sh [--extensions|--patches|--all]
+#   --extensions  Update Pi extensions (default)
+#   --patches     Apply/un-apply Pi source patches
+#   --all         Update extensions and patches
 
 set -euo pipefail
 
-STACK_DIR="/opt/pi-internal/stack-upkeep"  # Inside container
-PI_SRC="/opt/pi-src"  # Inside container
-HOME_DIR="/home/dev"
-
-# Color codes
-GREEN=$(printf '\033[0;32m')
-YELLOW=$(printf '\033[1;33m')
-RED=$(printf '\033[0;31m')
-CYAN=$(printf '\033[0;36m')
-BOLD=$(printf '\033[1m')
-NC=$(printf '\033[0m')
-
-DRY_RUN=false
-MODE="all"
-
-# ── Parse args ──────────────────────────────────────────────────────────────
-
+MODE="extensions"
 while [ $# -gt 0 ]; do
     case "$1" in
-        --dry-run)  DRY_RUN=true; shift ;;
         --extensions) MODE="extensions"; shift ;;
-        --patches)  MODE="patches"; shift ;;
-        --all)      MODE="all"; shift ;;
-        --help|-h)
-            echo "Usage: $0 [--dry-run] [--extensions|--patches|--all]"
-            echo ""
-            echo "  --dry-run        Show changes without applying"
-            echo "  --extensions     Update pi extensions only"
-            echo "  --patches        Update patches only"
-            echo "  --all            Update everything (default)"
-            exit 0 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        --patches)    MODE="patches"; shift ;;
+        --all)        MODE="all"; shift ;;
+        -h|--help)    echo "Usage: $0 [--extensions|--patches|--all]"; exit 0 ;;
+        *)            echo "Usage: $0 [--extensions|--patches|--all]" >&2; exit 1 ;;
     esac
 done
 
-print_section() {
-    echo ""
-    echo -e "${CYAN}${BOLD}=== $1 ===${NC}"
-}
-
-print_ok() {
-    if [ "$DRY_RUN" = true ]; then
-        echo -e "  ${GREEN}✓[DRY]${NC} $1"
-    else
-        echo -e "  ${GREEN}✓${NC} $1"
-    fi
-}
-
-print_warn() {
-    echo -e "  ${YELLOW}⚠${NC} $1"
-}
-
-print_err() {
-    echo -e "  ${RED}✗${NC} $1"
-}
-
-# ── Update Extensions ───────────────────────────────────────────────────────
+G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; B='\033[1m'; N='\033[0m'
 
 update_extensions() {
-    print_section "Extensions"
-    
-    # Extensions that should be in the container
-    # Format: name:repo@branch
-    declare -A EXTENSIONS=(
-        ["lemonade-provider"]="git:github.com/localpibox/lemonade-pi-plugin@patches/api-key-auth"
-        ["pi-hermes-memory"]="git:github.com/localpibox/pi-hermes-memory@fix/subprocess-provider"
-        ["pi-mcp-adapter"]="npm:pi-mcp-adapter"
-        ["pi-subagents"]="npm:@tintinweb/pi-subagents"
-        ["pi-powerline-footer"]="npm:pi-powerline-footer"
-    )
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo "  Would ensure these extensions are installed:"
-        for name in "${!EXTENSIONS[@]}"; do
-            echo "    $name → ${EXTENSIONS[$name]}"
-        done
-        return 0
-    fi
-    
-    # Use Pi's native update command — checks all configured packages and
-    # installs/updates only those that differ from the latest release.
-    # The old `pi list | grep → skip` pattern only checks existence, never triggers updates.
-    echo -n "  Running pi update --extensions... "
+    echo -e "\n${C}${B}=== Extensions ===${N}"
+    echo "  pi update --extensions"
     if pi update --extensions 2>&1; then
-        echo -e "${GREEN}✓${NC} extensions updated"
+        echo -e "  ${G}✓ extensions updated${N}"
     else
-        print_warn "pi update --extensions reported errors (some extensions may need manual attention)"
+        echo -e "  ${Y}⚠ some extensions may need attention${N}"
     fi
-
-    # Verify all expected extensions are present
-    local all_present=true
-    for name in "${!EXTENSIONS[@]}"; do
-        local pkg="${EXTENSIONS[$name]}"
-        local pkg_name
-        pkg_name=$(echo "$pkg" | sed 's|.*:||' | sed 's|@.*||')
-        echo -n "  Verifying $name... "
-        if pi list --json 2>/dev/null | grep -q "$pkg_name" 2>/dev/null; then
-            echo -e "${GREEN}✓${NC} installed"
-        else
-            echo -e "${RED}✗${NC} missing"
-            all_present=false
-        fi
-    done
-
-    if [ "$all_present" = false ]; then
-        print_warn "Some extensions are missing — run 'pi install <source>' to install them"
-    fi
+    echo -e "\n  Installed:"
+    pi list 2>/dev/null | sed 's/^/    /'
 }
-
-# ── Update Patches ──────────────────────────────────────────────────────────
 
 update_patches() {
-    print_section "Patches"
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo "  Would check and apply patches:"
-        echo "    pi-qwen-chat-template.patch"
-        echo "    lemonade-qwen-vision.patch"
-        echo ""
-        echo "  If patches have conflicts, manual intervention needed."
+    echo -e "\n${C}${B}=== Patches ===${N}"
+    if [ ! -d "/opt/pi-src/.git" ]; then
+        echo -e "  ${Y}⚠ no git source — patches are baked into the image${N}"
+        echo "  To re-apply patches, rebuild the container with updated patch files."
         return 0
     fi
-    
-    PATCHES_DIR="/opt/pi-patches"
-    if [ ! -d "$PATCHES_DIR" ]; then
-        print_warn "Patches directory not found"
-        return 0
-    fi
-    
-    cd "$PI_SRC" 2>/dev/null || { print_warn "pi-src not found, skipping"; return 0; }
-    
-    # Check if patches are already applied (by looking at git log)
-    local patches_applied=true
-    for patch in "$PATCHES_DIR"/*.patch; do
-        [ -f "$patch" ] || continue
-        local patch_name=$(basename "$patch" .patch)
-        if ! git log --oneline --grep="$patch_name" 2>/dev/null | head -1 > /dev/null; then
-            patches_applied=false
-            break
+    (cd /opt/pi-src && for p in /opt/pi-patches/pi-*.patch; do
+        [ -f "$p" ] || continue
+        if git am "$p" 2>&1; then
+            echo -e "  ${G}✓ $(basename "$p" .patch)${N}"
+        else
+            echo -e "  ${Y}⚠ $(basename "$p" .patch) — conflict, resolve manually${N}"
         fi
-    done
-    
-    if [ "$patches_applied" = true ]; then
-        echo -e "  ${GREEN}✓${NC} Patches already applied"
-    else
-        echo -e "  ${YELLOW}⚠${NC} Applying patches..."
-        for patch in "$PATCHES_DIR"/*.patch; do
-            [ -f "$patch" ] || continue
-            local patch_name=$(basename "$patch" .patch)
-            if git am "$patch" 2>&1 >/dev/null; then
-                echo -e "  ${GREEN}✓${NC} Applied: $patch_name"
-            else
-                print_warn "Conflict in: $patch_name — resolve manually"
-            fi
-        done
-        echo ""
-        echo -e "  ${YELLOW}⚠${NC} After patch apply, rebuild may be needed:"
-        echo "    cd $PI_SRC && npm run build"
-    fi
+    done)
 }
-
-# ── Show Status ─────────────────────────────────────────────────────────────
-
-show_status() {
-    print_section "Current State"
-    
-    # Pi version
-    if [ -f "$PI_SRC/package.json" ]; then
-        local pi_version
-        pi_version=$(node -e "console.log(require('$PI_SRC/package.json').version)" 2>/dev/null || echo "unknown")
-        echo "  Pi version:   $pi_version"
-    else
-        echo "  Pi version:   not found"
-    fi
-    
-    # Installed extensions
-    echo ""
-    echo "  Installed extensions:"
-    pi list --json 2>/dev/null | jq -r '.[]?.name // .?.name // "unknown"' 2>/dev/null | while read -r ext; do
-        echo "    - $ext"
-    done || echo "    (unable to list)"
-    
-    # Last build date
-    if [ -d "$PI_SRC" ]; then
-        local build_date
-        build_date=$(stat -c '%y' "$PI_SRC/package.json" 2>/dev/null | cut -d. -f1 || echo "unknown")
-        echo ""
-        echo "  Last build:   $build_date"
-    fi
-}
-
-# ── Main ────────────────────────────────────────────────────────────────────
-
-echo -e "${BOLD}LocalPibox Stack Update${NC}"
-echo "  Mode:    $MODE"
-echo "  Dry run: $DRY_RUN"
 
 case "$MODE" in
     extensions) update_extensions ;;
     patches)    update_patches ;;
-    all)
-        show_status
-        update_extensions
-        update_patches
-        ;;
+    all)        update_extensions; update_patches ;;
 esac
 
-echo ""
-echo -e "${GREEN}${BOLD}Update complete.${NC}"
-echo ""
+echo -e "\n${G}Done.${N}"

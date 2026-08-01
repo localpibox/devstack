@@ -31,11 +31,11 @@ podman run -it --name localpibox --network host --userns keep-id \
     ghcr.io/localpibox/devstack:latest
 ```
 
-### Update extensions/patches (no rebuild)
+### Update extensions (no rebuild)
 
 ```bash
 # Inside the running container
-podman exec -it localpibox stack.sh update --pull
+podman exec -it localpibox update --extensions
 ```
 
 ## Architecture
@@ -66,19 +66,15 @@ Once the container is running, these commands are available:
 | Command | Description |
 |---|---|
 | `pi` | Start Pi CLI |
-| `stack.sh update --pull` | Load latest updates from GHCR |
-| `stack.sh update --extensions` | Update only extensions |
-| `stack.sh update --patches` | Update only patches |
+| `update --extensions` | Update extensions to latest |
+| `update --patches` | Apply Pi source patches |
 | `exit` | Stop the server and exit |
 
 ### Update examples
 
 ```bash
-# Pull latest tarballs from GHCR and load
-podman exec -it localpibox stack.sh update --pull
-
-# Update only extensions
-podman exec -it localpibox stack.sh update --extensions
+# Update extensions to latest release
+podman exec -it localpobox update --extensions
 
 # Update only patches
 podman exec -it localpibox stack.sh update --patches
@@ -124,12 +120,12 @@ podman run -d --name localpibox --network host --userns keep-id \
 # → http://localhost:3001
 ```
 
-## Update Pipeline
+## Update Flow
 
 ```
 ┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
 │  GitHub      │  ──→ │  CI/CD        │  ──→ │  GHCR            │
-│  (your code) │      │  (fast net)   │      │  (pulled locally)│
+│  (your code) │      │  (fast net)   │      │  (image)         │
 └──────────────┘      └───────────────┘      └──────────────────┘
                                                         │
                     ┌──────────────┐                    │
@@ -143,8 +139,8 @@ podman run -d --name localpibox --network host --userns keep-id \
                     └──────────────┘
                           │
                     ┌──────────────┐
-                    │  Stack.sh    │
-                    │  update      │◄── Patch-level updates
+                    │  update      │◄── Extensions updated at boot
+                    │  --extensions│     via pi update --extensions
                     └──────────────┘
 ```
 
@@ -153,8 +149,7 @@ podman run -d --name localpibox --network host --userns keep-id \
 | Component | How | Frequency |
 |---|---|---|
 | Base image | CI/CD on push to main | Every code change |
-| Pi patches | `stack.sh update --patches` | When patches change |
-| Extensions | `stack.sh update --extensions` | As needed |
+| Extensions | `pi update --extensions` (at boot) | Every container start |
 | Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
 
 ## CI/CD
@@ -207,7 +202,7 @@ podman exec -it localpibox pi login
 ### Outdated extensions
 
 ```bash
-podman exec -it localpibox stack.sh update --pull
+podman exec -it localpibox update --extensions
 ```
 
 ### Need a rebuild
@@ -227,7 +222,7 @@ podman run -d --name localpibox --network host --userns keep-id \
 
 ```
 devstack/
-├── Dockerfile                 # Multi-stage build (builder → runtime)
+├── Dockerfile                 # Single-stage build (all in one image)
 ├── run.sh                     # Local launcher script (optional)
 ├── stack.sh                   # Stack management (copied into image)
 ├── .github/workflows/         # CI/CD pipeline
