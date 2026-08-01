@@ -37,17 +37,9 @@ export WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 export LPB_LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
 export LPB_OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
 export LPB_PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR:-/opt/pi-support}"
-export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-devsession}"
+export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || echo "devsession")}"
 export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
 export LPB_ED_PORT="${LPB_ED_PORT:-3000}"
-
-# Backwards-compat aliases (used by scripts that may reference old names)
-export ED_PORT="${LPB_ED_PORT}"
-export HOST="${LPB_EDITOR_HOST}"
-export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
-export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
-export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
 
 # ── Load .env from workspace (filtered to LPB_* vars) ───────────────────────
 WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
@@ -67,6 +59,14 @@ if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
 else
     echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env — using defaults"
 fi
+
+# Backwards-compat aliases (MUST come after .env load so LPB_* values are final)
+export ED_PORT="${LPB_ED_PORT}"
+export HOST="${LPB_EDITOR_HOST}"
+export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
+export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
+export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
+export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
 
 # ── Auto-detect mounted project subfolder when LPB_DEVCONTAINER_WORKSPACE_DIR not set ──
 if [ -z "${LPB_DEVCONTAINER_WORKSPACE_DIR:+set}" ]; then
