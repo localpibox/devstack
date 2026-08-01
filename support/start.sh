@@ -34,9 +34,9 @@ export HOME_DIR=/home/dev
 export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
 export WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 
-export LPB_LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}"
-export LPB_OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
-export LPB_PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR:-/opt/pi-support}"
+export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}}"
+export OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}}"
+export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR:-${PI_SUPPORT_DIR:-/opt/pi-support}}"
 export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || echo "devsession")}"
 export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
 export LPB_ED_PORT="${LPB_ED_PORT:-3000}"
@@ -50,23 +50,38 @@ if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$key" ]] && continue
         key=$(echo "$key" | xargs)
-        # Only allow LPB_* prefixed variables
+        value=$(echo "$value" | xargs)
+        # Only allow LPB_* prefixed variables — strip prefix to export both
+        # LPB_FOO and FOO so downstream tools (Exa MCP, extensions, etc.)
+        # find the unprefixed env var they expect.
         case "$key" in
-            LPB_*) export "$key"="$value" ;;
-            *)     echo "[devstack]   skipped non-LPB variable: $key" ;;
+            LPB_*)
+                export "$key"="$value"
+                stripped="${key#LPB_}"
+                export "$stripped"="$value"
+                ;;
+            *)
+                echo "[devstack]   skipped non-LPB variable: $key"
+                ;;
         esac
     done < "${WORKSPACE_DIR}/myproject/.env"
 else
     echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env — using defaults"
 fi
 
-# Backwards-compat aliases (MUST come after .env load so LPB_* values are final)
-export ED_PORT="${LPB_ED_PORT}"
-export HOST="${LPB_EDITOR_HOST}"
-export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
-export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL}"
-export PI_SUPPORT_DIR="${LPB_PI_SUPPORT_DIR}"
+# Backwards-compat LPB_* aliases (MUST come after .env load so stripped values are final)
+export ED_PORT="${LPB_ED_PORT:-${ED_PORT:-3000}}"
+export HOST="${LPB_EDITOR_HOST:-${HOST:-0.0.0.0}}"
+export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-${CONNECTION_TOKEN:-devsession}}"
+export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-${DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}}"
+export LPB_ED_PORT="${ED_PORT}"
+export LPB_EDITOR_HOST="${HOST}"
+export LPB_CONNECTION_TOKEN="${CONNECTION_TOKEN}"
+export LPB_DEVCONTAINER_WORKSPACE_DIR="${DEVCONTAINER_WORKSPACE_DIR}"
+export LPB_LEMONADE_BASE_URL="${LEMONADE_BASE_URL}"
+export LPB_OPENROUTER_BASE_URL="${OPENROUTER_BASE_URL}"
+export LPB_PI_SUPPORT_DIR="${PI_SUPPORT_DIR}"
+export EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
 
 # ── Auto-detect mounted project subfolder when LPB_DEVCONTAINER_WORKSPACE_DIR not set ──
 if [ -z "${LPB_DEVCONTAINER_WORKSPACE_DIR:+set}" ]; then

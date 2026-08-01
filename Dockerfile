@@ -288,10 +288,10 @@ USER dev
 WORKDIR /home/dev/workspace
 
 ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-ENV LPB_LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
-ENV LPB_OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-ENV LPB_DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
-ENV LPB_PI_SUPPORT_DIR="/opt/pi-support"
+ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
+ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
+ENV PI_SUPPORT_DIR="/opt/pi-support"
 
 # Health check — matches start.sh readiness probe
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
