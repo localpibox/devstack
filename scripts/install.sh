@@ -14,7 +14,7 @@ set -euo pipefail
 INSTALL_DIR="${HOME}/.local/bin"
 CONFIG_DIR="${HOME}/.localpibox/devstack"
 CONFIG_FILE="${CONFIG_DIR}/config"
-SCRIPT_URL="https://raw.githubusercontent.com/localpibox/devstack/main/scripts/ds.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/localpibox/devstack/main/scripts/lpb"
 
 # 1. Validate prerequisites
 for dep in curl; do

@@ -94,10 +94,79 @@ pull_image() {
     fi
 }
 
+start_container() {
+    ensure_container_cmd
+    local project_dir="$1"
+    local mount_path="$2"
+    local resolved_state="$3"
+    local dir_browser="$4"
+    local open_home="$5"
+
+    # ── Detect filesystem SELinux support ────────────────────────────────────
+    # If the project directory is on a filesystem that doesn't support SELinux
+    # relabeling (e.g. some NFS mounts, FUSE, certain container volumes),
+    # fall back to :z (shared, less restrictive) instead of :Z (private).
+    local mount_flags=":Z"
+    if [ -n "${project_dir}" ] && [ -d "${project_dir}" ]; then
+        # Check if SELinux is enabled and if we can relabel the directory
+        if command -v getfattr >/dev/null 2>&1; then
+            if ! getfattr -m "security\.selinux" -d "${project_dir}" 2>/dev/null | grep -q selinux 2>/dev/null; then
+                # No SELinux label on dir — try a quick :Z mount to see if it fails
+                local test_vol
+                test_vol=$(${CONTAINER_CMD} run --rm --name lpb-test-selinux \
+                    -v "${project_dir}:/tmp/test:Z" \
+                    alpine:latest sh -c 'echo ok' 2>&1)
+                if echo "${test_vol}" | grep -qi "selinux\|relabeling\|permission"; then
+                    mount_flags=":z"
+                    echo "  Note: Using :z mount flag (SELinux relabeling not available)."
+                fi
+                # Clean up test container
+                ${CONTAINER_CMD} rm lpb-test-selinux 2>/dev/null || true
+            fi
+        fi
+    fi
+
+    # ── Build volume arguments ───────────────────────────────────────────────
+    local volumes=()
+    volumes+=(
+        "-v" "${project_dir}:${mount_path}${mount_flags}"
+        "-v" "${resolved_state}:/home/dev/.pi${mount_flags}"
+        "-v" "${dir_browser}:/home/dev/.agent-browser${mount_flags}"
+    )
+
+    # ── Ensure no stale container with same name ─────────────────────────────
+    if ${CONTAINER_CMD} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${LPB_CONTAINER_NAME}$"; then
+        echo "Removing stale container '${LPB_CONTAINER_NAME}'..."
+        ${CONTAINER_CMD} rm -f "${LPB_CONTAINER_NAME}" 2>/dev/null || true
+    fi
+
+    # ── Start the container ──────────────────────────────────────────────────
+    local run_output run_rc
+    run_output=$(${CONTAINER_CMD} run -d \
+        --name "${LPB_CONTAINER_NAME}" \
+        --network host \
+        ${USERNS_FLAG} \
+        "-e" "LPB_ED_PORT=${LPB_PORT}" \
+        "-e" "LPB_EDITOR_HOST=${LPB_HOST}" \
+        "-e" "LPB_DEVCONTAINER_WORKSPACE_DIR=${mount_path}" \
+        "-e" "LPB_CONNECTION_TOKEN=${LPB_TOKEN}" \
+        "-e" "LPB_STATE_DIR=/home/dev/.pi" \
+        "${volumes[@]}" \
+        "${LPB_IMAGE_NAME}" 2>&1)
+    run_rc=$?
+
+    if [ ${run_rc} -ne 0 ] || [ -z "${run_output}" ]; then
+        return 1
+    fi
+    return 0
+}
+
 stop_existing() {
     ensure_container_cmd
-    ${CONTAINER_CMD} stop "${LPB_CONTAINER_NAME}" 2>/dev/null || true
-    ${CONTAINER_CMD} rm "${LPB_CONTAINER_NAME}" 2>/dev/null || true
+    if ${CONTAINER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q "^${LPB_CONTAINER_NAME}$"; then
+        ${CONTAINER_CMD} stop -t 30 "${LPB_CONTAINER_NAME}" 2>/dev/null || true
+    fi
+    ${CONTAINER_CMD} rm -f "${LPB_CONTAINER_NAME}" 2>/dev/null || true
 }
 
 # ─── Config loading (priority: lowest → highest) ────────────────────────────
@@ -196,20 +265,14 @@ parse_cli() {
             --logs|-l)       COMMAND="logs"; shift ;;
             --update|-u)     COMMAND="update"; shift ;;
             --config|-c)     COMMAND="config"; shift ;;
-            --help|-h)       COMMAND="help"; shift ;;
-            --)              shift; positional+=("$"); break ;;
-            --*)             echo "Unknown option: $1"; exit 1 ;;
+            --help|-h|help)  COMMAND="help"; shift ;;
+            --)              shift; positional+=("$@"); break ;;
+            --*)             echo "Error: Unknown option: $1"; echo "Run 'lpb --help' for usage."; exit 1 ;;
             *)               positional+=("$1"); shift ;;
         esac
     done
-    # Handle --help when it was passed as a positional arg (after a path)
-    for p in "${positional[@]+${positional[@]}}"; do
-        case "$p" in
-            --help|-h|help) COMMAND="help" ;;
-        esac
-    done
     PROJECT_DIR="${positional[0]:-}"
-    OPEN_HOME="${positional[1]:-false}"
+    OPEN_HOME=false
 }
 
 # ─── Commands ───────────────────────────────────────────────────────────────
@@ -253,7 +316,12 @@ EOF
 
 cmd_stop() {
     ensure_container_cmd
-    ${CONTAINER_CMD} stop -t 30 "${LPB_CONTAINER_NAME}" 2>/dev/null && echo "Stopped." || echo "Not running."
+    if ! ${CONTAINER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q "^${LPB_CONTAINER_NAME}$"; then
+        echo "Container '${LPB_CONTAINER_NAME}' is not running."
+        exit 0
+    fi
+    echo "Stopping ${LPB_CONTAINER_NAME}..."
+    ${CONTAINER_CMD} stop -t 30 "${LPB_CONTAINER_NAME}" 2>/dev/null && echo "Stopped." || { echo "Failed to stop."; exit 1; }
 }
 
 cmd_remove() {
@@ -261,7 +329,7 @@ cmd_remove() {
     ${CONTAINER_CMD} stop -t 30 "${LPB_CONTAINER_NAME}" 2>/dev/null || true
     ${CONTAINER_CMD} rm -f "${LPB_CONTAINER_NAME}" 2>/dev/null || true
     rm -rf "${LPB_STATE_DIR}" "${LPB_BROWSER_DIR}"
-    echo "Removed devstack."
+    echo "Removed devstack (container, state dir, browser dir)."
 }
 
 cmd_logs() {
@@ -290,7 +358,7 @@ cmd_run() {
 
     # Determine project dir
     local project_dir="${PROJECT_DIR}"
-    local open_home="${OPEN_HOME:-false}"
+    local open_home=${OPEN_HOME}
 
     if [ -z "${project_dir}" ]; then
         # Try last used project
@@ -307,14 +375,30 @@ cmd_run() {
         project_dir="${HOME}"
     fi
 
+    # Resolve to absolute path
+    project_dir=$(cd "${project_dir}" 2>/dev/null && pwd) || { echo "Error: directory not found: ${PROJECT_DIR}"; exit 1; }
     [ ! -d "${project_dir}" ] && { echo "Error: directory not found: ${project_dir}"; exit 1; }
 
-    mkdir -p "${LPB_STATE_DIR}" "${LPB_BROWSER_DIR}"
-
+    # Derive project name (the LAST component, e.g. "Documents" from "Documents/" or "/home/user/Documents")
     PROJECT_NAME=$(basename "${project_dir}")
-    MOUNT_PATH="/home/dev/workspace/${PROJECT_NAME}"
 
-    # Show summary
+    # Validate project name for volume safety
+    if ! echo "${PROJECT_NAME}" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9_.-]*$'; then
+        echo "Error: project name '${PROJECT_NAME}' contains invalid characters for volume mounts."
+        echo "        Use only alphanumeric characters, dots, hyphens, and underscores."
+        exit 1
+    fi
+
+    # Determine the mount point inside the container
+    # Use /home/dev/workspace/<PROJECT_NAME> for named projects,
+    # or /home/dev/workspace for the home/welcome-screen case.
+    if [ "${open_home}" = true ] && [ "${project_dir}" = "${HOME}" ]; then
+        MOUNT_PATH="/home/dev/workspace"
+    else
+        MOUNT_PATH="/home/dev/workspace/${PROJECT_NAME}"
+    fi
+
+    # Show summary before doing any work
     echo "Devstack: ${PROJECT_NAME}"
     echo "  Image:    ${LPB_IMAGE_NAME}"
     echo "  Project:  ${project_dir} → ${MOUNT_PATH}"
@@ -326,45 +410,54 @@ cmd_run() {
     fi
     echo ""
 
-    [ "${open_home}" = true ] && echo "Starting VSCodium — select a project in the welcome screen."
+    if [ "${open_home}" = true ]; then
+        echo "Starting VSCodium — select a project in the welcome screen."
+    else
+        echo "Starting VSCodium — opening ${PROJECT_NAME}."
+    fi
+    echo ""
 
-    # Build environment args
-    local ENV_ARGS=()
-    ENV_ARGS+=(
-        -e LPB_ED_PORT="${LPB_PORT}"
-        -e LPB_EDITOR_HOST="${LPB_HOST}"
-        -e LPB_DEVCONTAINER_WORKSPACE_DIR="${MOUNT_PATH}"
-        -e LPB_CONNECTION_TOKEN="${LPB_TOKEN}"
-        -e LPB_STATE_DIR="/home/dev/.pi"
-    )
+    # ── Resolve state dirs (expand ~ and ${HOME}) ─────────────────────────────
+    local resolved_state dir_browser
+    resolved_state="${LPB_STATE_DIR/#\$\{HOME\}/${HOME}}"
+    resolved_state="${resolved_state/#\~/\${HOME}}"
+    dir_browser="${LPB_BROWSER_DIR/#\$\{HOME\}/${HOME}}"
+    dir_browser="${dir_browser/#\~/\${HOME}}"
 
-    # Build volume mounts
-    local VOLUMES=()
-    VOLUMES+=(
-        -v "${project_dir}:${MOUNT_PATH}:Z"
-        -v "${LPB_STATE_DIR}:/home/dev/.pi:Z"
-        -v "${LPB_BROWSER_DIR}:/home/dev/.agent-browser:Z"
-    )
+    # Also handle plain ~ expansion (fallback)
+    resolved_state="${resolved_state/#\~/${HOME}}"
+    dir_browser="${dir_browser/#\~/${HOME}}"
 
-    # Stop existing if reconnecting
-    if [ "${open_home}" = true ] && [ "${PROJECT_DIR:-}" != "" ]; then
+    mkdir -p "${resolved_state}" "${dir_browser}"
+
+    # ── Stop existing container if re-running ────────────────────────────────
+    if ${CONTAINER_CMD} ps --format '{{.Names}}' 2>/dev/null | grep -q "^${LPB_CONTAINER_NAME}$"; then
+        echo "Stopping existing devstack container..."
         stop_existing
     fi
 
-    # Pull image
+    # ── Pull image ───────────────────────────────────────────────────────────
     pull_image
 
-    # Start container
+    # ── Start container ──────────────────────────────────────────────────────
     echo "Running..."
-    ${CONTAINER_CMD} run -d \
-        --name "${LPB_CONTAINER_NAME}" \
-        --network host \
-        ${USERNS_FLAG} \
-        ${ENV_ARGS[@]} \
-        ${VOLUMES[@]} \
-        "${LPB_IMAGE_NAME}"
+    if ! start_container "${project_dir}" "${MOUNT_PATH}" "${resolved_state}" "${dir_browser}" "${open_home}"; then
+        echo "Error: failed to start container."
+        echo ""
+        echo "Output:"
+        echo "${run_output}"
+        echo ""
+        echo "Troubleshooting:"
+        echo "  lpb --logs     — View container logs"
+        echo "  lpb --stop     — Stop existing container"
+        echo "  lpb --remove   — Remove everything and start fresh"
+        exit 1
+    fi
 
-    # Health check
+    # Save last project for reconnect
+    save_last_project "${project_dir}"
+
+    # ── Health check ─────────────────────────────────────────────────────────
     local HEALTH_URL
     if [ "${LPB_WITHOUT_TOKEN}" = true ]; then
         HEALTH_URL="http://${LPB_HOST}:${LPB_PORT}/"
@@ -372,21 +465,38 @@ cmd_run() {
         HEALTH_URL="http://${LPB_HOST}:${LPB_PORT}/?tkn=${LPB_TOKEN}"
     fi
 
-    echo "Waiting for editor..."
+    echo "Waiting for editor to be ready..."
+    local ready=false
     for i in $(seq 1 60); do
-        if curl -sf "${HEALTH_URL}" >/dev/null 2>&1; then
-            echo ""
-            echo "✓ Devstack ready at ${HEALTH_URL}"
-            echo ""
-            echo "  lpb --logs     — View logs"
-            echo "  lpb --stop     — Stop"
-            echo "  lpb --remove   — Remove everything"
-            echo "  lpb            — Reconnect to last project"
-            exit 0
+        if curl -sf --max-time 3 "${HEALTH_URL}" >/dev/null 2>&1; then
+            ready=true
+            break
         fi
         sleep 1
     done
-    echo "⚠ Container running but editor may not be ready. Check: lpb --logs"
+
+    if [ "${ready}" = true ]; then
+        echo ""
+        echo "✓ Devstack ready at ${HEALTH_URL}"
+        echo ""
+        echo "  lpb --logs     — View logs"
+        echo "  lpb --stop     — Stop"
+        echo "  lpb --remove   — Remove everything"
+        echo "  lpb            — Reconnect to last project"
+    else
+        echo ""
+        echo "⚠ Container is running but the editor may not be ready yet."
+        echo ""
+        echo "  Check logs:      lpb --logs"
+        echo "  Container status: ${CONTAINER_CMD} ps --filter name=${LPB_CONTAINER_NAME}"
+        echo "  Stop container:   lpb --stop"
+        echo "  Remove & restart: lpb --remove"
+        echo ""
+        echo "  Common issues:"
+        echo "    - Port ${LPB_PORT} already in use → use --port <new-port>"
+        echo "    - Container start failed → check lpb --logs"
+        echo "    - SELinux blocking mounts → try running on a filesystem that supports it"
+    fi
 }
 
 # ─── Entry point ────────────────────────────────────────────────────────────

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# lpb — LocalPibox Devstack launcher (wrapper)
+# Delegates to the Python implementation for robustness.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "${DIR}/lpb.py" "$@"
