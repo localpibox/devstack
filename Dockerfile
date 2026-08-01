@@ -26,6 +26,9 @@ ARG VSCODIUM_VERSION=1.126.04524
 # Pi fork + branch (from stack-upkeep/versions.env)
 ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_BRANCH=patches/qwen-reasoning-effort
+# Pi fork HEAD SHA — busts build cache whenever the fork branch advances
+# (resolved in CI from versions.env; "unknown" locally so local builds still work)
+ARG PI_HEAD_SHA=unknown
 
 FROM ubuntu:26.04
 
@@ -33,6 +36,7 @@ ARG NODE_VERSION
 ARG VSCODIUM_VERSION
 ARG PI_FORK
 ARG PI_BRANCH
+ARG PI_HEAD_SHA
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -120,7 +124,7 @@ RUN set -eux; \
     # Patches are baked into fork branches (e.g. patches/qwen-reasoning-effort)
     # — no git am needed at build time. Patch files remain in /opt/pi-patches
     # for runtime reference by update.sh --patches.
-    echo "=== Building from pre-patched fork branch ==="; \
+    echo "=== Building from pre-patched fork branch: ${PI_FORK} @ ${PI_BRANCH} (${PI_HEAD_SHA}) ==="; \
     \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
@@ -138,6 +142,12 @@ RUN set -eux; \
     \
     # Smoke test — fail the build immediately if pi isn't functional
     /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary is not functional after install" && exit 1); \
+    \
+    # Verify baked-in patches are present (fail fast if the fork branch regressed) \
+    grep -rq 'Case 4' /home/dev/.npm-global/lib/node_modules/@earendil-works/ \
+      || (echo "FATAL: isContextOverflow Case 4 patch missing from pi-ai" && exit 1); \
+    grep -rq 'qwen-chat-template' /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-ai/dist/ \
+      || (echo "FATAL: Qwen reasoning_effort patch missing from pi-ai" && exit 1); \
     \
     ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests

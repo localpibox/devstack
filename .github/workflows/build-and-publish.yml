@@ -39,6 +39,10 @@ on:
         description: 'Publish as :latest tag'
         type: boolean
         default: true
+      no_cache:
+        description: 'Full rebuild with no cache (pick up fork-branch changes)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -82,6 +86,14 @@ jobs:
             type=raw,value=latest,enable=${{ github.event.inputs.publish_latest != false }}
             type=schedule,pattern=weekly-%Y-%W
 
+      - name: Resolve Pi fork HEAD (cache invalidation)
+        id: pi_head
+        run: |
+          set -a; . stack-upkeep/versions.env; set +a
+          sha=$(git ls-remote "$pi_fork" "refs/heads/$pi_branch" | awk '{print $1}')
+          echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "Pi fork: ${pi_fork} @ ${pi_branch} (${sha:-unknown})"
+
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -90,6 +102,9 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            PI_HEAD_SHA=${{ steps.pi_head.outputs.sha }}
+          no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
