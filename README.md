@@ -152,6 +152,47 @@ podman run -d --name localpibox --network host --userns keep-id \
 | Extensions | `pi update --extensions` (at boot) | Every container start |
 | Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
 
+## Current Patches Baked Into the Image
+
+Patches are **baked into fork branches** at Docker build time. The
+Dockerfile clones Pi from a pre-patched fork branch, so no `git am` runs at
+build or runtime, and `update --patches` is reference-only inside the running
+container (the source tree is not shipped). The `.patch` files in
+`stack-upkeep/patches/` are **reference documentation** of what each fork
+branch contains; the authoritative branch list lives in
+`stack-upkeep/versions.env`. Run `./stack.sh status` for a live validation.
+
+### Pi monorepo — `localpibox/pi` @ `patches/qwen-reasoning-effort`
+
+Installed version: **0.83.0** (`pi --version`).
+
+| Patch (reference file) | What it does | File affected |
+|---|---|---|
+| `pi-qwen-chat-template.patch` | Send `reasoning_effort` (high/medium/low) for Qwen models via the `qwen` and `qwen-chat-template` thinking formats | `packages/ai/api/openai-completions.ts` |
+| `pi-overflow-case4.patch` | Add Case 4 to `isContextOverflow`: detect Qwen/Llama.cpp reasoning overflow where models burn the output budget on thinking blocks (`stopReason=length` + `output>0` + input >= 90% of context window) | `packages/ai/src/utils/overflow.ts` |
+
+### Lemonade plugin — `localpibox/lemonade-pi-plugin` @ `patches/api-key-auth`
+
+| Patch (reference file) | What it does | File affected |
+|---|---|---|
+| `lemonade-api-key-auth.patch` | Register the Lemonade provider with API-key auth type (not oauth), so Pi actually loads the provider | `extensions/index.ts` |
+| `lemonade-thinking-format.patch` | Switch Qwen models on the Lemonade (llama.cpp) backend to the `qwen-chat-template` thinking format; Lemonade ignores top-level `enable_thinking`/`reasoning_effort` and only honours `chat_template_kwargs` | `extensions/index.ts` |
+| `lemonade-qwen-vision.patch` | Detect vision capability from model labels and expose `image` input support | `extensions/index.ts` |
+| `lemonade-qwen-thinking-format.patch` (multi-patch series) | Companion reasoning/vision-detection changes for Qwen on Lemonade | `extensions/index.ts` |
+
+### Memory extension — `localpibox/pi-hermes-memory` @ `fix/subprocess-provider`
+
+Reactive model-override propagation across all LLM subprocess paths.
+
+### Upstreaming policy
+
+These patches are **candidate upstream contributions**. They are sent upstream
+(to `earendil-works/pi`, `lemonade-sdk/lemonade-pi-plugin`, and
+`localpibox/pi-hermes-memory`) **after testing**, and **only if generally
+useful and not too opinionated** for this stack's specific configuration.
+Patches that are local-workaround-specific or that diverge from upstream design
+direction stay on the LocalPibox fork branch.
+
 ## CI/CD
 
 Built automatically on GitHub Actions when:
