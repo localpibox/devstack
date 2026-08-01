@@ -1,35 +1,25 @@
 # ==========================================================================
-# Single-stage Dockerfile — LocalPibox Devstack
+# LocalPibox Devstack — Multi-stage Dockerfile
 # ==========================================================================
-# All build steps run in one stage. No multi-stage split — the marginal
-# size savings (~100-200MB on a ~1.5GB image) aren't worth the complexity
-# of duplicated user setup, duplicate Node.js install, and split apt layers.
+# Two build targets:
+#   cli  — Base dev environment with Pi CLI (interactive terminal)
+#   web  — Extends cli + adds VSCodium server + web access
 #
-# Design decisions:
-#   - Chrome/X11 deferred to runtime via install-browser.sh (real win)
-#   - Build artifacts cleaned up at end of build (no COPY --from=*)
-#   - All apt packages installed once
-#   - User created once, before COPY
-#   - Everything builds in a single pass
-#
-# Previous fixes (still applied):
-#   1. `HOME="/home/dev"` set before `pi install` — extensions go to dev
-#   2. Patches baked into fork branches — no git am needed at build time
-#   3. models.json included in config-copy step
-#   4. Build-time smoke test (`pi --version`) fails loudly on breakage
+# Build:
+#   docker build --target cli  -t ghcr.io/localpibox/devstack:cli  .
+#   docker build --target web  -t ghcr.io/localpibox/devstack:web  .
 # ==========================================================================
 
-# ── ARGUMENTS ───────────────────────────────────────────────────────────────
 ARG NODE_VERSION=24
 ARG VSCODIUM_VERSION=1.126.04524
-# Pi fork + branch (from versions.env)
 ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_BRANCH=patches/qwen-reasoning-effort
-# Pi fork HEAD SHA — busts build cache whenever the fork branch advances
-# (resolved in CI from versions.env; "unknown" locally so local builds still work)
 ARG PI_HEAD_SHA=unknown
 
-FROM ubuntu:26.04
+# ═══════════════════════════════════════════════════════════════════════════
+# BASE STAGE — Common setup for both cli and web images
+# ═══════════════════════════════════════════════════════════════════════════
+FROM ubuntu:26.04 AS base
 
 ARG NODE_VERSION
 ARG VSCODIUM_VERSION
@@ -39,12 +29,6 @@ ARG PI_HEAD_SHA
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ── Base deps + build tools + dev utilities ─────────────────────────────────
-# Chrome/X11 deferred — browser installed on-demand at runtime via install-browser.sh.
-# build-essential + python3 + libsqlite3-dev — needed for native module rebuilds.
-# ripgrep, fzf, fd-find, tmux, jq — dev tools available in the final image.
-# sudo — needed so the dev user can run apt-get (native module rebuilds, etc.).
-# gh — useful for CI/debugging inside the container.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     curl ca-certificates gnupg \
@@ -54,14 +38,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gh ripgrep fzf fd-find tmux \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Node.js ─────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g npm@latest \
     && corepack enable
 
-# ── User setup (before any COPY that creates files with UID 1000) ───────────
-# Ubuntu 26.04 may already have a user with UID 1000 (e.g. "ubuntu"); rename it.
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
       oldname="$(getent passwd 1000 | cut -d: -f1)"; \
@@ -77,11 +58,8 @@ RUN set -eux; \
     fi; \
     chown -R 1000:1000 /home/dev
 
-# ── NOPASSWD sudo for dev user ──────────────────────────────────────────────
-# Scripts need sudo for apt-get (e.g. post-init native module rebuild).
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
-# ── npm config + global installs ────────────────────────────────────────────
 RUN set -eux; \
     npm config set prefix '/home/dev/.npm-global'; \
     npm config set fetch-retries 5; \
@@ -94,14 +72,6 @@ RUN set -eux; \
     npm cache clean --force; \
     chown -R 1000:1000 /home/dev/.npm-global
 
-# ── VSCodium ────────────────────────────────────────────────────────────────
-RUN curl -fsSL \
-      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
-    -o /tmp/vscodium.tar.gz \
-    && mkdir -p /opt/vscodium \
-    && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
-    && rm /tmp/vscodium.tar.gz
-
 # ── Pi monorepo build ───────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
@@ -111,62 +81,42 @@ RUN set -eux; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
     npm ci --ignore-scripts; \
-    \
-    # Patches are baked into fork branches (e.g. patches/qwen-reasoning-effort)
-    # — no git am needed at build time.
-    echo "=== Building from pre-patched fork branch: ${PI_FORK} @ ${PI_BRANCH} (${PI_HEAD_SHA}) ==="; \
-    \
+    echo "=== Building from pre-patched fork: ${PI_FORK} @ ${PI_BRANCH} (${PI_HEAD_SHA}) ==="; \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
-    # Pack core Pi packages (with patches baked in via fork branch)
-    # coding-agent provides the `pi` CLI and depends on agent+ai+tui
     for pkg in ai agent coding-agent tui; do \
       npm pack "./packages/$pkg" --pack-destination /tmp/pi-packs; \
     done; \
-    # Pack client if present (upstream main has it; fork branches do not)
     if [ -d "./packages/client" ]; then \
       npm pack "./packages/client" --pack-destination /tmp/pi-packs; \
     fi; \
     npm install -g /tmp/pi-packs/*.tgz; \
     rm -rf /tmp/pi-packs; \
-    \
-    # Smoke test — fail the build immediately if pi isn't functional
-    /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary is not functional after install" && exit 1); \
-    \
-    # Verify baked-in patches are present (fail fast if the fork branch regressed) \
+    /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary not functional" && exit 1); \
     grep -rq 'Case 4' /home/dev/.npm-global/lib/node_modules/@earendil-works/ \
-      || (echo "FATAL: isContextOverflow Case 4 patch missing from pi-ai" && exit 1); \
+      || (echo "FATAL: Case 4 patch missing from pi-ai" && exit 1); \
     grep -rq 'qwen-chat-template' /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-ai/dist/ \
-      || (echo "FATAL: Qwen reasoning_effort patch missing from pi-ai" && exit 1); \
-    \
+      || (echo "FATAL: Qwen reasoning_effort patch missing" && exit 1); \
     ls -la /home/dev/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
+
 # ── Extensions + Config ─────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
     export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     export HOME="/home/dev"; \
-    \
-    # ── Clone config repo — MUST be before `pi install`
-    #    so settings.json exists for `pi install` to extend it. ───
-    echo "=== Cloning config repo ==="; \
     mkdir -p /home/dev/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
     git clone --depth=1 https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
     (cd /tmp/pi-config-repo && cp -r . /home/dev/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
-    \
-    # ── Copy config files (baseline — pi install will extend settings.json) ──
-    echo "=== Copying config ==="; \
     mkdir -p /home/dev/.pi/agent; \
     [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
     [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
     [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
-    # System prompt — replaces Pi's default system prompt with LocalPibox Operator persona
-    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no SYSTEM.md"; \
-    # Append system prompt — operational rules added after Pi's default prompt
-    [ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no APPEND_SYSTEM.md"; \
+    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || true; \
+    [ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ || true; \
     mkdir -p /home/dev/.pi/agent/skills; \
     if [ -d /home/dev/.local/pi-config/skills ]; then \
         for d in /home/dev/.local/pi-config/skills/*/; do \
@@ -174,73 +124,85 @@ RUN set -eux; \
             name=$(basename "$d"); \
             mkdir -p "/home/dev/.pi/agent/skills/$name"; \
             cp "$d"* "/home/dev/.pi/agent/skills/$name/" 2>/dev/null || true; \
-            echo "  Skill: $name"; \
         done; \
     fi; \
     mkdir -p /home/dev/.pi/agent/agents; \
-    if [ -d /home/dev/.local/pi-config/agents ]; then \
-        cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
-    fi; \
-    \
-    # ── Copy support tools ───────────────────────────────────────────────
-    echo "=== Copying support tools ==="; \
+    [ -d /home/dev/.local/pi-config/agents ] && cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
     mkdir -p /opt/pi-support; \
-    if [ -f /home/dev/.local/pi-config/support/start.sh ]; then \
-        cp /home/dev/.local/pi-config/support/start.sh /opt/pi-support/start.sh; \
-    fi; \
-    if [ -f /home/dev/.local/pi-config/support/session-uuid.ts ]; then \
-        cp /home/dev/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
-    fi; \
-    if [ -f /home/dev/.local/pi-config/support/validate-subagent-output.ts ]; then \
-        cp /home/dev/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
-    fi; \
+    [ -f /home/dev/.local/pi-config/support/session-uuid.ts ] && cp /home/dev/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
+    [ -f /home/dev/.local/pi-config/support/validate-subagent-output.ts ] && cp /home/dev/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
     if [ -f /home/dev/.local/pi-config/support/browser ]; then \
-        cp /home/dev/.local/pi-config/support/browser /opt/pi-support/; \
-        chmod +x /opt/pi-support/browser; \
+        cp /home/dev/.local/pi-config/support/browser /opt/pi-support/; chmod +x /opt/pi-support/browser; \
     fi; \
     if [ -f /home/dev/.local/pi-config/support/browser-state-cleanup.sh ]; then \
-        cp /home/dev/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; \
-        chmod +x /opt/pi-support/browser-state-cleanup.sh; \
+        cp /home/dev/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; chmod +x /opt/pi-support/browser-state-cleanup.sh; \
     fi; \
-    if [ -f /home/dev/.local/pi-config/support/browser-validate.ts ]; then \
-        cp /home/dev/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
-    fi; \
-    mkdir -p /opt/pi-support/config; \
-    if [ -d /home/dev/.local/pi-config/support/config ]; then \
-        cp /home/dev/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
-    fi; \
-    mkdir -p /opt/pi-support/docs; \
-    if [ -d /home/dev/.local/pi-config/support/docs ]; then \
-        cp /home/dev/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
-    fi; \
-    mkdir -p /opt/pi-support/schemas; \
-    if [ -d /home/dev/.local/pi-config/support/schemas ]; then \
-        cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true; \
-    fi; \
-    \
-    # Extensions are NOT installed at build time — they are installed at runtime
-    # by start.sh → update.sh --extensions → `pi update --extensions`.
-    # This saves ~250MB in the image (no nested global deps per extension)
-    # and ensures fresh versions on every container boot.
-    echo "=== Extensions deferred to runtime (start.sh handles install + update) ==="; \
-    \
-    # ── Install VSCode extension ─────────────────────────────────────────
-    echo "=== Installing VSCode extension ==="; \
+    [ -f /home/dev/.local/pi-config/support/browser-validate.ts ] && cp /home/dev/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
+    mkdir -p /opt/pi-support/config /opt/pi-support/docs /opt/pi-support/schemas; \
+    [ -d /home/dev/.local/pi-config/support/config ] && cp /home/dev/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
+    [ -d /home/dev/.local/pi-config/support/docs ] && cp /home/dev/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
+    [ -d /home/dev/.local/pi-config/support/schemas ] && cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true; \
+    chown -R 1000:1000 /home/dev/.pi /home/dev/.local
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI IMAGE
+# ═══════════════════════════════════════════════════════════════════════════
+FROM base AS cli
+
+COPY support/install-browser.sh /opt/devstack/install-browser.sh
+COPY support/validate.sh /opt/devstack/validate.sh
+COPY support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
+RUN ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
+    && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack \
+    && chmod +x /opt/devstack/install-browser.sh \
+           /opt/devstack/validate.sh \
+           /opt/devstack/entrypoint-cli.sh
+
+RUN mkdir -p /home/dev/.agent-browser/sessions && chown -R 1000:1000 /home/dev/.agent-browser
+
+RUN chown -R 1000:1000 /home/dev
+
+USER dev
+WORKDIR /home/dev/workspace
+
+ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
+ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
+ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
+ENV PI_SUPPORT_DIR="/opt/pi-support"
+
+LABEL org.opencontainers.image.title="LocalPibox Devstack — CLI" \
+      org.opencontainers.image.description="AI-powered dev environment with Pi CLI (interactive terminal)" \
+      org.opencontainers.image.source="https://github.com/localpibox/devstack" \
+      org.opencontainers.image.vendor="LocalPibox" \
+      org.opencontainers.image.licenses="MIT"
+
+ENTRYPOINT ["/opt/devstack/entrypoint-cli.sh"]
+
+# ═══════════════════════════════════════════════════════════════════════════
+# WEB IMAGE — Extends cli + adds VSCodium + web access
+# ═══════════════════════════════════════════════════════════════════════════
+FROM cli AS web
+
+RUN curl -fsSL \
+      "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
+    -o /tmp/vscodium.tar.gz \
+    && mkdir -p /opt/vscodium \
+    && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
+    && rm /tmp/vscodium.tar.gz
+
+USER root
+RUN set -eux; \
+    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
     EXT_DIR="/home/dev/.vscodium-server/extensions"; \
     mkdir -p "${EXT_DIR}"; \
     install_ext() { \
         publisher="$1"; name="$2"; \
         meta_url="https://open-vsx.org/api/${publisher}/${name}"; \
         version=$(curl -fsSL "${meta_url}" | jq -r '.version'); \
-        if [ -z "$version" ] || [ "$version" = "null" ]; then \
-            echo "WARN: no version found for ${publisher}.${name}"; \
-            return 0; \
-        fi; \
+        if [ -z "$version" ] || [ "$version" = "null" ]; then echo "WARN: no version for ${publisher}.${name}"; return 0; fi; \
         vsix_url=$(curl -fsSL "${meta_url}" | jq -r '.files.download'); \
-        if [ -z "$vsix_url" ] || [ "$vsix_url" = "null" ]; then \
-            echo "WARN: no download URL for ${publisher}.${name}"; \
-            return 0; \
-        fi; \
+        if [ -z "$vsix_url" ] || [ "$vsix_url" = "null" ]; then echo "WARN: no download for ${publisher}.${name}"; return 0; fi; \
         dest="${EXT_DIR}/${publisher}.${name}-${version}"; \
         mkdir -p "${dest}"; \
         curl -fsSL "${vsix_url}" -o /tmp/ext.vsix || return 0; \
@@ -251,46 +213,32 @@ RUN set -eux; \
         echo "  Installed ${publisher}.${name}@${version}"; \
     }; \
     install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"; \
-    \
-    chown -R 1000:1000 /home/dev/.pi /home/dev/.local /home/dev/.vscodium-server
+    chown -R 1000:1000 /home/dev/.vscodium-server
 
-# ── Helper scripts ──────────────────────────────────────────────────────────
-COPY support/start.sh /opt/devstack/start.sh
-COPY support/install-browser.sh /opt/devstack/install-browser.sh
-COPY support/validate.sh /opt/devstack/validate.sh
-# Symlink to PATH for easy shell access
-RUN ln -sf /opt/devstack/start.sh /usr/local/bin/devstack-start \
-    && ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
-    && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack
-RUN chmod +x /opt/devstack/start.sh \
-    /opt/devstack/install-browser.sh \
-    /opt/devstack/validate.sh
+COPY support/entrypoint-web.sh /opt/devstack/entrypoint-web.sh
+RUN chmod +x /opt/devstack/entrypoint-web.sh
 
-# ── Final ownership + browser state dirs ────────────────────────────────────
 RUN chown -R 1000:1000 /home/dev
 
-# Create browser state directories (persisted via -v ~/.localpibox/agent-browser)
-RUN mkdir -p /home/dev/.agent-browser/sessions \
-    && chown -R 1000:1000 /home/dev/.agent-browser
-
-# ── Runtime config ──────────────────────────────────────────────────────────
 USER dev
 WORKDIR /home/dev/workspace
 
-ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
+ENV PATH="/opt/vscodium/bin:/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
 ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV PI_SUPPORT_DIR="/opt/pi-support"
+ENV ED_PORT="${LPB_ED_PORT:-3000}"
+ENV HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
+ENV CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-devsession}"
 
-# Health check — matches start.sh readiness probe
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
-    CMD curl -sf "http://localhost:${LPB_ED_PORT:-3000}/?tkn=devsession" >/dev/null 2>&1 || exit 1
+    CMD curl -sf "http://localhost:${LPB_ED_PORT:-3000}/?tkn=${LPB_CONNECTION_TOKEN:-devsession}" >/dev/null 2>&1 || exit 1
 
-LABEL org.opencontainers.image.title="LocalPibox Devstack" \
-      org.opencontainers.image.description="AI-powered dev environment with Pi coding agent" \
+LABEL org.opencontainers.image.title="LocalPibox Devstack — Web" \
+      org.opencontainers.image.description="AI-powered dev environment with VSCodium web editor" \
       org.opencontainers.image.source="https://github.com/localpibox/devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
       org.opencontainers.image.licenses="MIT"
 
-ENTRYPOINT ["/opt/devstack/start.sh"]
+ENTRYPOINT ["/opt/devstack/entrypoint-web.sh"]

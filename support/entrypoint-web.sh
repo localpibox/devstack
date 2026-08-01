@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# /opt/devstack/start.sh — Container entrypoint
+# /opt/devstack/entrypoint-web.sh — Container entrypoint for Web (VSCodium) image
 #
 # This script:
 # 1. Runs first-run bootstrap (volume ownership, directories)
-# 2. Ensures extensions are installed (via update.sh --extensions)
+# 2. Ensures extensions are installed
 # 3. Starts VSCodium server
 # 4. Waits for readiness
 # 5. Hands off to user command or starts shell
@@ -11,24 +11,19 @@
 # Usage:
 #   podman run -it --network host --userns keep-id \
 #     -v /path/to/project:/home/dev/workspace/<project-name>:Z \
-#     ghcr.io/localpibox/devstack:latest
+#     ghcr.io/localpibox/devstack:web
 #
 # Environment variables:
 #   LPB_ED_PORT              — Editor port (default: 3000)
-#   LPB_DEVCONTAINER_WORKSPACE_DIR — Workspace directory
 #   LPB_EDITOR_HOST          — Bind host for VSCodium server (default: 0.0.0.0)
 #   LPB_CONNECTION_TOKEN     — VSCodium connection token
-#
-# Inside the container, these commands are available:
-#   pi              — Start Pi CLI
-#   exit            — Stop and exit
+#   LPB_DEVCONTAINER_WORKSPACE_DIR — Workspace directory
 
 set -euo pipefail
 
-# ── Configuration ───────────────────────────────────────────────────────────
 export PATH="/opt/vscodium/bin:/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
 
-# ── Default workspace and home directories ──────────────────────────────────
+# ── Configuration ───────────────────────────────────────────────────────────
 export HOME_DIR=/home/dev
 export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
 export WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
@@ -41,41 +36,31 @@ export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
 export LPB_ED_PORT="${LPB_ED_PORT:-3000}"
 
 # ── Load .env from workspace (filtered to LPB_* vars) ───────────────────────
-WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 ENV_FILE=""
-if [ -f "${WORKSPACE_DIR}/myproject/.env" ]; then
-    ENV_FILE="${WORKSPACE_DIR}/myproject/.env"
-elif [ -f "${WORKSPACE_DIR}/.env" ]; then
+if [ -f "${WORKSPACE_DIR}/.env" ]; then
     ENV_FILE="${WORKSPACE_DIR}/.env"
 fi
 
 if [ -n "$ENV_FILE" ]; then
     echo "[devstack] Loading environment from ${ENV_FILE}"
     while IFS='=' read -r key value; do
-        # Skip comments, empty lines, and non-exportable entries
         [[ "$key" =~ ^[[:space:]]*# ]] && continue
         [[ -z "$key" ]] && continue
         key=$(echo "$key" | xargs)
         value=$(echo "$value" | xargs)
-        # Only allow LPB_* prefixed variables — strip prefix to export both
-        # LPB_FOO and FOO so downstream tools (Exa MCP, extensions, etc.)
-        # find the unprefixed env var they expect.
         case "$key" in
             LPB_*)
                 export "$key"="$value"
                 stripped="${key#LPB_}"
                 export "$stripped"="$value"
                 ;;
-            *)
-                echo "[devstack]   skipped non-LPB variable: $key"
-                ;;
         esac
     done < "$ENV_FILE"
 else
-    echo "[devstack] No .env found at ${WORKSPACE_DIR}/myproject/.env or ${WORKSPACE_DIR}/.env — using defaults"
+    echo "[devstack] No .env found at ${WORKSPACE_DIR}/.env — using defaults"
 fi
 
-# Backwards-compat LPB_* aliases (MUST come after .env load so stripped values are final)
+# Backwards-compat aliases
 export ED_PORT="${LPB_ED_PORT:-${ED_PORT:-3000}}"
 export HOST="${LPB_EDITOR_HOST:-${HOST:-0.0.0.0}}"
 export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-${CONNECTION_TOKEN:-devsession}}"
@@ -89,29 +74,18 @@ export LPB_OPENROUTER_BASE_URL="${OPENROUTER_BASE_URL}"
 export LPB_PI_SUPPORT_DIR="${PI_SUPPORT_DIR}"
 export EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
 
-# ── Auto-detect mounted project subfolder when LPB_DEVCONTAINER_WORKSPACE_DIR not set ──
-if [ -z "${LPB_DEVCONTAINER_WORKSPACE_DIR:+set}" ]; then
-    subdir="$(find /home/dev/workspace -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
-    if [ -n "$subdir" ]; then
-        WORKSPACE_DIR="$subdir"
-    fi
-fi
-
 SLEEP_INTERVAL=2
 MAX_RETRIES=30
 
 # ── Validate workspace directory ────────────────────────────────────────────
-
 if [ ! -d "${WORKSPACE_DIR}" ]; then
     echo "[devstack] WARNING: Workspace path does not exist: ${WORKSPACE_DIR}"
     echo "[devstack]   Mount: /home/dev/workspace → ${WORKSPACE_DIR}"
     echo "[devstack]   VSCodium will open an empty directory."
-    echo "[devstack]   Expected: lpb /path/to/project"
     echo ""
 elif [ -z "$(ls -A "${WORKSPACE_DIR}" 2>/dev/null)" ]; then
     echo "[devstack] WARNING: Workspace directory is empty: ${WORKSPACE_DIR}"
     echo "[devstack]   VSCodium will open an empty directory."
-    echo "[devstack]   Expected: a mounted project folder."
     echo ""
 else
     file_count=$(find "${WORKSPACE_DIR}" -maxdepth 1 -type f | wc -l)
@@ -119,7 +93,6 @@ else
 fi
 
 # ── First-run bootstrap ────────────────────────────────────────────────────
-
 FIRST_RUN=false
 if [ ! -f "${HOME_DIR}/.pi/.initialized" ]; then
     FIRST_RUN=true
@@ -127,19 +100,16 @@ if [ ! -f "${HOME_DIR}/.pi/.initialized" ]; then
 fi
 
 if [ "$FIRST_RUN" = "true" ]; then
-    # Fix volume ownership
     echo "[devstack] Fixing volume ownership..."
     chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" 2>/dev/null || true
     chmod -R u+rwX "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" 2>/dev/null || true
     chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.config/codium" 2>/dev/null || true
 
-    # Create required directories
     mkdir -p "${HOME_DIR}/.pi/agent/mcp" \
              "${HOME_DIR}/.pi/agent/skills" \
              "${HOME_DIR}/.venvs" \
              "${HOME_DIR}/.pi/agent/git"
 
-    # NPM config
     npm config set prefix '/home/dev/.npm-global' 2>/dev/null || true
     mkdir -p /home/dev/.npm-global/bin /home/dev/.npm-global/lib/node_modules 2>/dev/null || true
     chown -R "$(id -u):$(id -g)" /home/dev/.npm-global 2>/dev/null || true
@@ -150,7 +120,6 @@ if [ "$FIRST_RUN" = "true" ]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}' 2>/dev/null || true
 
-    # Copy config from repo (volume may have overwritten build-time copies)
     if [ -d /home/dev/.local/pi-config ]; then
         echo "[devstack] Syncing config from /home/dev/.local/pi-config/..."
         [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ 2>/dev/null
@@ -161,22 +130,12 @@ if [ "$FIRST_RUN" = "true" ]; then
         echo "[devstack] Config synced."
     fi
 
-    # Create initialization marker
     touch "${HOME_DIR}/.pi/.initialized"
     echo "[devstack] First run bootstrap complete."
 fi
 
-# ── Extensions ──────────────────────────────────────────────────────────────
-# Extensions are managed by `pi update --extensions` (configured via
-# github.com/localpibox/config.git). To update manually:
-#   podman exec -it localpibox pi update --extensions
-
 # ── Post-initialization: native modules ─────────────────────────────────────
-# Docker build compiles native modules for x86_64. At runtime they may be
-# missing or incompatible. This installs build deps and recompiles
-# better-sqlite3 from source if the .node binary is missing.
 echo "[devstack] Post-init: checking native modules..."
-
 NEED_REBUILD=false
 EXT_BASE="${HOME_DIR}/.pi/agent/git"
 for ext in "${EXT_BASE}"/*/*/; do
@@ -202,14 +161,10 @@ if [ "$NEED_REBUILD" = "true" ]; then
 fi
 
 # ── Start VSCodium server ──────────────────────────────────────────────────
-
 echo "[devstack] Starting VSCodium server on port ${ED_PORT}..."
-
-# Kill any existing server
 pkill -f "vscodium-server" 2>/dev/null || true
 sleep 1
 
-# Start the server in the background (bind to all interfaces by default)
 /opt/vscodium/bin/codium-server serve-web \
     --accept-server-license-terms \
     --host "${HOST}" \
@@ -221,14 +176,11 @@ SERVER_PID=$!
 echo "[devstack] Server PID: ${SERVER_PID}"
 
 # ── Wait for readiness ─────────────────────────────────────────────────────
-
 echo "[devstack] Waiting for server to be ready..."
 for i in $(seq 1 ${MAX_RETRIES}); do
     if curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}" >/dev/null 2>&1; then
-        # Build the connection URL with the configured token
         local_conn="http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession}"
         if [ "${HOST:-0.0.0.0}" = "0.0.0.0" ]; then
-            # Get LAN IP for additional access info
             lan_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
             if [ -n "$lan_ip" ]; then
                 local_conn="http://${lan_ip}:${ED_PORT}/?tkn=${CONNECTION_TOKEN:-devsession} (LAN)"
@@ -256,7 +208,6 @@ for i in $(seq 1 ${MAX_RETRIES}); do
 done
 
 # ── Run user command or start shell ─────────────────────────────────────────
-
 if [ $# -gt 0 ]; then
     exec "$@"
 else

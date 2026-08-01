@@ -9,6 +9,10 @@
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
 #   - Manual dispatch
 #
+# Images built:
+#   ghcr.io/localpibox/devstack:cli   — Base dev environment + Pi CLI
+#   ghcr.io/localpibox/devstack:web   — Extends cli + VSCodium server
+#
 # Actions: all latest major versions (Node.js 24 native)
 #   actions/checkout@v6 · docker/build-push-action@v7
 #   docker/setup-buildx-action@v4 · docker/setup-qemu-action@v4
@@ -57,6 +61,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    strategy:
+      matrix:
+        target: [cli, web]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -94,18 +102,19 @@ jobs:
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
           echo "Pi fork: ${pi_fork} @ ${pi_branch} (${sha:-unknown})"
 
-      - name: Build and push
+      - name: Build and push (${{ matrix.target }})
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
+          target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
             PI_HEAD_SHA=${{ steps.pi_head.outputs.sha }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.meta.outputs.tags }}-${{ matrix.target }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: false
           platforms: linux/amd64
@@ -121,4 +130,4 @@ jobs:
             echo "Build failed!"
             exit 1
           fi
-          echo "Build complete"
+          echo "Build complete — both cli and web images pushed"

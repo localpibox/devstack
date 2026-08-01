@@ -283,7 +283,7 @@ podman run -d --name localpibox --network host --userns keep-id \
 
 ```
 devstack/
-├── Dockerfile                 # Single-stage build (all in one image)
+├── Dockerfile                 # Multi-stage build (cli + web targets)
 ├── versions.env           # Version tracking (forks, branches, base versions)
 ├── doc/                   # Architecture and operational docs
 ├── scripts/                   # Launcher and installer
@@ -291,8 +291,10 @@ devstack/
 │   ├── lpb.py                 # lpb launcher (Python implementation)
 │   └── install.sh             # One-line installer script
 ├── support/                   # Entrypoint scripts
-│   ├── start.sh               # Container entrypoint
+│   ├── entrypoint-cli.sh      # CLI image entrypoint (Pi CLI foreground)
+│   ├── entrypoint-web.sh      # Web image entrypoint (VSCodium server)
 │   ├── install-browser.sh     # Browser setup script
+│   ├── start.sh               # Legacy entrypoint (superseded by entrypoint-*)
 │   └── validate.sh            # Health validation
 ├── .env.example               # Template — copy to .env for real values
 └── .env                       # Local env vars (gitignored)
