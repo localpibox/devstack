@@ -162,9 +162,9 @@ RUN set -eux; \
     [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
     [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
-    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md";
+    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
     # System prompt — replaces Pi's default system prompt with LocalPibox Operator persona
-    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no SYSTEM.md";
+    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no SYSTEM.md"; \
     # Append system prompt — operational rules added after Pi's default prompt
     [ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ || echo "WARN: no APPEND_SYSTEM.md"; \
     mkdir -p /home/dev/.pi/agent/skills; \
