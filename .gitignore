@@ -43,6 +43,11 @@ out/
 *.swo
 *~
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Gitnexus index — project-specific, generated at runtime
 .gitnexus/
 
+stack-upkeep/patches/lemonade-full-fix.patch
