@@ -184,6 +184,8 @@ ENTRYPOINT ["/opt/devstack/entrypoint-cli.sh"]
 # ═══════════════════════════════════════════════════════════════════════════
 FROM cli AS web
 
+# ── VSCodium ────────────────────────────────────────────────────────────────
+USER root
 RUN curl -fsSL \
       "https://github.com/VSCodium/vscodium/releases/download/${VSCODIUM_VERSION}/vscodium-reh-web-linux-x64-${VSCODIUM_VERSION}.tar.gz" \
     -o /tmp/vscodium.tar.gz \
@@ -228,12 +230,9 @@ ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
 ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV PI_SUPPORT_DIR="/opt/pi-support"
-ENV ED_PORT="${LPB_ED_PORT:-3000}"
-ENV HOST="${LPB_EDITOR_HOST:-0.0.0.0}"
-ENV CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-devsession}"
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
-    CMD curl -sf "http://localhost:${LPB_ED_PORT:-3000}/?tkn=${LPB_CONNECTION_TOKEN:-devsession}" >/dev/null 2>&1 || exit 1
+    CMD curl -sf "http://localhost:3000/?tkn=devsession" >/dev/null 2>&1 || exit 1
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — Web" \
       org.opencontainers.image.description="AI-powered dev environment with VSCodium web editor" \
