@@ -708,6 +708,9 @@ def cmd_run():
     os.makedirs(resolved_state, exist_ok=True)
     os.makedirs(dir_browser, exist_ok=True)
 
+    # gh config persistence — gated behind LPB_PERSIST_GH_CONFIG
+    persist_gh = os.environ.get('LPB_PERSIST_GH_CONFIG', 'true').lower() in ('true', '1', 'yes')
+
     # ── 6. Stop existing container ───────────────────────────────────────
     if c.container_running(cfg.container_name):
         if verbose:
@@ -749,7 +752,7 @@ def cmd_run():
     for k in ("PI_WORKTREE_ID", "LPB_AGENT_BROWSER_ARGS",
               "LPB_AGENT_BROWSER_MAX_OUTPUT", "LPB_AGENT_BROWSER_CONTENT_BOUNDARIES",
               "LPB_AGENT_BROWSER_CONFIRM_ACTIONS", "LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS",
-              "LPB_AGENT_BROWSER_SESSION"):
+              "LPB_AGENT_BROWSER_SESSION", "LPB_PERSIST_GH_CONFIG"):
         val = os.environ.get(k)
         if val:
             env_vars.append(f"{k}={val}")
@@ -758,6 +761,12 @@ def cmd_run():
         f"{resolved_state}:/home/dev/.pi{mount_flags}",
         f"{dir_browser}:/home/dev/.agent-browser{mount_flags}",
     ]
+
+    # gh config persistence — mount ~/.config/gh if enabled
+    if persist_gh:
+        gh_config = resolve_path(os.path.join(cfg.state_dir, "gh-config"))
+        os.makedirs(gh_config, exist_ok=True)
+        volumes.append(f"{gh_config}:/home/dev/.config/gh{mount_flags}")
     userns = "keep-id" if is_podman() else None
 
     container_id, stdout, stderr, rc = c.containers_run(
