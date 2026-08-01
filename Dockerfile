@@ -230,9 +230,12 @@ ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
 ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
 ENV PI_SUPPORT_DIR="/opt/pi-support"
+ENV ED_PORT=3000
+ENV HOST=0.0.0.0
+ENV CONNECTION_TOKEN=devsession
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
-    CMD curl -sf "http://localhost:3000/?tkn=devsession" >/dev/null 2>&1 || exit 1
+    CMD curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN}" >/dev/null 2>&1 || exit 1
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — Web" \
       org.opencontainers.image.description="AI-powered dev environment with VSCodium web editor" \
