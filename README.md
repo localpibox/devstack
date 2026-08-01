@@ -4,6 +4,28 @@ AI-powered development environment with the Pi coding agent, VSCodium editor, an
 
 ## Quick Start
 
+### Option 1: One-line installer (recommended)
+
+```bash
+# Install the `lpb` launcher (adds it to ~/.local/bin/)
+curl -fsSL https://raw.githubusercontent.com/localpibox/devstack/main/scripts/install.sh | bash
+
+# Run devstack for your project
+lpb /path/to/your/project
+
+# Or start VSCodium with a welcome screen (user picks project)
+lpb
+
+# Common commands
+lpb --stop      # Stop the container
+lpb --logs      # View logs
+lpb --remove    # Remove everything
+lpb --config    # Show config file
+lpb --help      # Full usage
+```
+
+### Option 2: Manual podman run
+
 ```bash
 # Pull the latest image
 podman pull ghcr.io/localpibox/devstack:latest
