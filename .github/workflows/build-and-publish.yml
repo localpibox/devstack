@@ -103,7 +103,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE_NAME) || '' }}
             ${{ github.event.inputs.publish_latest && format('{0}:latest', env.IMAGE_NAME) || '' }}
-            ${{ github.event_name == 'schedule' && format('{0}:weekly-%s', strftime('%Y-%W', github.event.schedule, '0')) || '' }}
+            ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64
 
@@ -155,7 +155,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
             ${{ github.event.inputs.publish_latest && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
-            ${{ github.event_name == 'schedule' && format('{0}:weekly-%s-web', strftime('%Y-%W', github.event.schedule, '0')) || '' }}
+            ${{ github.event_name == 'schedule' && format('{0}:weekly-web', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64
 
