@@ -65,6 +65,7 @@ class Config:
 
 cfg = Config()
 _ERR, _WRN, _RSV = "\033[31m", "\033[33m", "\033[0m"
+_cli_overrides = {}
 
 
 def err(msg, hint=""):
@@ -331,10 +332,13 @@ def load_config_file():
     except OSError:
         pass
 
-def _apply_env():
+def _apply_env(cli_overrides=None):
     for ek, attr in _ENV_MAP.items():
         val = os.environ.get(ek)
         if val:
+            # Skip if this was set via CLI override
+            if cli_overrides and attr in cli_overrides:
+                continue
             setattr(cfg, attr, int(val) if attr == "port" else val)
 
 def load_project_env(project_dir):
@@ -371,17 +375,17 @@ def load_project_override(name):
     except OSError:
         pass
 
-def apply_overrides(project_dir=None, project_name=None):
+def apply_overrides(project_dir=None, project_name=None, cli_overrides=None):
     load_config_file()
-    _apply_env()
+    _apply_env(cli_overrides)
     if project_dir and os.path.isfile(os.path.join(project_dir, ".env")):
         load_project_env(project_dir)
-        _apply_env()
+        _apply_env(cli_overrides)
     if project_name:
         load_project_override(project_name)
         for ek, attr in [("LPB_PROJECT_PORT", "port"), ("LPB_PROJECT_TOKEN", "token"), ("LPB_PROJECT_HOST", "host")]:
             val = os.environ.get(ek)
-            if val:
+            if val and (not cli_overrides or attr not in cli_overrides):
                 setattr(cfg, attr, int(val) if attr == "port" else val)
 
 # ─── CLI parsing ─────────────────────────────────────────────────────────────
@@ -393,15 +397,15 @@ def parse_cli(args):
         a = args[i]
         if a == "--host":
             if i+1 >= len(args): err("--host requires a value"); sys.exit(1)
-            cfg.host = args[i+1]; i += 2
+            cfg.host = args[i+1]; _cli_overrides["host"] = True; i += 2
         elif a == "--port":
             if i+1 >= len(args): err("--port requires a value"); sys.exit(1)
-            try: cfg.port = int(args[i+1])
+            try: cfg.port = int(args[i+1]); _cli_overrides["port"] = True
             except ValueError: err(f"--port requires an integer, got: {args[i+1]}"); sys.exit(1)
             i += 2
         elif a == "--token":
             if i+1 >= len(args): err("--token requires a value"); sys.exit(1)
-            cfg.token = args[i+1]; i += 2
+            cfg.token = args[i+1]; _cli_overrides["token"] = True; i += 2
         elif a == "--without-token":
             cfg.without_token = True; i += 1
         elif a in ("--data-dir",):
@@ -685,11 +689,12 @@ def cmd_run():
     info(f"Devstack: {cfg.project_name}")
     info(f"  Image:    {cfg.image_name}")
     info(f"  Project:  {project_dir} \u2192 {mount_path}")
-    info(f"  Editor:   http://{cfg.host}:{cfg.port}")
+    display_host = _get_host_for_url()
+    info(f"  Editor:   http://{display_host}:{cfg.port}")
     if cfg.without_token:
         info("  Auth:     none (\u26a0 unsecured)")
     else:
-        info(f"  Token:    {cfg.token[:8]}...")
+        info(f"  Token:    {cfg.token}")
     info("")
     if cfg.open_home:
         info("Starting VSCodium \u2014 select a project in the welcome screen.")
@@ -780,20 +785,25 @@ def cmd_run():
     health_url = _build_url()
     info("Waiting for editor to be ready...")
     ready = False
-    for _ in range(60):
-        try:
-            r = subprocess.run(
-                ["curl", "-sf", "--max-time", "3", health_url],
-                capture_output=True, timeout=5,
-            )
-            if r.returncode == 0:
-                ready = True
-                break
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
-        sys.stdout.write(".")
-        sys.stdout.flush()
-        time.sleep(1)
+    try:
+        for _ in range(60):
+            try:
+                r = subprocess.run(
+                    ["curl", "-sf", "--max-time", "3", health_url],
+                    capture_output=True, timeout=5,
+                )
+                if r.returncode == 0:
+                    ready = True
+                    break
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                pass
+            sys.stdout.write(".")
+            sys.stdout.flush()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print()
+        info("Aborted.")
+        sys.exit(130)
     print()  # newline after dots
 
     if ready:
@@ -837,7 +847,7 @@ def cmd_run():
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 parse_cli(sys.argv[1:])
-apply_overrides(cfg.project_dir, cfg.project_name)
+apply_overrides(cfg.project_dir, cfg.project_name, _cli_overrides)
 
 handlers = {
     "help": cmd_help,
