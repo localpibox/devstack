@@ -202,7 +202,12 @@ class ContainerClient:
         return rc == 0
 
     def images_pull(self, name):
-        return run_cmd([self.cmd, "pull", name])
+        """Pull image with full verbosity and no timeout (like native podman/docker pull)."""
+        return subprocess.run(
+            [self.cmd, "pull", name],
+            stdout=sys.stdout, stderr=sys.stderr, stdin=sys.stdin,
+            check=False
+        ).returncode
 
     def images_inspect(self, name):
         _, _, rc = run_cmd([self.cmd, "image", "inspect", name])
@@ -468,10 +473,9 @@ def cmd_update():
             sys.exit(1)
     for img in images_to_update:
         info(f"Pulling {img}...")
-        _, eo, rc = c.images_pull(img)
+        rc = c.images_pull(img)
         if rc != 0:
             err(f"Failed to pull {img}")
-            print(eo.strip().splitlines()[-1][:200] if eo.strip() else "", file=sys.stderr)
 
 
 def _get_lan_ips():
@@ -606,9 +610,9 @@ def cmd_run():
     # ── 8. Pull image if needed ──────────────────────────────────────────
     if not c.images_exists(cfg.image_name):
         info(f"Pulling {cfg.image_name}...")
-        _, eo, rc = c.images_pull(cfg.image_name)
+        rc = c.images_pull(cfg.image_name)
         if rc != 0:
-            err("Failed to pull image", eo.strip().splitlines()[-1][:200] if eo.strip() else "")
+            err("Failed to pull image")
             sys.exit(1)
 
     # ── 9. Detect SELinux mount flags ────────────────────────────────────

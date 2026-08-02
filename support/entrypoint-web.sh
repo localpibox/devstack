@@ -118,7 +118,11 @@ if [ "$FIRST_RUN" = "true" ]; then
     npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
     npm config set progress false 2>/dev/null || true
     npm config set allow-git all 2>/dev/null || true
-    npm config set allow-scripts '{"agent-browser":true,"better-sqlite3":true,"protobufjs":true,"esbuild":true,"@google/genai":true}' 2>/dev/null || true
+    npm config set allow-scripts 'better-sqlite3 agent-browser esbuild protobufjs @google/genai' 2>/dev/null || true
+    # Write .npmrc with allow-scripts for extension installs
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/dev/.npmrc 2>/dev/null || true
+    mkdir -p "${HOME_DIR}/.pi/agent/git" && \
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.pi/agent/git/.npmrc" 2>/dev/null || true
 
     if [ -d /home/dev/.local/pi-config ]; then
         echo "[devstack] Syncing config from /home/dev/.local/pi-config/..."
