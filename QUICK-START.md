@@ -29,11 +29,13 @@ lpb /path/to/project --host 0.0.0.0 --token mysecret
 
 ### Using lpb.py directly (local dev)
 
-```bash
-# From the devstack directory
-cd ~/devstack/localpibox/devstack
-python3 scripts/lpb.py /path/to/project --port 8080
-```
+> **Note:** lpb.py is always invoked through the `lpb` wrapper. Running it
+> directly is for development/testing only:
+> ```bash
+> # From the devstack directory
+> cd ~/devstack/localpibox/devstack
+> python3 scripts/lpb.py /path/to/project --port 8080
+> ```
 
 ### Manual podman command (without lpb)
 

@@ -81,6 +81,51 @@ def err(msg, hint=""):
         print(f"  {_WRN}{hint}{_RSV}", file=sys.stderr)
 
 
+
+def self_update():
+    """Update lpb itself from the GitHub repo if a newer version is available."""
+    import urllib.request
+    lpb_path = os.path.abspath(sys.argv[0])
+    lpb_dir = os.path.dirname(lpb_path)
+    new_path = os.path.join(lpb_dir, "lpb.new")
+    if not os.path.isfile(lpb_path):
+        return
+    script_url = "https://raw.githubusercontent.com/localpibox/devstack/main/scripts/lpb"
+    py_url = script_url.replace("/lpb", "/lpb.py")
+    try:
+        with urllib.request.urlopen(script_url, timeout=10) as resp:
+            new_wrapper = resp.read()
+        with open(lpb_path, "rb") as f:
+            old_wrapper = f.read()
+        if new_wrapper != old_wrapper:
+            info(f"Updating lpb launcher...")
+            with open(new_path, "wb") as f:
+                f.write(new_wrapper)
+            os.rename(new_path, lpb_path)
+            os.chmod(lpb_path, 0o755)
+        with urllib.request.urlopen(py_url, timeout=10) as resp:
+            new_py = resp.read()
+        py_path = os.path.join(lpb_dir, "lpb.py")
+        if os.path.isfile(py_path):
+            with open(py_path, "rb") as f:
+                old_py = f.read()
+            if new_py != old_py:
+                info(f"Updating lpb.py...")
+                with open(new_path, "wb") as f:
+                    f.write(new_py)
+                os.rename(new_path, py_path)
+        elif not os.path.isfile(py_path):
+            info(f"Installing missing lpb.py...")
+            with open(new_path, "wb") as f:
+                f.write(new_py)
+            os.rename(new_path, py_path)
+            os.chmod(py_path, 0o755)
+        for _f in os.listdir(lpb_dir):
+            if _f.endswith(".new"):
+                os.remove(os.path.join(lpb_dir, _f))
+    except Exception:
+        pass
+
 def info(msg):
     print(msg)
 
@@ -202,12 +247,21 @@ class ContainerClient:
         return rc == 0
 
     def images_pull(self, name):
-        """Pull image with full verbosity and no timeout (like native podman/docker pull)."""
-        return subprocess.run(
+        """Pull image with full verbosity, no stdin, and no timeout.
+        Uses Popen to stream output in real-time. No stdin to avoid blocking on slow connections."""
+        proc = subprocess.Popen(
             [self.cmd, "pull", name],
-            stdout=sys.stdout, stderr=sys.stderr, stdin=sys.stdin,
-            check=False
-        ).returncode
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1
+        )
+        import io
+        for line in io.TextIOWrapper(proc.stdout.buffer, encoding="utf-8", errors="replace"):
+            sys.stdout.write(line)
+            sys.stdout.flush()
+        proc.stdout.close()
+        rc = proc.wait()
+        return rc
+
 
     def images_inspect(self, name):
         _, _, rc = run_cmd([self.cmd, "image", "inspect", name])
@@ -457,6 +511,10 @@ def cmd_config():
 def cmd_update():
     ensure_container_cmd()
     c = client()
+
+    # Self-update
+    self_update()
+
     # Determine which image(s) to update based on what's locally available
     last_img = load_last_image()
     images_to_update = []

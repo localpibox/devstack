@@ -96,7 +96,7 @@ Once the container is running, these commands are available:
 
 ```bash
 # Update extensions to latest release
-podman exec -it localpobox update --extensions
+podman exec -it localpibox update --extensions
 
 # Patches are baked into the image — to update, rebuild the container
 # with updated fork branches in versions.env.
@@ -152,7 +152,8 @@ podman run -d --name localpibox --network host --userns keep-id \
                                                         │
                     ┌──────────────┐                    │
                     │  Podman Pull │◄───────────────────┘
-                    │  (fast)      │
+                    │  (no timeout,│
+                    │  streaming) │
                     └──────────────┘
                           │
                     ┌──────────────┐
@@ -173,6 +174,10 @@ podman run -d --name localpibox --network host --userns keep-id \
 | Base image | CI/CD on push to main | Every code change |
 | Extensions | `pi update --extensions` (at boot) | Every container start |
 | Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
+| lpb launcher | `lpb --update` self-update | Every code change |
+
+**Note:** Pulls may take a while on slow connections — `lpb --update` uses
+non-blocking streaming so you'll see real-time progress (no timeouts).
 
 ## Version Configuration
 
