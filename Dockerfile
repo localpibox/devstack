@@ -154,11 +154,13 @@ FROM base AS cli
 
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh
+COPY support/start.sh /opt/devstack/start.sh
 COPY support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 RUN ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
     && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack \
     && chmod +x /opt/devstack/install-browser.sh \
            /opt/devstack/validate.sh \
+           /opt/devstack/start.sh \
            /opt/devstack/entrypoint-cli.sh
 
 RUN mkdir -p /home/dev/.agent-browser/sessions && chown -R 1000:1000 /home/dev/.agent-browser
@@ -167,12 +169,6 @@ RUN chown -R 1000:1000 /home/dev
 
 USER dev
 WORKDIR /home/dev/workspace
-
-ENV PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
-ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
-ENV PI_SUPPORT_DIR="/opt/pi-support"
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — CLI" \
       org.opencontainers.image.description="AI-powered dev environment with Pi CLI (interactive terminal)" \
@@ -228,11 +224,6 @@ RUN chown -R 1000:1000 /home/dev
 USER dev
 WORKDIR /home/dev/workspace
 
-ENV PATH="/opt/vscodium/bin:/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
-ENV LEMONADE_BASE_URL="http://127.0.0.1:13305/v1"
-ENV OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-ENV DEVCONTAINER_WORKSPACE_DIR="/home/dev/workspace"
-ENV PI_SUPPORT_DIR="/opt/pi-support"
 ENV ED_PORT=3000
 ENV HOST=0.0.0.0
 ENV CONNECTION_TOKEN=devsession

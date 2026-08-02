@@ -313,18 +313,18 @@ def test_run_project():
     print("  PASS\n")
 
 
-def test_run_interactive():
-    print("TEST: lpb -i (interactive)")
+def test_run_shell():
+    print("TEST: lpb --shell /tmp")
     reset_mock()
     mod = make_module()
-    mod.parse_cli(["-i"])
+    mod.parse_cli(["--shell", "/tmp"])
     mod.apply_overrides()
     mod.cfg.state_dir = "/tmp/lpb-test-state"
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
-    mod.cfg.interactive = True
     mod.cmd_run()
-    assert MOCK_STATE["running"]
-    assert MOCK_STATE["interactive"]
+    assert mod.cfg.shell_mode
+    assert mod.cfg.image_name == mod.CLI_IMAGE
+    assert mod.cfg.project_name == "tmp"
     print("  PASS\n")
 
 
@@ -374,8 +374,9 @@ def test_url_without_token():
     mod.cfg.without_token = True
     url = mod._build_url()
     assert "tkn=" not in url, f"URL should not have token: {url}"
-    assert "localhost" in url
-    assert ":8080" in url
+    # _build_url converts localhost → 127.0.0.1
+    assert "127.0.0.1" in url or "localhost" in url, f"Expected localhost in URL: {url}"
+    assert ":8080" in url, f"Expected :8080 in URL: {url}"
     print(f"  URL: {url}")
     print("  PASS\n")
 
@@ -418,7 +419,7 @@ if __name__ == "__main__":
         test_unknown_flag,
         test_run_welcome,
         test_run_project,
-        test_run_interactive,
+        test_run_shell,  # --shell (replaced deprecated -i)
         test_run_port_flag,
         test_url_from_resolved_config,
         test_url_without_token,
