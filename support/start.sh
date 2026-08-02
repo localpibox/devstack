@@ -83,9 +83,11 @@ WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 # ── Context window / max tokens ratio ────────────────────────────────────────
 # The lemonade-pi-plugin uses this ratio to compute max_tokens per model:
 #   max_tokens = context_window * LPB_MAX_TOKENS_CONTEXT_RATIO
-# Default: 0.125 (12.5 %) — leaves room for input + thinking tokens.
-# Set to a higher value for models that need larger output budgets.
-export LPB_MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO:-0.125}"
+# Default: 0.06 (6 %) — reduced from 0.125 for Qwen thinking models.
+# At 0.125, Qwen thinking models generate 10-20k-token thinking blocks
+# that push prompt+max_tokens past the 262k window limit.
+# 0.06 × 262k = ~15.7k maxTokens — leaves room for thinking within window.
+export LPB_MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO:-0.06}"
 export MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO}"
 
 # ── Browser config ──
