@@ -1,0 +1,37 @@
+# Docker build ignore patterns
+
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+package-lock.json
+*.tsbuildinfo
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs (not needed in image)
+*.md
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Biome
+biome.base.json
+
+# Keep these:
+# Dockerfile
+# support/
+# versions.env

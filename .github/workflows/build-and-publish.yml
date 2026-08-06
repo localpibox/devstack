@@ -1,0 +1,201 @@
+# ═══════════════════════════════════════════════════════════
+# LocalPibox Devstack — CI/CD Build & Publish
+# ═══════════════════════════════════════════════════════════
+# Builds on GitHub (fast connection) → publishes to GHCR
+# Extensions update at runtime via pi update --extensions
+#
+# Triggers:
+#   - Push to main (Dockerfile, support/, lpb.stack.env, lpb.conf.env)
+#   - Weekly cron (Monday 3am UTC) — keep image fresh
+#   - Manual dispatch
+#
+# Images built:
+#   ghcr.io/localpibox/devstack:cli   — Base dev environment + Pi CLI
+#   ghcr.io/localpibox/devstack:web   — Extends cli + VSCodium server
+#
+# Actions: all latest major versions (Node.js 24 native)
+#   actions/checkout@v6 · docker/build-push-action@v7
+#   docker/setup-buildx-action@v4 · docker/setup-qemu-action@v4
+#   docker/login-action@v4 · docker/metadata-action@v6
+#   actions/upload-artifact@v7
+
+name: Build & Publish Devstack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'support/**'
+      - 'lpb.stack.env'
+      - 'lpb.conf.env'
+      - '.github/workflows/*.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'support/**'
+      - 'lpb.stack.env'
+      - 'lpb.conf.env'
+      - '.github/workflows/*.yml'
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      publish_latest:
+        description: 'Publish as :latest tag'
+        type: boolean
+        default: true
+      no_cache:
+        description: 'Full rebuild with no cache (pick up fork-branch changes)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_NAME: ghcr.io/localpibox/devstack
+
+jobs:
+  build-cli:
+    name: Build & publish cli image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load stack config
+        id: config
+        run: |
+          set -a
+          source lpb.stack.env
+          set +a
+          echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
+          echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
+          sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
+          # Read stack version from config repo
+          stack_ver=$(curl -sf "https://raw.githubusercontent.com/localpibox/config/$LPB_PI_REF/VERSION" 2>/dev/null || echo "unknown")
+          echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push cli
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: cli
+          push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            PI_FORK=${{ steps.config.outputs.PI_FORK }}
+            PI_REF=${{ steps.config.outputs.PI_REF }}
+            NODE_VERSION=${{ steps.config.outputs.NODE_VERSION }}
+            VSCODIUM_VERSION=${{ steps.config.outputs.VSCODIUM_VERSION }}
+            PI_HEAD_SHA=${{ steps.config.outputs.sha }}
+          no-cache: ${{ github.event.inputs.no_cache == 'true' }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:cli
+            ${{ env.IMAGE_NAME }}:main-cli
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
+            ${{ steps.config.outputs.stack_version }}-cli
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE_NAME) || '' }}
+            ${{ github.event.inputs.publish_latest && format('{0}:latest', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
+          provenance: false
+          platforms: linux/amd64
+
+  build-web:
+    name: Build & publish web image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: [build-cli]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load stack config
+        id: config
+        run: |
+          set -a
+          source lpb.stack.env
+          set +a
+          echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
+          echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
+          sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
+          # Read stack version from config repo
+          stack_ver=$(curl -sf "https://raw.githubusercontent.com/localpibox/config/$LPB_PI_REF/VERSION" 2>/dev/null || echo "unknown")
+          echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push web
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          target: web
+          push: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            PI_FORK=${{ steps.config.outputs.PI_FORK }}
+            PI_BRANCH=${{ steps.config.outputs.PI_BRANCH }}
+            NODE_VERSION=${{ steps.config.outputs.NODE_VERSION }}
+            VSCODIUM_VERSION=${{ steps.config.outputs.VSCODIUM_VERSION }}
+            PI_HEAD_SHA=${{ steps.config.outputs.sha }}
+          no-cache: ${{ github.event.inputs.no_cache == 'true' }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:web
+            ${{ env.IMAGE_NAME }}:main-web
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
+            ${{ github.event.inputs.publish_latest && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'schedule' && format('{0}:weekly-web', env.IMAGE_NAME) || '' }}
+          provenance: false
+          platforms: linux/amd64
+
+  status:
+    name: Build status
+    needs: [build-cli, build-web]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [ "${{ needs.build-cli.result }}" != "success" ] || [ "${{ needs.build-web.result }}" != "success" ]; then
+            echo "Build failed!"
+            exit 1
+          fi
+          echo "Build complete — both cli and web images pushed"
