@@ -28,6 +28,8 @@ ARG VSCODIUM_VERSION=1.126.04524
 ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_REF=lpb
 ARG PI_HEAD_SHA=unknown
+ARG CONFIG_FORK=https://github.com/localpibox/config.git
+ARG CONFIG_REF=lpb
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BASE STAGE — Common setup for both cli and web images
@@ -39,6 +41,8 @@ ARG VSCODIUM_VERSION
 ARG PI_FORK
 ARG PI_REF
 ARG PI_HEAD_SHA
+ARG CONFIG_FORK
+ARG CONFIG_REF
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -129,7 +133,7 @@ RUN set -eux; \
     export HOME="/home/dev"; \
     mkdir -p /home/dev/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
-    git clone --depth=1 --branch lpb https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
+    git clone --depth=1 --single-branch --branch ${CONFIG_REF} ${CONFIG_FORK} /tmp/pi-config-repo 2>&1 && \
     (cd /tmp/pi-config-repo && cp -r . /home/dev/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
     # Copy lpb.conf.env into the image for start.sh to load at runtime \

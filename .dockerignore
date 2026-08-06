@@ -34,4 +34,4 @@ biome.base.json
 # Keep these:
 # Dockerfile
 # support/
-# versions.env
+# lpb.stack.env

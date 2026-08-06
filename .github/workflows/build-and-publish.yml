@@ -88,11 +88,14 @@ jobs:
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
           echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          echo "CONFIG_FORK=$LPB_CONFIG_FORK" >> "$GITHUB_OUTPUT"
+          echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
           # Read stack version from config repo
-          stack_ver=$(curl -sf "https://raw.githubusercontent.com/localpibox/config/$LPB_PI_REF/VERSION" 2>/dev/null || echo "unknown")
+          cfg_repo=$(echo "$LPB_CONFIG_FORK" | sed -E 's#https://github.com/([^/]+)/([^./]+)\.git#\1/\2#')
+          stack_ver=$(curl -sf "https://raw.githubusercontent.com/$cfg_repo/$LPB_CONFIG_REF/VERSION" 2>/dev/null || echo "unknown")
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
           echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
 
@@ -108,6 +111,8 @@ jobs:
           build-args: |
             PI_FORK=${{ steps.config.outputs.PI_FORK }}
             PI_REF=${{ steps.config.outputs.PI_REF }}
+            CONFIG_FORK=${{ steps.config.outputs.CONFIG_FORK }}
+            CONFIG_REF=${{ steps.config.outputs.CONFIG_REF }}
             NODE_VERSION=${{ steps.config.outputs.NODE_VERSION }}
             VSCODIUM_VERSION=${{ steps.config.outputs.VSCODIUM_VERSION }}
             PI_HEAD_SHA=${{ steps.config.outputs.sha }}
@@ -153,11 +158,14 @@ jobs:
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
           echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          echo "CONFIG_FORK=$LPB_CONFIG_FORK" >> "$GITHUB_OUTPUT"
+          echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
           # Read stack version from config repo
-          stack_ver=$(curl -sf "https://raw.githubusercontent.com/localpibox/config/$LPB_PI_REF/VERSION" 2>/dev/null || echo "unknown")
+          cfg_repo=$(echo "$LPB_CONFIG_FORK" | sed -E 's#https://github.com/([^/]+)/([^./]+)\.git#\1/\2#')
+          stack_ver=$(curl -sf "https://raw.githubusercontent.com/$cfg_repo/$LPB_CONFIG_REF/VERSION" 2>/dev/null || echo "unknown")
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
           echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
 
@@ -173,6 +181,8 @@ jobs:
           build-args: |
             PI_FORK=${{ steps.config.outputs.PI_FORK }}
             PI_BRANCH=${{ steps.config.outputs.PI_BRANCH }}
+            CONFIG_FORK=${{ steps.config.outputs.CONFIG_FORK }}
+            CONFIG_REF=${{ steps.config.outputs.CONFIG_REF }}
             NODE_VERSION=${{ steps.config.outputs.NODE_VERSION }}
             VSCODIUM_VERSION=${{ steps.config.outputs.VSCODIUM_VERSION }}
             PI_HEAD_SHA=${{ steps.config.outputs.sha }}
