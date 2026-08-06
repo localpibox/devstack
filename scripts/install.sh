@@ -58,7 +58,8 @@ export LPB_CONTAINER_NAME="localpibox"
 # ─── VSCodium ───────────────────────────────────────────────────────────────
 export LPB_PORT=8000
 export LPB_EDITOR_HOST="localhost"
-export LPB_CONNECTION_TOKEN="devsession"
+# Connection token — leave empty to auto-generate per session (recommended).
+export LPB_CONNECTION_TOKEN=""
 
 # ─── VSCodium advanced ─────────────────────────────────────────────────────
 export LPB_DATA_DIR="${HOME}/.localpibox/devstack/server-data"

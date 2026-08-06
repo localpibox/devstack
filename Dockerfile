@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# LOCALPIBUT DEVSTACK — MULTI-STAGE DOCKERFILE
+# LOCALPIBOX DEVSTACK — MULTI-STAGE DOCKERFILE
 # ═══════════════════════════════════════════════════════════════════════════
 # Two build targets:
 #   cli  — Base dev environment with Pi CLI (interactive terminal)
@@ -28,8 +28,6 @@ ARG VSCODIUM_VERSION=1.126.04524
 ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_REF=lpb
 ARG PI_HEAD_SHA=unknown
-ARG CONFIG_FORK=https://github.com/localpibox/config.git
-ARG CONFIG_REF=lpb
 
 # ═══════════════════════════════════════════════════════════════════════════
 # BASE STAGE — Common setup for both cli and web images
@@ -41,8 +39,6 @@ ARG VSCODIUM_VERSION
 ARG PI_FORK
 ARG PI_REF
 ARG PI_HEAD_SHA
-ARG CONFIG_FORK
-ARG CONFIG_REF
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -55,9 +51,9 @@ ENV LPB_VERSION=
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     curl ca-certificates gnupg \
-    git jq unzip \
+    git jq unzip rsync \
     python3 python3-pip python3-venv libsqlite3-dev \
-    sudo \
+    sudo openssh-server openssl \
     gh ripgrep fzf fd-find tmux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -133,14 +129,17 @@ RUN set -eux; \
     export HOME="/home/lpb"; \
     mkdir -p /home/lpb/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
-    git clone --depth=1 --single-branch --branch ${CONFIG_REF} ${CONFIG_FORK} /tmp/pi-config-repo 2>&1 && \
+    git clone --depth=1 --branch lpb https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
     (cd /tmp/pi-config-repo && cp -r . /home/lpb/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
     # Copy lpb.conf.env into the image for start.sh to load at runtime \
     [ -f /opt/devstack/lpb.conf.env ] && cp /opt/devstack/lpb.conf.env /home/lpb/.local/lpb.conf.env || echo "WARN: no lpb.conf.env"; \
     mkdir -p /home/lpb/.pi/agent; \
     [ -f /home/lpb/.local/pi-config/settings.json ] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ || echo "WARN: no settings.json"; \
-    [ -f /home/lpb/.local/pi-config/mcp.json ] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/lpb/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
+    [ -f /home/lpb/.local/pi-config/mcp.json ] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/ || echo "WARN: no mcp.json"; \
+    [ -f /home/lpb/.local/pi-config/hermes-memory-config.json ] && cp /home/lpb/.local/pi-config/hermes-memory-config.json /home/lpb/.pi/agent/ || echo "WARN: no hermes-memory-config.json"; \
+    [ -f /home/lpb/.local/pi-config/pi-defaults.json ] && cp /home/lpb/.local/pi-config/pi-defaults.json /home/lpb/.pi/agent/ || echo "WARN: no pi-defaults.json"; \
+    [ -f /home/lpb/.local/pi-config/subagents.json ] && cp /home/lpb/.local/pi-config/subagents.json /home/lpb/.pi/agent/ || echo "WARN: no subagents.json"; \
     [ -f /home/lpb/.local/pi-config/models.json ] && cp /home/lpb/.local/pi-config/models.json /home/lpb/.pi/agent/ || echo "WARN: no models.json"; \
     [ -f /home/lpb/.local/pi-config/AGENTS.md ] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ || echo "WARN: no AGENTS.md"; \
     [ -f /home/lpb/.local/pi-config/SYSTEM.md ] && cp /home/lpb/.local/pi-config/SYSTEM.md /home/lpb/.pi/agent/ || true; \
@@ -155,21 +154,10 @@ RUN set -eux; \
         done; \
     fi; \
     mkdir -p /home/lpb/.pi/agent/agents; \
-    [ -d /home/lpb/.local/pi-config/agents ] && cp /home/lpb/.local/pi-config/agents/* /home/lpb/.pi/agent/agents/ 2>/dev/null || true; \
-    mkdir -p /opt/pi-support; \
-    [ -f /home/lpb/.local/pi-config/support/session-uuid.ts ] && cp /home/lpb/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
-    [ -f /home/lpb/.local/pi-config/support/validate-subagent-output.ts ] && cp /home/lpb/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
-    if [ -f /home/lpb/.local/pi-config/support/browser ]; then \
-        cp /home/lpb/.local/pi-config/support/browser /opt/pi-support/; chmod +x /opt/pi-support/browser; \
+    if [ -d /home/lpb/.local/pi-config/agents ]; then \
+        rsync -a --delete /home/lpb/.local/pi-config/agents/ /home/lpb/.pi/agent/agents/ 2>/dev/null || \
+        cp -r /home/lpb/.local/pi-config/agents/* /home/lpb/.pi/agent/agents/ 2>/dev/null || true; \
     fi; \
-    if [ -f /home/lpb/.local/pi-config/support/browser-state-cleanup.sh ]; then \
-        cp /home/lpb/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; chmod +x /opt/pi-support/browser-state-cleanup.sh; \
-    fi; \
-    [ -f /home/lpb/.local/pi-config/support/browser-validate.ts ] && cp /home/lpb/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
-    mkdir -p /opt/pi-support/config /opt/pi-support/docs /opt/pi-support/schemas; \
-    [ -d /home/lpb/.local/pi-config/support/config ] && cp /home/lpb/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
-    [ -d /home/lpb/.local/pi-config/support/docs ] && cp /home/lpb/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
-    [ -d /home/lpb/.local/pi-config/support/schemas ] && cp /home/lpb/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true;\
     chown -R 1000:1000 /home/lpb/.pi /home/lpb/.local
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -177,6 +165,19 @@ RUN set -eux; \
 # ═══════════════════════════════════════════════════════════════════════════
 FROM base AS cli
 
+# ── Support utilities (moved from config/support/ to devstack/support/) ──
+# Copied to /opt/pi-support/ — used by start.sh at runtime
+COPY support/browser /opt/pi-support/browser
+COPY support/browser-state-cleanup.sh /opt/pi-support/browser-state-cleanup.sh
+COPY support/browser-validate.ts /opt/pi-support/browser-validate.ts
+COPY support/session-uuid.ts /opt/pi-support/session-uuid.ts
+COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-output.ts
+COPY support/config/ /opt/pi-support/config/
+COPY support/docs/ /opt/pi-support/docs/
+COPY support/schemas/ /opt/pi-support/schemas/
+RUN chmod +x /opt/pi-support/browser /opt/pi-support/browser-state-cleanup.sh
+
+# ── Devstack deployment scripts ──
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh
 COPY support/install-openspec.sh /opt/pi-support/install-openspec.sh
@@ -201,6 +202,11 @@ RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.
 RUN printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/lpb/.gitconfig && chown 1000:1000 /home/lpb/.gitconfig
 
 RUN chown -R 1000:1000 /home/lpb
+
+# ─── Shell PATH (npm global bin, local bin) ──────────────────────────
+# Ensures agent-browser, pi, and other npm-global tools are on PATH
+# for all interactive and non-interactive shells.
+RUN printf '\n# LocalPibox: npm-global and local bin on PATH\nexport PATH="/home/lpb/.npm-global/bin:/home/lpb/.local/bin:${PATH}"\n' >> /home/lpb/.bashrc
 
 USER lpb
 WORKDIR /home/lpb/workspace

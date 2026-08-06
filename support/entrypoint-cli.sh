@@ -13,4 +13,5 @@
 # Environment variables:
 #   All LPB_* vars are handled by start.sh
 
-exec /opt/devstack/start.sh run --mode cli "$@"
+MODE="${LPB_START_MODE:-cli}"
+exec /opt/devstack/start.sh run --mode "$MODE" "$@"

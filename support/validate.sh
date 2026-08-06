@@ -15,6 +15,7 @@ set -euo pipefail
 RED=$(printf '\033[0;31m')
 GREEN=$(printf '\033[0;32m')
 YELLOW=$(printf '\033[1;33m')
+CYAN=$(printf '\033[0;36m')
 NC=$(printf '\033[0m')
 
 errors=0
@@ -101,7 +102,7 @@ echo ""
 # ED_PORT and CONNECTION_TOKEN are set by start.sh from LPB_* vars
 # (backwards-compat aliases)
 ED_PORT="${ED_PORT:-3000}"
-CONNECTION_TOKEN="${CONNECTION_TOKEN:-devsession}"
+CONNECTION_TOKEN="${CONNECTION_TOKEN:-}"
 echo -e "${CYAN}── VSCodium server ───────────────────────────────────────${NC}"
 if curl -sf "http://localhost:${ED_PORT}/?tkn=${CONNECTION_TOKEN}" >/dev/null 2>&1; then
     pass "VSCodium server responsive on port $ED_PORT"

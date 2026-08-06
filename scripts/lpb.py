@@ -5,7 +5,7 @@ Usage:
     lpb [/path/to/project]              Start Pi CLI session at project (foreground)
     lpb /path -- <pi-args...>           Pass args through to pi (e.g. -p, --session)
     lpb --shell [/path/to/project]      Start interactive bash shell in container
-    lpb --web [/path/to/project]        Start VSCodium at project (background)
+    lpb --ssh [pubkey|path] [/path]     Start sshd server (background) for remote login    lpb --web [/path/to/project]        Start VSCodium at project (background)
     lpb --stop                          Stop the container
     lpb --remove                        Stop + remove container + state dirs
     lpb --logs                          Stream container logs
@@ -48,7 +48,8 @@ import shutil
 import subprocess
 import sys
 import time
-import shlex
+import urllib.request
+import uuid
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = os.path.join(HOME, ".localpibox", "devstack")
@@ -56,6 +57,7 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "config")
 PROJECTS_DIR = os.path.join(CONFIG_DIR, "projects")
 LAST_PROJECT_FILE = os.path.join(CONFIG_DIR, "last-project")
 LAST_IMAGE_FILE = os.path.join(CONFIG_DIR, "last-image")
+TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
 
 # ─── Load stack configuration ────────────────────────────────────────────
 # lpb.stack.env defines build/image identity (fork URL, images, container)
@@ -128,6 +130,9 @@ class Config:
     command = "run"
     web_mode = False
     shell_mode = False
+    ssh_mode = False
+    ssh_pubkey = ""
+    ssh_port = os.environ.get("LPB_SSH_PORT", _conf_cfg.get("LPB_SSH_PORT", "2222"))
     pi_args = []  # args after "--" forwarded to pi inside container
 
 
@@ -137,15 +142,20 @@ _cli_overrides = {}
 
 
 def err(msg, hint=""):
+    """Print an error (red) to stderr; optionally with a yellow hint line."""
     print(f"{_ERR}Error: {msg}{_RSV}", file=sys.stderr)
     if hint:
         print(f"  {_WRN}{hint}{_RSV}", file=sys.stderr)
 
 
+def warn(msg):
+    """Print a warning (yellow) to stderr."""
+    print(f"{_WRN}Warning: {msg}{_RSV}", file=sys.stderr)
+
+
 
 def self_update():
     """Update lpb itself from the GitHub repo if a newer version is available."""
-    import urllib.request
     lpb_path = os.path.abspath(sys.argv[0])
     lpb_dir = os.path.dirname(lpb_path)
     new_path = os.path.join(lpb_dir, "lpb.new")
@@ -184,14 +194,21 @@ def self_update():
         for _f in os.listdir(lpb_dir):
             if _f.endswith(".new"):
                 os.remove(os.path.join(lpb_dir, _f))
-    except Exception:
-        pass
+    except Exception as exc:  # network/IO failures should never break startup
+        warn(f"self-update skipped: {exc}")
 
 def info(msg):
+    """Print an informational message to stdout (no color)."""
     print(msg)
 
 
+def done(msg):
+    """Print a success message (green) to stdout."""
+    print(f"\033[32m{msg}\033[0m")
+
+
 def run_cmd(args, timeout=120):
+    """Run a subprocess, capture stdout/stderr, and return (stdout, stderr, code)."""
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
         return r.stdout, r.stderr, r.returncode
@@ -202,6 +219,7 @@ def run_cmd(args, timeout=120):
 
 
 def ensure_container_cmd():
+    """Locate podman or docker; fail with a helpful message if neither exists."""
     if cfg.container_cmd:
         return
     cfg.container_cmd = shutil.which("podman") or shutil.which("docker") or ""
@@ -211,20 +229,49 @@ def ensure_container_cmd():
 
 
 def is_podman():
+    """Return True when the container runtime is podman (vs docker)."""
     return "podman" in cfg.container_cmd
 
 
 def save_last_image(mode):
+    """Persist the last-used image mode (cli/web) to support reconnect/update."""
     os.makedirs(os.path.dirname(LAST_IMAGE_FILE), exist_ok=True)
     with open(LAST_IMAGE_FILE, "w") as f:
         f.write(mode)
 
 
 def load_last_image():
+    """Read the persisted last-used image mode; defaults to 'cli'."""
     if os.path.isfile(LAST_IMAGE_FILE):
         with open(LAST_IMAGE_FILE) as f:
             return f.read().strip()
     return "cli"
+
+
+def ensure_token():
+    """Return a stable connection token.
+
+    If the user configured one (env/cli), use it unchanged. Otherwise generate a
+    random UUID once and persist it under the config dir, so the token lpb prints
+    in the URL always matches the token the VSCodium server actually uses.
+    """
+    if cfg.token:
+        return cfg.token
+    if os.path.isfile(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            persisted = f.read().strip()
+        if persisted:
+            cfg.token = persisted
+            return persisted
+    fresh = "%s" % (uuid.uuid4())
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(TOKEN_FILE, "w") as f:
+            f.write(fresh)
+    except OSError:
+        pass
+    cfg.token = fresh
+    return fresh
 
 
 class ContainerClient:
@@ -297,6 +344,12 @@ class ContainerClient:
             args.append(command)
         return subprocess.run(args, check=False).returncode
 
+    def pi_running(self, name):
+        """Check if a Pi process is running inside the container."""
+        args = [self.cmd, "exec", name, "pgrep", "-f", "pi[ck]"]
+        _, out, rc = run_cmd(args)
+        return rc == 0 and bool(out.strip())
+
     def containers_logs(self, name, follow=True, tail=None):
         args = [self.cmd, "logs"]
         if follow:
@@ -304,8 +357,7 @@ class ContainerClient:
         if tail:
             args += ["--tail", str(tail)]
         args.append(name)
-        _, _, rc = run_cmd(args)
-        return rc == 0
+        return subprocess.run(args, check=False).returncode == 0
 
     def images_pull(self, name):
         """Pull image with full verbosity, no stdin, and no timeout.
@@ -337,14 +389,17 @@ class ContainerClient:
 
 
 def client():
+    """Build a ContainerClient bound to the configured podman/docker runtime."""
     return ContainerClient(cfg.container_cmd)
 
 
 def resolve_path(p):
+    """Expand ~, ${HOME} and make an absolute path."""
     return os.path.abspath(os.path.expanduser(p).replace("${HOME}", HOME))
 
 
 def detect_mount_flags(project_dir):
+    """Probe SELinux behaviour and return the appropriate bind-mount flag (:Z/:z)."""
     c = client()
     _, _, stderr, _ = c.containers_run(
         image="alpine:latest", name="_lpb_mnt_test", detach=True,
@@ -366,6 +421,7 @@ _ENV_MAP = {
 
 
 def load_config_file():
+    """Load persistent user config (CONFIG_FILE) into the environment, if present."""
     if not os.path.isfile(CONFIG_FILE):
         return
     try:
@@ -449,6 +505,7 @@ HELP = (
     "  lpb [/path/to/project]           Start Pi CLI session at project\n"
     "  lpb /path -- <pi-args...>        Pass flags through to pi (-p, --session, etc.)\n"
     "  lpb --shell [/path/to/project]   Interactive bash shell in container\n"
+    "  lpb --ssh [pubkey|path]          Start sshd server in background (pubkey required)\n"
     "  lpb --web [/path/to/project]     Start VSCodium (background)\n"
     "  lpb --stop                       Stop the container\n"
     "  lpb --remove                     Stop + remove container + state dirs\n"
@@ -477,6 +534,8 @@ HELP = (
 
 
 def parse_cli(args):
+    """Parse the CLI argument list, updating the global config and CLI-override map.
+    Unknown/--web flags, pi passthrough (after "--"), and modes are handled here."""
     positional = []
     i = 0
     while i < len(args):
@@ -510,6 +569,28 @@ def parse_cli(args):
             cfg.base_path = args[i+1]; i += 2
         elif a == "--shell":
             cfg.shell_mode = True; i += 1
+        elif a == "--ssh":
+            # --ssh [<pubkey|path>] — start sshd server; pubkey required
+            cfg.ssh_mode = True; cfg.shell_mode = True; i += 1
+            if i < len(args) and not args[i].startswith("-"):
+                val = args[i]
+                if os.path.isfile(val):
+                    with open(val, encoding="utf-8") as f:
+                        cfg.ssh_pubkey = f.read().strip()
+                else:
+                    cfg.ssh_pubkey = val.strip()
+                i += 1
+            if not cfg.ssh_pubkey:
+                err("--ssh requires a public key or path to a .pub file",
+                    "Usage: lpb --ssh 'ssh-ed25519 AAAA... user@host' [/path]")
+                sys.exit(1)
+        elif a == "--ssh-port":
+            if i+1 >= len(args): err("--ssh-port requires a value"); sys.exit(1)
+            try:
+                cfg.ssh_port = str(int(args[i+1]))
+            except ValueError:
+                err(f"--ssh-port requires an integer, got: {args[i+1]}"); sys.exit(1)
+            i += 2
         elif a == "--web":
             cfg.web_mode = True; i += 1
         elif a in ("--stop", "-s"):
@@ -550,10 +631,12 @@ def parse_cli(args):
 
 
 def cmd_help():
+    """Print the full usage/help text and exit."""
     print(HELP); sys.exit(0)
 
 
 def cmd_stop():
+    """Stop and remove the running devstack container (no-op if already stopped)."""
     ensure_container_cmd()
     c = client()
     if not c.container_running(cfg.container_name):
@@ -562,36 +645,50 @@ def cmd_stop():
     if not c.containers_stop(cfg.container_name):
         err("Failed to stop", "Check: lpb --logs"); sys.exit(1)
     c.containers_remove(cfg.container_name)
-    info("Stopped and removed.")
+    done(f"Stopped and removed {cfg.container_name}.")
 
 
 def cmd_remove():
+    """Remove the container plus persisted state/browser data (with confirmation)."""
     ensure_container_cmd()
     c = client()
     c.containers_remove(cfg.container_name)
-    for d in (cfg.state_dir, cfg.browser_dir):
-        if os.path.isdir(resolve_path(d)):
-            shutil.rmtree(resolve_path(d), ignore_errors=True)
-    info("Removed devstack (container, state dir, browser dir).")
+    dir_browser = resolve_path(cfg.browser_dir)
+    for d in (resolve_path(cfg.state_dir), dir_browser):
+        if os.path.isdir(d):
+            print(f"\nWarning: this will permanently delete stored data:")
+            print(f"  {d}")
+            try:
+                choice = input("Continue? [y/N]: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                choice = "n"
+            if choice != "y":
+                info("Aborted — nothing was removed.")
+                return
+            shutil.rmtree(d, ignore_errors=True)
+    done("Removed devstack (container, state dir, browser dir).")
 
 
 def cmd_logs():
+    """Stream the devstack container logs (non-following tail)."""
     ensure_container_cmd()
     c = client()
     if not c.container_exists(cfg.container_name):
         err("Container not found", "Run 'lpb --remove' then 'lpb' to start fresh.")
         sys.exit(0)
-    if not c.containers_logs(cfg.container_name):
-        err("Failed to follow logs"); sys.exit(1)
+    if not c.containers_logs(cfg.container_name, follow=False):
+        err("Failed to get logs"); sys.exit(1)
 
 
 def cmd_config():
+    """Print resolved config, projects, and state paths for the current stack."""
     info(f"Config file: {CONFIG_FILE}")
     info(f"Projects:    {PROJECTS_DIR}")
     info(f"State dir:   {resolve_path(cfg.state_dir)}")
 
 
 def cmd_update():
+    """Self-update the launcher and pull the latest devstack image(s)."""
     ensure_container_cmd()
     c = client()
 
@@ -617,9 +714,11 @@ def cmd_update():
         rc = c.images_pull(img)
         if rc != 0:
             err(f"Failed to pull {img}")
+    done("Images up to date.")
 
 
 def _get_lan_ips():
+    """Discover non-loopback IPv4 addresses on the host (used to build connect URLs)."""
     ipv4_re = re.compile(r'^(\d+\.\d+\.\d+\.\d+)$')
     ips = []
     try:
@@ -666,6 +765,7 @@ def _get_host_for_url():
 
 
 def _build_urls():
+    """Build the display URL map (host + any LAN/localhost aliases) for web mode."""
     host = _get_host_for_url()
     port = cfg.port
     token_part = "" if cfg.without_token else f"?tkn={cfg.token}"
@@ -680,6 +780,7 @@ def _build_urls():
 
 
 def _build_url():
+    """Build a single health-check URL (always localhost-resolved)."""
     check_host = cfg.host
     if check_host in ("0.0.0.0", "localhost", "127.0.0.1"):
         check_host = "127.0.0.1"
@@ -689,6 +790,9 @@ def _build_url():
 
 
 def cmd_run():
+    """Resolve the project, decide the mode (cli/web/shell/ssh), and launch the
+    container. Foreground modes attach interactively; web/ssh run detached.
+    Includes recovery prompts when a Pi session is already active."""
     ensure_container_cmd()
     c = client()
 
@@ -724,7 +828,7 @@ def cmd_run():
         mode_label = "web (VSCodium)"
     elif cfg.shell_mode:
         cfg.image_name = CLI_IMAGE
-        mode_label = "cli (shell)"
+        mode_label = "cli (ssh server)" if cfg.ssh_pubkey else "cli (shell)"
     else:
         cfg.image_name = CLI_IMAGE
         mode_label = "cli (Pi CLI)"
@@ -741,12 +845,41 @@ def cmd_run():
     os.makedirs(resolved_state, exist_ok=True)
     os.makedirs(dir_browser, exist_ok=True)
 
-    # ── 7. Shell mode: attach to existing, or start fresh if none ────────
-    if cfg.shell_mode:
+    # ── 7. Shell mode: attach to existing container ─────────────────────
+    # (SSH mode skips this — it always does a fresh detached server)
+    if cfg.shell_mode and not cfg.ssh_mode:
         if c.container_running(cfg.container_name):
-            info(f"Attaching to running container '{cfg.container_name}'...")
-            ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
-            sys.exit(ret)
+            pi_active = c.pi_running(cfg.container_name)
+            if pi_active:
+                info(f"Container '{cfg.container_name}' running (Pi session active).")
+                info("\nOptions:")
+                print("  1) Attach to Pi session  (foreground)")
+                print("  2) Open bash shell      (interactive shell)")
+                print("  3) Stop container and restart")
+                try:
+                    choice = input("\nSelect [1-3] (default: 1): ").strip() or "1"
+                except (EOFError, KeyboardInterrupt):
+                    choice = "1"
+                if choice == "2":
+                    info(f"Opening bash shell in '{cfg.container_name}'...")
+                    ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
+                    sys.exit(ret)
+                elif choice == "3":
+                    info(f"Stopping '{cfg.container_name}'...")
+                    c.containers_stop(cfg.container_name)
+                else:
+                    # Reconnect to Pi session via exec
+                    info(f"Reconnecting to Pi session in '{cfg.container_name}'...")
+                    ret = c.containers_exec(
+                        cfg.container_name,
+                        ["pi", "--continue"],
+                        tty=True, interactive=True
+                    )
+                    sys.exit(ret)
+            else:
+                info(f"Attaching to running container '{cfg.container_name}'...")
+                ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
+                sys.exit(ret)
         elif c.container_exists(cfg.container_name):
             info(f"Container '{cfg.container_name}' is stopped — starting it...")
             _, _, rc = run_cmd([cfg.container_cmd, "start", cfg.container_name])
@@ -760,10 +893,37 @@ def cmd_run():
             info("No running container — starting a fresh devstack session...")
             # fall through to full startup flow (steps 8+)
 
-    # ── 8. Stop existing container (non-shell modes only) ────────────────
-    if c.container_running(cfg.container_name):
-        info("Stopping existing devstack container...")
-        c.containers_stop(cfg.container_name)
+    # ── 8. Check for running Pi session ──────────────────────────────────
+    if cfg.web_mode or cfg.ssh_mode:
+        # Web/SSH mode: stop existing container (server must restart)
+        if c.container_running(cfg.container_name):
+            info("Stopping existing devstack container...")
+            c.containers_stop(cfg.container_name)
+    else:
+        # CLI mode: check if Pi is running
+        if c.container_running(cfg.container_name) and c.pi_running(cfg.container_name):
+            # Pi session active — offer recovery
+            info(f"Pi session active in running container '{cfg.container_name}'.")
+            info("")
+            print("  1) Reconnect to session (continue)")
+            print("  2) Stop container and start fresh")
+            try:
+                choice = input("\nSelect [1-2] (default: 1): ").strip() or "1"
+            except (EOFError, KeyboardInterrupt):
+                choice = "1"
+
+            if choice == "2":
+                info(f"Stopping '{cfg.container_name}'...")
+                c.containers_stop(cfg.container_name)
+            else:
+                # Reconnect to existing session
+                info(f"Connecting to existing Pi session in '{cfg.container_name}'...")
+                ret = c.containers_exec(
+                    cfg.container_name,
+                    ["pi", "--continue"],
+                    tty=True, interactive=True
+                )
+                sys.exit(ret)
 
     # ── 9. Pull image if needed ──────────────────────────────────────────
     if not c.images_exists(cfg.image_name):
@@ -782,11 +942,15 @@ def cmd_run():
         c.containers_remove(cfg.container_name)
 
     # ── 12. Build env vars and volumes ───────────────────────────────────
+    # Resolve a stable connection token (generate+persist if unset) so the URL
+    # lpb prints matches the token the VSCodium server actually enforces.
+    ensure_token()
     env_vars = [
         f"LPB_ED_PORT={cfg.port}",
         f"LPB_EDITOR_HOST={cfg.host}",
         f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
         f"LPB_CONNECTION_TOKEN={cfg.token}",
+        f"CONNECTION_TOKEN={cfg.token}",
         f"LPB_STATE_DIR={cfg.state_dir}",
         f"LPB_EXA_API_KEY={os.environ.get('LPB_EXA_API_KEY', os.environ.get('EXA_API_KEY', ''))}",
         f"LPB_MAX_TOKENS_CONTEXT_RATIO={os.environ.get('LPB_MAX_TOKENS_CONTEXT_RATIO', _conf_cfg.get('LPB_MAX_TOKENS_CONTEXT_RATIO', '0.06'))}",
@@ -801,6 +965,16 @@ def cmd_run():
         elif k in _conf_cfg:
             env_vars.append(f"{k}={_conf_cfg[k]}")
 
+    # ── 12b. Shell / SSH start mode ─────────────────────────────────────
+    # When starting a container for --shell/--ssh (no existing container),
+    # override the CLI entrypoint to the shell sshd mode so we get a bare
+    # shell (or sshd) instead of a Pi session.
+    if cfg.shell_mode:
+        env_vars.append("LPB_START_MODE=shell")
+        if cfg.ssh_pubkey:
+            env_vars.append(f"LPB_SSH_PUBKEY={cfg.ssh_pubkey}")
+            env_vars.append(f"LPB_SSH_PORT={cfg.ssh_port}")
+
     volumes = [
         f"{project_dir}:{mount_path}{mount_flags}",
         f"{resolved_state}:/home/lpb/.pi{mount_flags}",
@@ -810,6 +984,13 @@ def cmd_run():
     gh_config = resolve_path(os.path.join(cfg.state_dir, "gh-config"))
     os.makedirs(gh_config, exist_ok=True)
     volumes.append(f"{gh_config}:/home/lpb/.config/gh{mount_flags}")
+    # ── 13b. Sync timezone with host (read-only; no relabel needed) ──────
+    # Bind-mount the host's /etc/localtime (and /etc/timezone if present) so
+    # the container time always matches the host. Read-only, no Z/z relabel.
+    if os.path.isfile("/etc/localtime"):
+        volumes.append("/etc/localtime:/etc/localtime:ro")
+    if os.path.isfile("/etc/timezone"):
+        volumes.append("/etc/timezone:/etc/timezone:ro")
 
     userns = "keep-id" if is_podman() else None
 
@@ -841,7 +1022,7 @@ def cmd_run():
         try:
             for _ in range(30):
                 try:
-                    r = subprocess.run(["curl", "-sf", "--max-time", "2", health_url],
+                    r = subprocess.run(["curl", "-s", "--max-time", "2", health_url],
                                        capture_output=True, timeout=5)
                     if r.returncode == 0:
                         ready = True; break
@@ -865,8 +1046,41 @@ def cmd_run():
             info("\u26a0 Container running but editor may not be ready yet.")
             info("  Check logs:       lpb --logs")
             info(f"  Container status: {cfg.container_cmd} ps --filter name={cfg.container_name}")
+    elif cfg.ssh_mode:
+        # SSH mode: background sshd server — user logs in remotely
+        info("Starting SSH server (background)...")
+        container_id, stdout, stderr, rc = c.containers_run(
+            image=cfg.image_name, name=cfg.container_name, network="host",
+            env=env_vars, volumes=volumes, userns=userns, detach=True,
+        )
+        if rc != 0 or not container_id:
+            err("failed to start container")
+            if stderr: print(stderr, file=sys.stderr)
+            print("\nTroubleshooting:")
+            print("  lpb --logs     \u2014 View container logs")
+            print("  lpb --stop     \u2014 Stop existing container")
+            print("  lpb --remove   \u2014 Remove everything and start fresh")
+            sys.exit(1)
+
+        os.makedirs(os.path.dirname(LAST_PROJECT_FILE), exist_ok=True)
+        with open(LAST_PROJECT_FILE, "w") as f:
+            f.write(project_dir)
+        save_last_image("cli")
+
+        host = _get_host_for_url()
+        port = cfg.ssh_port
+        user = "lpb"  # container user (uid 1000) is lpb
+        done("\u2713 SSH server ready (background)")
+        info(f"  Connect:  ssh -p {port} {user}@{host}")
+        info(f"  Pubkey:   {cfg.ssh_pubkey}")
+        info("")
+        info("  The container runs in the background with the provided public\n"
+              "  key in authorized_keys. Your private key is never uploaded.\n"
+              "  Manage it with:")
+        info("    lpb --stop      \u2014 Stop the SSH server")
+        info("    lpb --logs      \u2014 View logs")
     else:
-        # CLI / shell mode: foreground, stop on exit
+        # CLI mode: foreground, stop on exit
         info("Starting container (foreground)...\n")
         # Save last-project for reconnection
         os.makedirs(os.path.dirname(LAST_PROJECT_FILE), exist_ok=True)
@@ -891,17 +1105,22 @@ def cmd_run():
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
-parse_cli(sys.argv[1:])
-apply_overrides(cfg.project_dir, cfg.project_name, _cli_overrides)
+def main() -> None:
+    """CLI entry point: parse args, dispatch to the selected command handler."""
+    parse_cli(sys.argv[1:])
+    apply_overrides(cfg.project_dir, cfg.project_name, _cli_overrides)
 
-handlers = {
-    "help": cmd_help,
-    "stop": cmd_stop,
-    "remove": cmd_remove,
-    "logs": cmd_logs,
-    "update": cmd_update,
-    "config": cmd_config,
-    "run": cmd_run,
-}
+    handlers = {
+        "help": cmd_help,
+        "stop": cmd_stop,
+        "remove": cmd_remove,
+        "logs": cmd_logs,
+        "update": cmd_update,
+        "config": cmd_config,
+        "run": cmd_run,
+    }
+    handlers.get(cfg.command, cmd_run)()
 
-handlers.get(cfg.command, cmd_run)()
+
+if __name__ == "__main__":
+    main()
