@@ -69,39 +69,39 @@ RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
       oldname="$(getent passwd 1000 | cut -d: -f1)"; \
-      if [ "$oldname" != "dev" ]; then \
-        usermod -l dev -d /home/dev -m "$oldname"; \
+      if [ "$oldname" != "lpb" ]; then \
+        usermod -l lpb -d /home/lpb -m "$oldname"; \
         if getent group 1000 >/dev/null; then \
           oldgroup="$(getent group 1000 | cut -d: -f1)"; \
-          [ "$oldgroup" = "dev" ] || groupmod -n dev "$oldgroup"; \
+          [ "$oldgroup" = "lpb" ] || groupmod -n lpb "$oldgroup"; \
         fi; \
       fi; \
     else \
-      useradd -m -s /bin/bash -u 1000 dev; \
+      useradd -m -s /bin/bash -u 1000 lpb; \
     fi; \
-    chown -R 1000:1000 /home/dev
+    chown -R 1000:1000 /home/lpb
 
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
 RUN set -eux; \
-    npm config set prefix '/home/dev/.npm-global'; \
+    npm config set prefix '/home/lpb/.npm-global'; \
     npm config set fetch-retries 5; \
     npm config set fetch-retry-mintimeout 20000; \
     npm config set fetch-retry-maxtimeout 120000; \
     npm config set fetch-timeout 300000; \
     npm config set registry https://registry.npmjs.org/; \
-    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/dev/.npmrc; \
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.npmrc; \
     # Write .npmrc to git install root so all extensions inherit allow-scripts
-    mkdir -p /home/dev/.pi/agent/git && \
-    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/dev/.pi/agent/git/.npmrc; \
+    mkdir -p /home/lpb/.pi/agent/git && \
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.pi/agent/git/.npmrc; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
     npm cache clean --force; \
-    chown -R 1000:1000 /home/dev/.npm-global
+    chown -R 1000:1000 /home/lpb/.npm-global
 
 # ── Pi monorepo build ───────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
-    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
+    export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
     git clone --depth=1 --single-branch --branch ${PI_REF} ${PI_FORK} .; \
     git config user.email "build@localpibox.dev"; \
@@ -118,59 +118,59 @@ RUN set -eux; \
     fi; \
     npm install -g /tmp/pi-packs/*.tgz; \
     rm -rf /tmp/pi-packs; \
-    /home/dev/.npm-global/bin/pi --version || (echo "FATAL: pi binary not functional" && exit 1); \
-    grep -rq 'Case 4' /home/dev/.npm-global/lib/node_modules/@earendil-works/ \
+    /home/lpb/.npm-global/bin/pi --version || (echo "FATAL: pi binary not functional" && exit 1); \
+    grep -rq 'Case 4' /home/lpb/.npm-global/lib/node_modules/@earendil-works/ \
       || (echo "FATAL: Case 4 patch missing from pi-ai" && exit 1); \
-    grep -rq 'qwen-chat-template' /home/dev/.npm-global/lib/node_modules/@earendil-works/pi-ai/dist/ \
+    grep -rq 'qwen-chat-template' /home/lpb/.npm-global/lib/node_modules/@earendil-works/pi-ai/dist/ \
       || (echo "FATAL: Qwen reasoning_effort patch missing" && exit 1); \
-    ls -la /home/dev/.npm-global/bin/; \
+    ls -la /home/lpb/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
 # ── Extensions + Config ─────────────────────────────────────────────────────
 USER root
 RUN set -eux; \
-    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
-    export HOME="/home/dev"; \
-    mkdir -p /home/dev/.local/pi-config; \
+    export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
+    export HOME="/home/lpb"; \
+    mkdir -p /home/lpb/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
     git clone --depth=1 --single-branch --branch ${CONFIG_REF} ${CONFIG_FORK} /tmp/pi-config-repo 2>&1 && \
-    (cd /tmp/pi-config-repo && cp -r . /home/dev/.local/pi-config/) || echo "WARN: config clone failed"; \
+    (cd /tmp/pi-config-repo && cp -r . /home/lpb/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
     # Copy lpb.conf.env into the image for start.sh to load at runtime \
-    [ -f /opt/devstack/lpb.conf.env ] && cp /opt/devstack/lpb.conf.env /home/dev/.local/lpb.conf.env || echo "WARN: no lpb.conf.env"; \
-    mkdir -p /home/dev/.pi/agent; \
-    [ -f /home/dev/.local/pi-config/settings.json ] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ || echo "WARN: no settings.json"; \
-    [ -f /home/dev/.local/pi-config/mcp.json ] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
-    [ -f /home/dev/.local/pi-config/models.json ] && cp /home/dev/.local/pi-config/models.json /home/dev/.pi/agent/ || echo "WARN: no models.json"; \
-    [ -f /home/dev/.local/pi-config/AGENTS.md ] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ || echo "WARN: no AGENTS.md"; \
-    [ -f /home/dev/.local/pi-config/SYSTEM.md ] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ || true; \
-    [ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ || true; \
-    mkdir -p /home/dev/.pi/agent/skills; \
-    if [ -d /home/dev/.local/pi-config/skills ]; then \
-        for d in /home/dev/.local/pi-config/skills/*/; do \
+    [ -f /opt/devstack/lpb.conf.env ] && cp /opt/devstack/lpb.conf.env /home/lpb/.local/lpb.conf.env || echo "WARN: no lpb.conf.env"; \
+    mkdir -p /home/lpb/.pi/agent; \
+    [ -f /home/lpb/.local/pi-config/settings.json ] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ || echo "WARN: no settings.json"; \
+    [ -f /home/lpb/.local/pi-config/mcp.json ] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/ && sed -i 's/"directTools": true/"directTools": false/' /home/lpb/.pi/agent/mcp.json || echo "WARN: no mcp.json"; \
+    [ -f /home/lpb/.local/pi-config/models.json ] && cp /home/lpb/.local/pi-config/models.json /home/lpb/.pi/agent/ || echo "WARN: no models.json"; \
+    [ -f /home/lpb/.local/pi-config/AGENTS.md ] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ || echo "WARN: no AGENTS.md"; \
+    [ -f /home/lpb/.local/pi-config/SYSTEM.md ] && cp /home/lpb/.local/pi-config/SYSTEM.md /home/lpb/.pi/agent/ || true; \
+    [ -f /home/lpb/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/lpb/.local/pi-config/APPEND_SYSTEM.md /home/lpb/.pi/agent/ || true; \
+    mkdir -p /home/lpb/.pi/agent/skills; \
+    if [ -d /home/lpb/.local/pi-config/skills ]; then \
+        for d in /home/lpb/.local/pi-config/skills/*/; do \
             [ -d "$d" ] || continue; \
             name=$(basename "$d"); \
-            mkdir -p "/home/dev/.pi/agent/skills/$name"; \
-            cp "$d"* "/home/dev/.pi/agent/skills/$name/" 2>/dev/null || true; \
+            mkdir -p "/home/lpb/.pi/agent/skills/$name"; \
+            cp "$d"* "/home/lpb/.pi/agent/skills/$name/" 2>/dev/null || true; \
         done; \
     fi; \
-    mkdir -p /home/dev/.pi/agent/agents; \
-    [ -d /home/dev/.local/pi-config/agents ] && cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true; \
+    mkdir -p /home/lpb/.pi/agent/agents; \
+    [ -d /home/lpb/.local/pi-config/agents ] && cp /home/lpb/.local/pi-config/agents/* /home/lpb/.pi/agent/agents/ 2>/dev/null || true; \
     mkdir -p /opt/pi-support; \
-    [ -f /home/dev/.local/pi-config/support/session-uuid.ts ] && cp /home/dev/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
-    [ -f /home/dev/.local/pi-config/support/validate-subagent-output.ts ] && cp /home/dev/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
-    if [ -f /home/dev/.local/pi-config/support/browser ]; then \
-        cp /home/dev/.local/pi-config/support/browser /opt/pi-support/; chmod +x /opt/pi-support/browser; \
+    [ -f /home/lpb/.local/pi-config/support/session-uuid.ts ] && cp /home/lpb/.local/pi-config/support/session-uuid.ts /opt/pi-support/; \
+    [ -f /home/lpb/.local/pi-config/support/validate-subagent-output.ts ] && cp /home/lpb/.local/pi-config/support/validate-subagent-output.ts /opt/pi-support/; \
+    if [ -f /home/lpb/.local/pi-config/support/browser ]; then \
+        cp /home/lpb/.local/pi-config/support/browser /opt/pi-support/; chmod +x /opt/pi-support/browser; \
     fi; \
-    if [ -f /home/dev/.local/pi-config/support/browser-state-cleanup.sh ]; then \
-        cp /home/dev/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; chmod +x /opt/pi-support/browser-state-cleanup.sh; \
+    if [ -f /home/lpb/.local/pi-config/support/browser-state-cleanup.sh ]; then \
+        cp /home/lpb/.local/pi-config/support/browser-state-cleanup.sh /opt/pi-support/; chmod +x /opt/pi-support/browser-state-cleanup.sh; \
     fi; \
-    [ -f /home/dev/.local/pi-config/support/browser-validate.ts ] && cp /home/dev/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
+    [ -f /home/lpb/.local/pi-config/support/browser-validate.ts ] && cp /home/lpb/.local/pi-config/support/browser-validate.ts /opt/pi-support/; \
     mkdir -p /opt/pi-support/config /opt/pi-support/docs /opt/pi-support/schemas; \
-    [ -d /home/dev/.local/pi-config/support/config ] && cp /home/dev/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
-    [ -d /home/dev/.local/pi-config/support/docs ] && cp /home/dev/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
-    [ -d /home/dev/.local/pi-config/support/schemas ] && cp /home/dev/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true;\
-    chown -R 1000:1000 /home/dev/.pi /home/dev/.local
+    [ -d /home/lpb/.local/pi-config/support/config ] && cp /home/lpb/.local/pi-config/support/config/* /opt/pi-support/config/ 2>/dev/null || true; \
+    [ -d /home/lpb/.local/pi-config/support/docs ] && cp /home/lpb/.local/pi-config/support/docs/* /opt/pi-support/docs/ 2>/dev/null || true; \
+    [ -d /home/lpb/.local/pi-config/support/schemas ] && cp /home/lpb/.local/pi-config/support/schemas/* /opt/pi-support/schemas/ 2>/dev/null || true;\
+    chown -R 1000:1000 /home/lpb/.pi /home/lpb/.local
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CLI IMAGE
@@ -192,18 +192,18 @@ RUN ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
            /opt/devstack/entrypoint-cli.sh \
            /opt/pi-support/install-openspec.sh
 
-RUN mkdir -p /home/dev/.agent-browser/sessions && chown -R 1000:1000 /home/dev/.agent-browser
+RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
 
 # ─── Git credential helper ────────────────────────────────────────────
 # Points git to gh auth for GitHub HTTPS operations. No sensitive data
 # baked in — the actual token is resolved at runtime from
-# /home/dev/.config/gh/hosts.yml (volume-mounted from host).
-RUN printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/dev/.gitconfig && chown 1000:1000 /home/dev/.gitconfig
+# /home/lpb/.config/gh/hosts.yml (volume-mounted from host).
+RUN printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/lpb/.gitconfig && chown 1000:1000 /home/lpb/.gitconfig
 
-RUN chown -R 1000:1000 /home/dev
+RUN chown -R 1000:1000 /home/lpb
 
-USER dev
-WORKDIR /home/dev/workspace
+USER lpb
+WORKDIR /home/lpb/workspace
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — CLI" \
       org.opencontainers.image.description="AI-powered dev environment with Pi CLI (interactive terminal)" \
@@ -229,8 +229,8 @@ RUN curl -fsSL \
 
 USER root
 RUN set -eux; \
-    export PATH="/home/dev/.npm-global/bin:${PATH}"; \
-    EXT_DIR="/home/dev/.vscodium-server/extensions"; \
+    export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
+    EXT_DIR="/home/lpb/.vscodium-server/extensions"; \
     mkdir -p "${EXT_DIR}"; \
     install_ext() { \
         publisher="$1"; name="$2"; \
@@ -249,15 +249,15 @@ RUN set -eux; \
         echo "  Installed ${publisher}.${name}@${version}"; \
     }; \
     install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"; \
-    chown -R 1000:1000 /home/dev/.vscodium-server
+    chown -R 1000:1000 /home/lpb/.vscodium-server
 
 COPY support/entrypoint-web.sh /opt/devstack/entrypoint-web.sh
 RUN chmod +x /opt/devstack/entrypoint-web.sh
 
-RUN chown -R 1000:1000 /home/dev
+RUN chown -R 1000:1000 /home/lpb
 
-USER dev
-WORKDIR /home/dev/workspace
+USER lpb
+WORKDIR /home/lpb/workspace
 
 ENV ED_PORT=3000
 ENV HOST=0.0.0.0

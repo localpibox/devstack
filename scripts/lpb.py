@@ -714,9 +714,9 @@ def cmd_run():
 
     # ── 3. Mount path inside container ───────────────────────────────────
     if cfg.open_home:
-        mount_path = "/home/dev/workspace"
+        mount_path = "/home/lpb/workspace"
     else:
-        mount_path = f"/home/dev/workspace/{cfg.project_name}"
+        mount_path = f"/home/lpb/workspace/{cfg.project_name}"
 
     # ── 4. Determine image and mode ──────────────────────────────────────
     if cfg.web_mode:
@@ -803,13 +803,13 @@ def cmd_run():
 
     volumes = [
         f"{project_dir}:{mount_path}{mount_flags}",
-        f"{resolved_state}:/home/dev/.pi{mount_flags}",
-        f"{dir_browser}:/home/dev/.agent-browser{mount_flags}",
+        f"{resolved_state}:/home/lpb/.pi{mount_flags}",
+        f"{dir_browser}:/home/lpb/.agent-browser{mount_flags}",
     ]
     # ── 13. Mount gh config (persisted across restarts) ──────────────────
     gh_config = resolve_path(os.path.join(cfg.state_dir, "gh-config"))
     os.makedirs(gh_config, exist_ok=True)
-    volumes.append(f"{gh_config}:/home/dev/.config/gh{mount_flags}")
+    volumes.append(f"{gh_config}:/home/lpb/.config/gh{mount_flags}")
 
     userns = "keep-id" if is_podman() else None
 

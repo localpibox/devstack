@@ -71,11 +71,11 @@ if [[ -f "${_stack_conf}" ]]; then
 fi
 
 # --- 0b. INLINE FALLBACK DEFAULTS (if lpb.conf.env is missing) ---
-export HOME_DIR="/home/dev"
-export PATH="/home/dev/.npm-global/bin:/home/dev/.local/bin:${PATH}"
+export HOME_DIR="/home/lpb"
+export PATH="/home/lpb/.npm-global/bin:/home/lpb/.local/bin:${PATH}"
 
 # -- Core paths --
-export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
+export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/lpb/workspace}"
 export PI_SUPPORT_DIR="${PI_SUPPORT_DIR:-/opt/pi-support}"
 
 # -- API endpoints --
@@ -158,7 +158,7 @@ fi
 
 if [[ ! -d "${WORKSPACE_DIR}" ]]; then
     warn "Workspace path does not exist: ${WORKSPACE_DIR}"
-    warn "  Mount: /home/dev/workspace → ${WORKSPACE_DIR}"
+    warn "  Mount: /home/lpb/workspace → ${WORKSPACE_DIR}"
 elif [[ -z "$(ls -A "${WORKSPACE_DIR}" 2>/dev/null)" ]]; then
     warn "Workspace directory is empty: ${WORKSPACE_DIR}"
 else
@@ -184,9 +184,9 @@ if [[ "$FIRST_RUN" = "true" ]]; then
              "${HOME_DIR}/.pi/agent/git" \
              "${HOME_DIR}/.venvs"
 
-    npm config set prefix '/home/dev/.npm-global' 2>/dev/null || true
-    mkdir -p /home/dev/.npm-global/bin /home/dev/.npm-global/lib/node_modules 2>/dev/null || true
-    chown -R "$(id -u):$(id -g)" /home/dev/.npm-global 2>/dev/null || true
+    npm config set prefix '/home/lpb/.npm-global' 2>/dev/null || true
+    mkdir -p /home/lpb/.npm-global/bin /home/lpb/.npm-global/lib/node_modules 2>/dev/null || true
+    chown -R "$(id -u):$(id -g)" /home/lpb/.npm-global 2>/dev/null || true
     npm config set fetch-retries 5 2>/dev/null || true
     npm config set fetch-retry-mintimeout 20000 2>/dev/null || true
     npm config set fetch-retry-maxtimeout 120000 2>/dev/null || true
@@ -194,19 +194,19 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts 'better-sqlite3 agent-browser esbuild protobufjs @google/genai' 2>/dev/null || true
 
-    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/dev/.npmrc 2>/dev/null || true
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.npmrc 2>/dev/null || true
     mkdir -p "${HOME_DIR}/.pi/agent/git"
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.pi/agent/git/.npmrc" 2>/dev/null || true
 
-    if [[ -d /home/dev/.local/pi-config ]]; then
-        info "Syncing config from /home/dev/.local/pi-config/..."
-        [[ -f /home/dev/.local/pi-config/settings.json ]] && cp /home/dev/.local/pi-config/settings.json /home/dev/.pi/agent/ 2>/dev/null
-        [[ -f /home/dev/.local/pi-config/mcp.json ]] && cp /home/dev/.local/pi-config/mcp.json /home/dev/.pi/agent/mcp.json 2>/dev/null && sed -i 's/"directTools": true/"directTools": false/' /home/dev/.pi/agent/mcp.json 2>/dev/null || true
-        [[ -f /home/dev/.local/pi-config/AGENTS.md ]] && cp /home/dev/.local/pi-config/AGENTS.md /home/dev/.pi/agent/ 2>/dev/null
-        [[ -f /home/dev/.local/pi-config/SYSTEM.md ]] && cp /home/dev/.local/pi-config/SYSTEM.md /home/dev/.pi/agent/ 2>/dev/null || true
-        [[ -f /home/dev/.local/pi-config/APPEND_SYSTEM.md ]] && cp /home/dev/.local/pi-config/APPEND_SYSTEM.md /home/dev/.pi/agent/ 2>/dev/null || true
-        [[ -d /home/dev/.local/pi-config/skills ]] && cp -r /home/dev/.local/pi-config/skills/* /home/dev/.pi/agent/skills/ 2>/dev/null || true
-        [[ -d /home/dev/.local/pi-config/agents ]] && cp /home/dev/.local/pi-config/agents/* /home/dev/.pi/agent/agents/ 2>/dev/null || true
+    if [[ -d /home/lpb/.local/pi-config ]]; then
+        info "Syncing config from /home/lpb/.local/pi-config/..."
+        [[ -f /home/lpb/.local/pi-config/settings.json ]] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ 2>/dev/null
+        [[ -f /home/lpb/.local/pi-config/mcp.json ]] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/mcp.json 2>/dev/null && sed -i 's/"directTools": true/"directTools": false/' /home/lpb/.pi/agent/mcp.json 2>/dev/null || true
+        [[ -f /home/lpb/.local/pi-config/AGENTS.md ]] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ 2>/dev/null
+        [[ -f /home/lpb/.local/pi-config/SYSTEM.md ]] && cp /home/lpb/.local/pi-config/SYSTEM.md /home/lpb/.pi/agent/ 2>/dev/null || true
+        [[ -f /home/lpb/.local/pi-config/APPEND_SYSTEM.md ]] && cp /home/lpb/.local/pi-config/APPEND_SYSTEM.md /home/lpb/.pi/agent/ 2>/dev/null || true
+        [[ -d /home/lpb/.local/pi-config/skills ]] && cp -r /home/lpb/.local/pi-config/skills/* /home/lpb/.pi/agent/skills/ 2>/dev/null || true
+        [[ -d /home/lpb/.local/pi-config/agents ]] && cp /home/lpb/.local/pi-config/agents/* /home/lpb/.pi/agent/agents/ 2>/dev/null || true
         info "Config synced."
     fi
 

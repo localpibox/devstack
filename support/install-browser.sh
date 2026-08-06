@@ -50,7 +50,7 @@ install_chrome() {
 
     info "Chrome version: $chrome_version"
 
-    local chrome_dir="/home/dev/.agent-browser/browsers/chrome-${chrome_version}"
+    local chrome_dir="/home/lpb/.agent-browser/browsers/chrome-${chrome_version}"
     local chrome_zip="/tmp/chrome-${chrome_version}.zip"
 
     if [ -d "$chrome_dir" ] && [ -f "${chrome_dir}/chrome-linux64/chrome" ]; then
@@ -106,7 +106,7 @@ verify_installation() {
     local chrome_bin
 
     # Use unquoted glob to expand (quote only after expansion)
-    chrome_bin=$(ls /home/dev/.agent-browser/browsers/chrome-*/chrome-linux64/chrome 2>/dev/null | head -1)
+    chrome_bin=$(ls /home/lpb/.agent-browser/browsers/chrome-*/chrome-linux64/chrome 2>/dev/null | head -1)
     if [ -z "$chrome_bin" ]; then
         chrome_bin=$(ls /opt/google/chrome/chrome 2>/dev/null)
     fi

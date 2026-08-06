@@ -180,7 +180,6 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             PI_FORK=${{ steps.config.outputs.PI_FORK }}
-            PI_BRANCH=${{ steps.config.outputs.PI_BRANCH }}
             CONFIG_FORK=${{ steps.config.outputs.CONFIG_FORK }}
             CONFIG_REF=${{ steps.config.outputs.CONFIG_REF }}
             NODE_VERSION=${{ steps.config.outputs.NODE_VERSION }}

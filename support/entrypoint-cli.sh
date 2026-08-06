@@ -7,7 +7,7 @@
 #
 # Usage:
 #   podman run -it --network host --userns keep-id \
-#     -v /path/to/project:/home/dev/workspace/<project-name>:Z \
+#     -v /path/to/project:/home/lpb/workspace/<project-name>:Z \
 #     ghcr.io/localpibox/devstack:cli
 #
 # Environment variables:
