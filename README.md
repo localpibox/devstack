@@ -179,44 +179,64 @@ podman run -d --name localpibox --network host --userns keep-id \
 **Note:** Pulls may take a while on slow connections — `lpb --update` uses
 non-blocking streaming so you'll see real-time progress (no timeouts).
 
-## Version Configuration
+## Forked Repos, Patches & Upstream Policy
 
-Fork branches and versions are tracked in `lpb.stack.env` at the repo root.
-Change these to rebuild with different versions. Extensions inside the container
-are updated with: `podman exec -it localpibox pi update --extensions`
+Fork URLs and branches are tracked in `lpb.stack.env` at the repo root. Each
+LocalPibox fork carries its localpibox work as a **single squashed commit** on
+top of upstream (or as its own root commit for independent projects), so the
+delta vs upstream is always one clean patch.
 
-### Pi monorepo — `localpibox/pi` @ `patches/qwen-reasoning-effort`
+| Repo | Upstream | Upstream latest | LocalPibox work | Update policy |
+|---|---|---|---|---|
+| **pi** | `earendil-works/pi` | release **v0.83.0** | Qwen reasoning + context-overflow patches | rebase `lpb` patch onto upstream **on releases** only |
+| **lemonade-pi-plugin** | `lemonade-sdk/lemonade-pi-plugin` | **no stable release** | Qwen thinking + vision support | follow upstream **main**; check periodically |
+| **pi-subagents** | `tintinweb/pi-subagents` | release **v0.14.3** | centralized subagent model registry | branch & follow **master** releases; submit upstream if clean |
+| **lpb-memory** | *(independent — full refactor)* | — | Pi memory extension (subprocess provider) | no upstream to track |
+| **config** | — | — | preset: settings, skills, agents | own |
+| **devstack** | — | — | this stack | own |
 
-Installed version: **0.83.0** (`pi --version`). Fork branch contains cumulative
-patches including: reasoning effort for Qwen models, Case 4 context overflow
-detection, Qwen chat-template thinking format support.
+### `pi` → `earendil-works/pi` (releases)
 
-### Pi monorepo — `localpibox/pi` @ `patches/qwen-reasoning-effort`
+One squashed patch commit on `lpb` (`packages/ai`, `packages/agent`, …):
 
-Installed version: **0.83.0** (`pi --version`).
-
-| Patch (reference file) | What it does | File affected |
+| Patch | What it does | File |
 |---|---|---|
-| `pi-qwen-chat-template.patch` | Send `reasoning_effort` (high/medium/low) for Qwen models via the `qwen` and `qwen-chat-template` thinking formats | `packages/ai/api/openai-completions.ts` |
-| `pi-overflow-case4.patch` | Add Case 4 to `isContextOverflow`: detect Qwen/Llama.cpp reasoning overflow where models burn the output budget on thinking blocks (`stopReason=length` + `output>0` + input >= 90% of context window) | `packages/ai/src/utils/overflow.ts` |
+| `reasoning_effort` | Send `reasoning_effort` (high/medium/low) for Qwen models via the `qwen` / `qwen-chat-template` thinking formats | `packages/ai/src/api/openai-completions.ts` |
+| `reasoning_budget_tokens` | Add reasoning-budget token support/typing for Qwen to prevent runaway thinking | `packages/ai/src/types.ts`, `generate-models.ts`, ai tests |
+| Case 4 context overflow | Add Case 4 to `isContextOverflow`: Qwen/Llama.cpp reasoning overflow (`stopReason=length` + `output>0` + input ≥ 90% window) | `packages/ai/src/utils/overflow.ts` |
+| compaction tuning | Adjust compaction for Qwen thinking windows | `packages/agent/src/harness/compaction/compaction.ts` |
+| reasoning wiring | `reasoning_effort` field plumbing in coding-agent config | `packages/coding-agent/src/config.ts` |
 
-### Lemonade plugin — `localpibox/lemonade-pi-plugin` @ `patches/api-key-auth`
+Update: rebase the patch onto the **next upstream release** (after v0.83.0).
 
-Fork branch includes: API-key auth type registration, Qwen thinking format
-support, vision capability detection, and reasoning format handling.
+### `lemonade-pi-plugin` → `lemonade-sdk/lemonade-pi-plugin` (main)
 
-### Memory extension — `localpibox/pi-hermes-memory` @ `fix/subprocess-provider`
+One squashed patch commit on `lpb` (`extensions/index.ts`, `+287/-49`): API-key
+auth type registration, Qwen thinking-format support (`thinkingLevelMap`),
+vision-capability detection, and reasoning-format handling. Update policy: no
+stable release upstream yet — **check periodically** and rebase onto upstream
+`main`.
 
-Reactive model-override propagation across all LLM subprocess paths.
+### `pi-subagents` → `tintinweb/pi-subagents` (master)
+
+One squashed patch commit on `master` (`src/index.ts`, `src/settings.ts`,
+`src/agent-runner.ts`, `src/default-agents.ts`): a **centralized subagent model
+registry** (remove Anthropic-heavy defaults; make all subagents inherit the
+session model), plus removal of a workflow file (OAuth scope limitation). If
+this patch proves clean and generally useful, **submit it upstream**.
+
+### `lpb-memory` — independent
+
+Original Hermes base was **fully refactored** and is now an independent project
+(no upstream to track). Provides the Pi memory extension: subprocess-based
+background reviews, model-override propagation, memory store + handlers.
 
 ### Upstreaming policy
 
-These patches are **candidate upstream contributions**. They are sent upstream
-(to `earendil-works/pi`, `lemonade-sdk/lemonade-pi-plugin`, and
-`localpibox/pi-hermes-memory`) **after testing**, and **only if generally
-useful and not too opinionated** for this stack's specific configuration.
-Patches that are local-workaround-specific or that diverge from upstream design
-direction stay on the LocalPibox fork branch.
+Patches are **candidate upstream contributions**: they go upstream only if
+generally useful and not too opinionated for this stack's specific
+configuration. Local-workaround-specific patches or ones that diverge from
+upstream design direction stay on the LocalPibox fork branch.
 
 ## Forking & Repointing
 

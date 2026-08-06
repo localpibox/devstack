@@ -121,7 +121,7 @@ jobs:
             ${{ env.IMAGE_NAME }}:cli
             ${{ env.IMAGE_NAME }}:main-cli
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
-            ${{ steps.config.outputs.stack_version }}-cli
+            ${{ env.IMAGE_NAME }}:${{ steps.config.outputs.stack_version }}-cli
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE_NAME) || '' }}
             ${{ github.event.inputs.publish_latest && format('{0}:latest', env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
