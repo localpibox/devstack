@@ -23,6 +23,17 @@ Created: 2026-08-07 · Last updated: 2026-08-07
   - Consolidated duplicate `isQwenReasoningModel` in syncModelStore → uses global function
 - **Commit:** `1e374d5`
 
+
+### 3. Config Repo Validation (2026-08-07)
+- **Doc:** [CONFIG-REPO-VALIDATION.md](CONFIG-REPO-VALIDATION.md)
+- **Status:** ✅ README structure needs updating, content is correct
+- **Findings:** settings/mcp.json/skills/agents/support all accurate
+- **Changes needed:**
+  - README structure: support/bin→flat, agents missing 4 files, missing hermes-memory-config.json
+  - install.sh echo: "high" → "medium"
+  - README packages list: 6 claims → 4 actual
+- **Commit:** `9146128`
+
 ---
 
 ## Removed References (to be redone when stabilized)
@@ -141,6 +152,6 @@ Created: 2026-08-07 · Last updated: 2026-08-07
 - For items needing decision: add "Decision:" and "Rationale:" when resolved
 
 ### Validation Progress
-- **Completed:** 2/16 (pi fork, lemonade plugin)
-- **Next:** config repo (item 9)
+- **Completed:** 3/16 (pi fork, lemonade plugin)
+- **Next:** lpb-memory code validation (item 9)
 - **Pending:** 14 items
