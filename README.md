@@ -251,7 +251,6 @@ LocalPibox originals.
 | **Extensions** (lemonade-pi-plugin, lpb-memory, pi-subagents, …) | runtime config `~/.pi/agent/settings.json` → `packages` | 🟢 trivial, **no rebuild** | edit the `packages` array, or `pi install git:<fork>/<repo>`; applied at next startup via `pi update --extensions` |
 | **Config preset** (localpibox/config) | `lpb.stack.env` → `LPB_CONFIG_FORK` / `LPB_CONFIG_REF` | 🟡 one rebuild, or no rebuild at runtime | rebuild `--build-arg CONFIG_FORK=...`, **or** `git -C ~/.local/pi-config remote set-url origin <fork>` (no rebuild) |
 | **Pi core** (localpibox/pi) | `lpb.stack.env` → `LPB_PI_FORK` / `LPB_PI_REF` | 🔴 image rebuild | fork `localpibox/pi`, set engine + `LPB_IMAGE_CLI`, rebuild |
-| **Dev workspace checkout** (all repos into `workspace/`) | `tools/workspace.manifest.json` | 🟢 easy | edit manifest URLs/refs (used by `sync-workspace.py`) |
 
 ### Full repoint procedure (image build)
 
@@ -307,10 +306,6 @@ podman exec -it localpibox pi update --extensions
 
 Changes apply at the **next pi startup** (or `/reload` in a running session
 for config).
-
-> **Note:** `lpb.stack.env` controls the image build and `pi` fork;
-> `tools/workspace.manifest.json` independently controls the dev-workspace
-> checkout used by `sync-workspace.py`. They are separate by design.
 
 ## CI/CD
 
@@ -384,6 +379,7 @@ podman run -d --name localpibox --network host --userns keep-id \
 devstack/
 ├── Dockerfile                 # Multi-stage build (cli + web targets)
 ├── lpb.stack.env          # Fork/version tracking (forks, branches, base versions)
+├── lpb.conf.env              # Runtime configuration (editor, LLM, persistence, browser)
 ├── doc/                   # Architecture and operational docs
 ├── scripts/                   # Launcher and installer
 │   ├── lpb                    # lpb launcher (bash wrapper → lpb.py)
@@ -393,6 +389,7 @@ devstack/
 │   ├── entrypoint-cli.sh      # CLI image entrypoint (Pi CLI foreground)
 │   ├── entrypoint-web.sh      # Web image entrypoint (VSCodium server)
 │   ├── install-browser.sh     # Browser setup script
+│   ├── install-openspec.sh    # OpenSpec skills installer
 │   ├── start.sh               # Legacy entrypoint (superseded by entrypoint-*)
 │   └── validate.sh            # Health validation
 ├── .env.example               # Template — copy to .env for real values
