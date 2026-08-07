@@ -34,6 +34,19 @@ Created: 2026-08-07 · Last updated: 2026-08-07
   - README packages list: 6 claims → 4 actual
 - **Commit:** `9146128`
 
+### 4. Config Repo Cleanup & Rebranding (2026-08-07)
+- **Status:** ✅ hermes→lpb rebranding complete
+- **Changes made:**
+  - Renamed hermes-memory-config.json → lpb-memory-config.json (config repo)
+  - Updated lpb-memory/src/config.ts DEFAULT_CONFIG_PATH
+  - Removed start.sh from config/support/ (belongs in devstack)
+  - install.sh: added lpb-memory-config.json installation, fixed 'high'→'medium' echo
+  - devstack/start.sh: updated reference to lpb-memory-config.json
+  - README: full rewrite to match actual file structure
+- **Commit:** `9e66e4c` (config), `60d312c` (devstack), `d6b5253` (lpb-memory)
+
+
+
 ---
 
 ## Removed References (to be redone when stabilized)
@@ -152,6 +165,6 @@ Created: 2026-08-07 · Last updated: 2026-08-07
 - For items needing decision: add "Decision:" and "Rationale:" when resolved
 
 ### Validation Progress
-- **Completed:** 3/16 (pi fork, lemonade plugin)
+- **Completed:** 4/16 (pi fork, lemonade plugin)
 - **Next:** lpb-memory code validation (item 9)
 - **Pending:** 14 items
