@@ -131,12 +131,23 @@ debug "MAX_TOKENS_CONTEXT_RATIO=$MAX_TOKENS_CONTEXT_RATIO"
 
 # ─── 2. LOAD .ENV FROM PROJECT WORKSPACE ─────────────────────────────────────
 # Variables from the project's .env file (LPB_* prefix only) override defaults.
+# Search multiple candidate locations so the .env is found whether the project
+# is mounted at the workspace root OR as a project subdir (e.g. devstack repo
+# mounted at ${WORKSPACE_DIR}/devstack), and regardless of the start.sh cwd.
 
 ENV_FILE=""
-if [[ -f "${WORKSPACE_DIR}/.env" ]]; then
-    ENV_FILE="${WORKSPACE_DIR}/.env"
-    debug "Found .env at ${ENV_FILE}"
-fi
+_candidates=(
+    "${WORKSPACE_DIR}/.env"
+    "${WORKSPACE_DIR}/devstack/.env"
+    "$(pwd)/.env"
+)
+for _cand in "${_candidates[@]}"; do
+    if [[ -n "$_cand" && -f "$_cand" ]]; then
+        ENV_FILE="$_cand"
+        debug "Found .env at ${ENV_FILE}"
+        break
+    fi
+done
 
 if [[ -n "$ENV_FILE" ]]; then
     info "Loading environment from ${ENV_FILE}"
