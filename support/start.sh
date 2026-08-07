@@ -129,17 +129,22 @@ debug "ED_PORT=$ED_PORT"
 debug "EDITOR_HOST=$HOST"
 debug "MAX_TOKENS_CONTEXT_RATIO=$MAX_TOKENS_CONTEXT_RATIO"
 
-# ─── 2. LOAD .ENV FROM PROJECT WORKSPACE ─────────────────────────────────────
-# Variables from the project's .env file (LPB_* prefix only) override defaults.
-# Search multiple candidate locations so the .env is found whether the project
-# is mounted at the workspace root OR as a project subdir (e.g. devstack repo
-# mounted at ${WORKSPACE_DIR}/devstack), and regardless of the start.sh cwd.
+# ─── 2. RESOLVE PROJECT DIRECTORY & LOAD .ENV ──────────────────────────────
+# The project is a subdirectory of the workspace (e.g. "/home/lpb/workspace/<project>")
+# and does not need to contain a .env. lpb.py is the authoritative source: it mounts
+# the project there and sets LPB_DEVCONTAINER_WORKSPACE_DIR to the mount path.
+# Fall back to the current working directory when lpb.py didn't set it (manual start).
 
+PROJECT_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-$(pwd)}"
+export PROJECT_DIR
+debug "PROJECT_DIR=$PROJECT_DIR"
+
+# Load variables from the project's .env (LPB_* prefix only) if present — it is optional.
 ENV_FILE=""
 _candidates=(
+    "${PROJECT_DIR}/.env"
     "${WORKSPACE_DIR}/.env"
     "${WORKSPACE_DIR}/devstack/.env"
-    "$(pwd)/.env"
 )
 for _cand in "${_candidates[@]}"; do
     if [[ -n "$_cand" && -f "$_cand" ]]; then
@@ -180,16 +185,6 @@ if [[ -n "$ENV_FILE" ]]; then
         export EXA_API_KEY="${LPB_EXA_API_KEY}"
     fi
 fi
-
-# ─── 2b. RESOLVE PROJECT DIRECTORY (working dir) ────────────────────────────
-# The project directory is provided by lpb.py via LPB_DEVCONTAINER_WORKSPACE_DIR,
-# which is set to the container mount path (e.g. "/home/lpb/workspace/devstack").
-# This is the canonical project identity — lpb.py passes the user's chosen path.
-# No need to infer from .env location; lpb.py already resolved it correctly.
-
-PROJECT_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-export PROJECT_DIR
-debug "PROJECT_DIR=$PROJECT_DIR"
 
 # ─── 3. WORKSPACE INFO ──────────────────────────────────────────────────────
 
