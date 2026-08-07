@@ -1,0 +1,39 @@
+{
+  "description": "Agent-browser action policy — gates destructive actions",
+  "rules": [
+    {
+      "action": "delete",
+      "confirm": true,
+      "reason": "Destructive: removes content from the page"
+    },
+    {
+      "action": "navigate",
+      "allowedDomains": [
+        "localhost",
+        "127.0.0.1",
+        "[::1]",
+        "*.example.com",
+        "*.github.com",
+        "*.wikipedia.org",
+        "developer.chrome.com"
+      ],
+      "reason": "Localhost always allowed for dev; add your domains as needed"
+    },
+    {
+      "action": "download",
+      "confirm": true,
+      "reason": "Destructive: may download unwanted files"
+    },
+    {
+      "action": "file_access",
+      "allow": false,
+      "reason": "No file:// access by default"
+    },
+    {
+      "action": "cookie_delete",
+      "confirm": true,
+      "reason": "Removes authentication cookies"
+    }
+  ],
+  "default": "allow"
+}
