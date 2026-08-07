@@ -129,7 +129,7 @@ RUN set -eux; \
     export HOME="/home/lpb"; \
     mkdir -p /home/lpb/.local/pi-config; \
     rm -rf /tmp/pi-config-repo; \
-    git clone --depth=1 --branch lpb https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
+    git clone --depth=1 --branch main https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
     (cd /tmp/pi-config-repo && cp -r . /home/lpb/.local/pi-config/) || echo "WARN: config clone failed"; \
     rm -rf /tmp/pi-config-repo; \
     # Copy lpb.conf.env into the image for start.sh to load at runtime \
