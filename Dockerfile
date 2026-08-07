@@ -168,7 +168,6 @@ FROM base AS cli
 
 # ── Support utilities (moved from config/support/ to devstack/support/) ──
 # Copied to /opt/pi-support/ — used by start.sh at runtime
-COPY support/browser /opt/pi-support/browser
 COPY support/browser-state-cleanup.sh /opt/pi-support/browser-state-cleanup.sh
 COPY support/browser-validate.ts /opt/pi-support/browser-validate.ts
 COPY support/session-uuid.ts /opt/pi-support/session-uuid.ts
@@ -176,7 +175,7 @@ COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-outpu
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-RUN chmod +x /opt/pi-support/browser /opt/pi-support/browser-state-cleanup.sh
+RUN chmod +x /opt/pi-support/browser-state-cleanup.sh
 
 # ── Devstack deployment scripts ──
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
