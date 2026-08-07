@@ -231,7 +231,7 @@ with open(sys.argv[1], 'w') as f: json.dump(pkg, f, indent=2)
         info "Syncing config from /home/lpb/.local/pi-config/..."
         [[ -f /home/lpb/.local/pi-config/settings.json ]] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ 2>/dev/null
         [[ -f /home/lpb/.local/pi-config/mcp.json ]] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/mcp.json 2>/dev/null && sed -i 's/"directTools": true/"directTools": false/' /home/lpb/.pi/agent/mcp.json 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/hermes-memory-config.json ]] && cp /home/lpb/.local/pi-config/hermes-memory-config.json /home/lpb/.pi/agent/ 2>/dev/null || true
+        [[ -f /home/lpb/.local/pi-config/lpb-memory-config.json ]] && cp /home/lpb/.local/pi-config/lpb-memory-config.json /home/lpb/.pi/agent/ 2>/dev/null || true
         [[ -f /home/lpb/.local/pi-config/pi-defaults.json ]] && cp /home/lpb/.local/pi-config/pi-defaults.json /home/lpb/.pi/agent/ 2>/dev/null || true
         [[ -f /home/lpb/.local/pi-config/subagents.json ]] && cp /home/lpb/.local/pi-config/subagents.json /home/lpb/.pi/agent/ 2>/dev/null || true
         [[ -f /home/lpb/.local/pi-config/AGENTS.md ]] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ 2>/dev/null
