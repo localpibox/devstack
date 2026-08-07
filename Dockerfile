@@ -102,8 +102,8 @@ RUN set -eux; \
     git clone --depth=1 --single-branch --branch ${PI_REF} ${PI_FORK} .; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
-    npm ci --ignore-scripts; \
-    ln -sf "$(pwd)/node_modules/@typescript/native-preview/bin/tsgo.js" "$(pwd)/node_modules/.bin/tsgo"; \
+    npm install; \
+    ln -sf "$(pwd)/node_modules/@typescript/native-preview/bin/tsgo.js" "$(pwd)/node_modules/.bin/tsgo";
     echo "=== Building from pre-patched fork: ${PI_FORK} @ ${PI_REF} (${PI_HEAD_SHA}) ==="; \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
