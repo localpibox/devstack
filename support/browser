@@ -1,1 +1,17 @@
-404: Not Found
+#!/bin/bash
+# Source browser automation environment variables and run agent-browser
+# Usage: source /usr/local/bin/browser
+#        agent-browser open https://example.com
+#
+# Environment: DEVCONTAINER_WORKSPACE_DIR (defaults to /home/dev/workspace)
+
+WORKSPACE="${DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
+set -a
+# .env.browser lives at workspace root
+source "${WORKSPACE}/.env.browser"
+set +a
+
+# If the first argument is not 'source', execute the rest as a command
+if [ "${1:-}" != "source" ]; then
+    exec agent-browser "$@"
+fi
