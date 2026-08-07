@@ -103,8 +103,8 @@ RUN set -eux; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
     npm install; \
-    ln -sf "$(pwd)/node_modules/@typescript/native-preview/bin/tsgo.js" "$(pwd)/node_modules/.bin/tsgo"; \
-    echo "=== Building from pre-patched fork: ${PI_FORK} @ ${PI_REF} (${PI_HEAD_SHA}) ==="; \
+    ln -sf "$(pwd)/node_modules/@typescript/native-preview-linux-x64/lib/tsgo" "$(pwd)/node_modules/.bin/tsgo"; \
+    export PATH="$(pwd)/node_modules/.bin:${PATH}"; \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
     for pkg in ai agent coding-agent tui; do \
