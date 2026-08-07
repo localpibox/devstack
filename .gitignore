@@ -50,3 +50,5 @@ __pycache__/
 # Gitnexus index — project-specific, generated at runtime
 .gitnexus/
 
+# Backup of all localpibox repos before rebase operations
+backup/
