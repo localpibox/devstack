@@ -315,6 +315,40 @@ if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
     done
 fi
 
+# ─── 4c. PERSIST DEVSTACK ENV FOR ALL SHELLS (--shell / --ssh) ─────────────
+# start.sh loads .env and computes the LPB_* vars + bare-name aliases, but those
+# only exist in this process. Interactive --shell bash inherits them (via exec),
+# but --ssh login shells and `podman exec bash` reattachments start fresh and
+# would miss them. Persist the resolved set to ~/.devstack-env and source it from
+# .bashrc and .profile so every shell (SSH, exec, interactive) gets the
+# preconfigured env vars (e.g. EXA_API_KEY).
+persist_devstack_env() {
+    local env_file="${HOME_DIR}/.devstack-env"
+    local bare_names="EXA_API_KEY LEMONADE_BASE_URL OPENROUTER_BASE_URL ED_PORT HOST CONNECTION_TOKEN DEVCONTAINER_WORKSPACE_DIR MAX_TOKENS_CONTEXT_RATIO"
+    local name q
+    : > "${env_file}"
+    # Dump all LPB_*/PI_* vars plus the aliased bare names (non-empty only).
+    while IFS= read -r name; do
+        [[ -n "$name" ]] || continue
+        local val="${!name}"
+        [[ -n "$val" ]] || continue
+        printf -v q '%q' "$val"
+        printf 'export %s=%s\n' "$name" "$q" >> "${env_file}"
+    done < <(env | cut -d= -f1 | grep -E '^(LPB_|PI_)'; for n in $bare_names; do [[ -n "${!n:-}" ]] && echo "$n"; done)
+    chmod 600 "${env_file}" 2>/dev/null || true
+    # Source it from .bashrc and .profile, idempotently.
+    local src_marker='# LocalPibox devstack environment (managed)'
+    local src_line='[ -f "${HOME}/.devstack-env" ] && . "${HOME}/.devstack-env"'
+    local rc
+    for rc in "${HOME_DIR}/.bashrc" "${HOME_DIR}/.profile"; do
+        [[ -f "$rc" ]] || continue
+        if ! grep -qF "$src_marker" "$rc" 2>/dev/null; then
+            printf '\n%s\n%s\n' "$src_marker" "$src_line" >> "$rc"
+        fi
+    done
+}
+persist_devstack_env
+
 # ─── 5. POST-INIT: NATIVE MODULES ────────────────────────────────────────────
 
 debug "Checking native modules..."
