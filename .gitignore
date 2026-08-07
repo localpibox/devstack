@@ -52,3 +52,6 @@ __pycache__/
 
 # Backup of all localpibox repos before rebase operations
 backup/
+
+# Local Pi monorepo dev checkout — untracked (CI clones pi fresh at build time)
+workspace/pi/
