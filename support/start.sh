@@ -63,8 +63,10 @@ if [[ -f "${_stack_conf}" ]]; then
         key=$(echo "$line" | cut -d= -f1 | xargs 2>/dev/null || echo "$line" | cut -d= -f1)
         value=$(echo "$line" | cut -d= -f2- | xargs 2>/dev/null || echo "$line" | cut -d= -f2-)
         export "$key"="$value"
+        # Strip LPB_ prefix to create unprefixed alias — ONLY if value is non-empty.
+        # Empty LPB_ values must NOT block .env or shell overrides of the bare name.
         stripped="${key#LPB_}"
-        if [[ -z "${!stripped+x}" ]]; then
+        if [[ "$stripped" != "$key" && -n "$value" && -z "${!stripped+x}" ]]; then
             export "$stripped"="$value"
         fi
     done < "${_stack_conf}"
@@ -147,8 +149,12 @@ if [[ -n "$ENV_FILE" ]]; then
         case "$key" in
             LPB_*)
                 export "$key"="$value"
+                # Strip LPB_ prefix to create unprefixed alias — only if value is non-empty
+                # AND the bare name wasn't already set (shell/env always wins over .env).
                 stripped="${key#LPB_}"
-                export "$stripped"="$value"
+                if [[ -n "$value" && -z "${!stripped+x}" ]]; then
+                    export "$stripped"="$value"
+                fi
                 ;;
         esac
     done < "$ENV_FILE"
@@ -156,10 +162,12 @@ if [[ -n "$ENV_FILE" ]]; then
     WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-$WORKSPACE_DIR}"
     export WORKSPACE_DIR
 
-    # Re-sync bare-name aliases after .env load (LPB_EXA_API_KEY → EXA_API_KEY)
-    # These aliases were set to defaults in step 0b, but .env may have overridden
-    # the LPB_* source — re-read now so aliases pick up the .env value.
-    export EXA_API_KEY="${LPB_EXA_API_KEY}"
+    # Re-sync bare-name aliases after .env load.
+    # Only sets alias if the bare name wasn't already in the shell env
+    # (shell env always takes priority over .env LPB_ values).
+    if [[ -z "${EXA_API_KEY+x}" ]]; then
+        export EXA_API_KEY="${LPB_EXA_API_KEY}"
+    fi
 fi
 
 # ─── 3. WORKSPACE INFO ──────────────────────────────────────────────────────
