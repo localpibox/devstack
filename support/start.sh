@@ -182,15 +182,12 @@ if [[ -n "$ENV_FILE" ]]; then
 fi
 
 # ─── 2b. RESOLVE PROJECT DIRECTORY (working dir) ────────────────────────────
-# The actual working directory is the project subdir that holds the .env
-# (e.g. "/home/lpb/workspace/devstack"), not the workspace root. This is
-# where Pi / shell / editor should start. Falls back to WORKSPACE_DIR if no
-# .env is found.
+# The project directory is provided by lpb.py via LPB_DEVCONTAINER_WORKSPACE_DIR,
+# which is set to the container mount path (e.g. "/home/lpb/workspace/devstack").
+# This is the canonical project identity — lpb.py passes the user's chosen path.
+# No need to infer from .env location; lpb.py already resolved it correctly.
 
-PROJECT_DIR="${WORKSPACE_DIR}"
-if [[ -n "$ENV_FILE" && -d "$(dirname "$ENV_FILE")" ]]; then
-    PROJECT_DIR="$(dirname "$ENV_FILE")"
-fi
+PROJECT_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 export PROJECT_DIR
 debug "PROJECT_DIR=$PROJECT_DIR"
 
