@@ -103,7 +103,7 @@ RUN set -eux; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
     npm install; \
-    ln -sf "$(pwd)/node_modules/@typescript/native-preview/bin/tsgo.js" "$(pwd)/node_modules/.bin/tsgo"; \ \
+    ln -sf "$(pwd)/node_modules/@typescript/native-preview/bin/tsgo.js" "$(pwd)/node_modules/.bin/tsgo"; \
     echo "=== Building from pre-patched fork: ${PI_FORK} @ ${PI_REF} (${PI_HEAD_SHA}) ==="; \
     npm run build; \
     mkdir -p /tmp/pi-packs; \
