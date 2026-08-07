@@ -130,32 +130,35 @@ maxTokens: (qwenReasoning
 
 ## Phase 3: Pi Harness Changes (in `localpibox/pi` fork)
 
-### 3.1 Disable thinking during compaction
+### 3.1 Soft-cap thinking during compaction
 
-**Files to change in fork:**
-- `packages/agent/src/harness/compaction/compaction.ts` — `generateSummaryWithUsage()`, `compact()`
-- `packages/agent/src/harness/agent-harness.ts` — `runCompaction()`, `compact()`
+**IMPORTANT:** Qwen models **cannot have thinking fully disabled**. The lemonade plugin explicitly states:
 
-**Current code (compaction.ts):**
+> "not fully disabled (Qwen can't fully disable thinking)"
+
+The correct mechanism is **soft-capping** via two complementary approaches:
+
+1. **Pi fork: omit `reasoning` field during compaction** — sets `enable_thinking=false` which gives Qwen a bounded (soft-capped) thinking phase
+2. **Lemonade plugin: `reasoningBudgetTokens: 0`** — provides the actual soft-cap that limits thinking length
+
+**Files changed in fork:**
+- `packages/agent/src/harness/compaction/compaction.ts` — `generateSummaryWithUsage()`, compact turn-prefix
+- `packages/agent/src/harness/agent-harness.ts` — calls `compact()` with no thinkingLevel (undefined)
+
+**Actual code (compaction.ts):**
 ```typescript
-const response = await completeSimpleWithRetries(
-    models, model, { systemPrompt: ..., messages: ... },
-    completionOptions,  // includes thinkingLevel
-    retry, callbacks,
-);
+// Force thinking soft-capped during compaction — Qwen cannot fully disable
+// thinking. Omitting the reasoning field sets enable_thinking=false which
+// gives a bounded (soft-capped) thinking phase, reducing meta-thinking waste.
+// For Qwen, this works alongside reasoningBudgetTokens:0 from the lemonade plugin.
+// The lemonade plugin provides the actual soft-cap; omitting reasoning just
+// removes the explicit thinking prompt for a more concise summary.
+const completionOptions: SimpleStreamOptions = { maxTokens, signal };
 ```
 
-**Change:** Pass `thinkingLevel: "off"` explicitly during compaction:
-```typescript
-// In generateSummaryWithUsage():
-const completionOptions = model.reasoning
-    ? { maxTokens, signal, reasoning: "off" }  // Disable thinking for compaction
-    : { maxTokens, signal };
-```
+**agent-harness.ts:** Calls `compact()` with `thinkingLevel: undefined` — this causes the pi-ai `streamSimple()` to not send `reasoningEffort`, resulting in `enable_thinking=false` for Qwen → soft-capped thinking.
 
-Same for `compact()` → pass `thinkingLevel: "off"` to both `generateSummaryWithUsage()` calls.
-
-**Rationale:** Meta-thinking (thinking about the conversation summary) wastes tokens. The summary generation is a mechanical task that doesn't benefit from deep reasoning.
+**Rationale:** Meta-thinking about the conversation summary wastes tokens. Soft-capping reduces the thinking volume while still allowing the model to reason about what to summarize. The actual bound comes from `reasoningBudgetTokens:0` in the lemonade plugin.
 
 ---
 

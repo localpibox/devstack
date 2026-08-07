@@ -136,11 +136,16 @@ Proposed: maxTokens = 16,384 (for thinking Qwen models)
 
 This leaves more room for thinking blocks while ensuring the total stays under the window.
 
-### Fix 2: Disable thinking for compaction
+### Fix 2: Soft-cap thinking for compaction
 
-Compaction already passes `thinkingLevel` to the summary generation. But when `thinkingLevel === "high"`, the summary request also generates thinking, wasting tokens on meta-thinking about the conversation.
+**Important:** Qwen models cannot have thinking fully disabled. The correct approach is two-fold:
 
-**Recommendation:** Force `thinkingLevel === "off"` during compaction requests.
+1. **Omit the `reasoning` field during compaction** — sets `enable_thinking=false` for Qwen → bounded (soft-capped) thinking phase
+2. **`reasoningBudgetTokens: 0` in the lemonade plugin** — provides the actual soft-cap that limits thinking length
+
+The lemonade plugin already sets `reasoningBudgetTokens: 0` via `compat.thinkingFormat: "qwen-chat-template"`. The Pi fork omits `reasoning` during compaction so Qwen receives `enable_thinking=false` → soft-capped thinking.
+
+Combined, these prevent runaway meta-thinking during summary generation while still allowing the model to reason about what to summarize.
 
 ### Fix 3: Increase reserveTokens for thinking models
 
@@ -176,7 +181,7 @@ This ensures `prompt + max_tokens` fits comfortably within the window even with 
 
 | Practice | Why | Impact |
 |---|---|---|
-| **Disable thinking for compaction** | Prevents meta-thinking waste | High |
+| **Soft-cap thinking for compaction** | Qwen can't be disabled; soft-cap via `reasoningBudgetTokens:0` + omit reasoning | High |
 | **Reduce maxTokens for thinking models** | Leaves room for thinking blocks | High |
 | **Increase reserveTokens** | Compaction fires earlier | Medium |
 | **Per-request output clamping** | Guarantees prompt + output ≤ window | High (upstream pattern) |
@@ -189,6 +194,7 @@ This ensures `prompt + max_tokens` fits comfortably within the window even with 
 
 ## References
 
+- [Qwen3 Thinking Disable Reality](../doc/QWEN-THINKING-DISABLE.md) — Qwen cannot be fully disabled; only soft-capped via `reasoningBudgetTokens:0`
 - [Qwen Code PR #6556 — clamp max_tokens to context window](https://github.com/QwenLM/qwen-code/pull/6556)
 - [llama.cpp reasoning parser vs Qwen3](https://blog.gopenai.com/the-only-correct-way-to-use-llama-cpp-with-qwen3-6-27b-d550bd0605a7)
 - [Qwen3-Thinking max_tokens < 300](https://github.com/ggml-org/llama.cpp/discussions/20931)
