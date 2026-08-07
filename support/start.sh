@@ -181,6 +181,19 @@ if [[ -n "$ENV_FILE" ]]; then
     fi
 fi
 
+# ─── 2b. RESOLVE PROJECT DIRECTORY (working dir) ────────────────────────────
+# The actual working directory is the project subdir that holds the .env
+# (e.g. "/home/lpb/workspace/devstack"), not the workspace root. This is
+# where Pi / shell / editor should start. Falls back to WORKSPACE_DIR if no
+# .env is found.
+
+PROJECT_DIR="${WORKSPACE_DIR}"
+if [[ -n "$ENV_FILE" && -d "$(dirname "$ENV_FILE")" ]]; then
+    PROJECT_DIR="$(dirname "$ENV_FILE")"
+fi
+export PROJECT_DIR
+debug "PROJECT_DIR=$PROJECT_DIR"
+
 # ─── 3. WORKSPACE INFO ──────────────────────────────────────────────────────
 
 if [[ ! -d "${WORKSPACE_DIR}" ]]; then
@@ -381,7 +394,7 @@ if [[ "$MODE" = "shell" ]]; then
     # ── Shell mode: serve workspace + optional interactive shell, stay alive ──
     # Used by "lpb --shell" when no container exists (bare shell, no Pi session)
     # and by "lpb --ssh" (sshd stays running; user logs in remotely).
-    cd "${WORKSPACE_DIR}" 2>/dev/null || true
+    cd "${PROJECT_DIR}" 2>/dev/null || true
     debug "Shell mode; working directory: $(pwd)"
 
     # If an SSH pubkey was provided, run sshd so the user can log in.
@@ -470,7 +483,7 @@ EOF
         fi
     fi
 
-    info "Devstack shell ready. Workspace: ${WORKSPACE_DIR}"
+    info "Devstack shell ready. Workspace: ${PROJECT_DIR}"
     if [[ -t 0 ]]; then
         info "Type 'exit' to stop the container."
         exec bash -l
@@ -486,15 +499,15 @@ elif [[ "$MODE" = "cli" ]]; then
     echo ""
     echo "╔═══════════════════════════════════════════════════════════╗"
     echo "║  LocalPibox Devstack — Pi CLI                            ║"
-    echo "║  Workspace: ${WORKSPACE_DIR}                ║"
+    echo "║  Workspace: ${PROJECT_DIR}                ║"
     echo "╚═══════════════════════════════════════════════════════════╝"
     echo ""
     echo "  pi              — Start Pi CLI session"
     echo "  exit            — Stop container"
     echo ""
 
-    # CRITICAL FIX: cd into workspace so Pi starts in the project directory
-    cd "${WORKSPACE_DIR}"
+    # CRITICAL FIX: cd into project directory so Pi starts in the project
+    cd "${PROJECT_DIR}"
     debug "Working directory: $(pwd)"
 
     # Run pi in foreground
@@ -528,5 +541,5 @@ elif [[ "$MODE" = "web" ]]; then
         --host "${HOST}" \
         --port "${ED_PORT}" \
         --connection-token "${CONNECTION_TOKEN}" \
-        --default-folder "${WORKSPACE_DIR}"
+        --default-folder "${PROJECT_DIR}"
 fi
