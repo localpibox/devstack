@@ -39,7 +39,7 @@ subagent({
     
     Session ID: ${SESSION_ID}
     Prompt: ${PROMPT}`,
-  outputSchema: JSON.parse(readFileSync("subagent-browser-schema.json")),
+  outputSchema: JSON.parse(readFileSync("browser-validation-schema.json")),
 });
 ```
 
@@ -88,6 +88,6 @@ if (!result.success) {
 | File | Purpose |
 |------|---------|
 | `bin/session-uuid.ts` | Generate unique session IDs |
-| `subagent-browser-schema.json` | JSON schema for subagent results |
+| `browser-validation-schema.json` | Unified JSON schema (all fields) |
 | `subagent-browser-prompt.txt` | System prompt template |
 | `bin/validate-subagent-output.ts` | Parent-side validation utility |

@@ -70,8 +70,7 @@ config/
     ├── docs/
     │   └── subagent-spawning-pattern.md
     └── schemas/
-        ├── browser-validation-schema.json
-        └── subagent-browser-schema.json
+        └── browser-validation-schema.json
 ```
 
 ---
@@ -134,8 +133,7 @@ All reference `/opt/pi-support` for support files (correct — install.sh copies
 | `config/agent-browser-action-policy.json` | Destructive action gates | ✅ |
 | `config/subagent-browser-prompt.txt` | Subagent browser prompt template | ✅ |
 | `docs/subagent-spawning-pattern.md` | Orchestration docs | ✅ |
-| `schemas/browser-validation-schema.json` | Validation report schema | ✅ |
-| `schemas/subagent-browser-schema.json` | Subagent result schema | ✅ |
+| `schemas/browser-validation-schema.json` | Unified validation report schema | ✅ |
 
 ---
 

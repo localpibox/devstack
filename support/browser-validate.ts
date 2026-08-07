@@ -65,10 +65,10 @@ function agentBrowser(...args: string[]): string {
 
 // ─── Task 2.4: Pre-computation ──────────────────────────────────────────────
 
-function precomputeData(
+async function precomputeData(
   url: string,
   sessionId: string,
-): { vitals: string; a11y: string; snapshot: string; screenshotPath: string } {
+): Promise<{ vitals: string; a11y: string; snapshot: string; screenshotPath: string }> {
   const screenshotPath = `/browser-states/${sessionId}/screenshot.png`;
 
   // Ensure session directory exists
@@ -77,7 +77,7 @@ function precomputeData(
   // Navigate
   agentBrowser("--session", sessionId, "open", url);
   // Small delay for page to load
-  sleep(1000);
+  await sleep(1000);
 
   // Collect vitals JSON
   const vitals = agentBrowser("--session", sessionId, "vitals", "--json");
@@ -309,11 +309,8 @@ function saveReport(sessionId: string, report: ValidationReport): string {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function sleep(ms: number): void {
-  const start = Date.now();
-  while (Date.now() - start < ms) {
-    // busy wait (sync for simplicity)
-  }
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
@@ -341,7 +338,7 @@ async function main(): Promise<void> {
   try {
     // Step 1: Pre-compute structured data
     console.log("→ Pre-computing structured data...");
-    const { vitals, a11y, snapshot, screenshotPath } = precomputeData(
+    const { vitals, a11y, snapshot, screenshotPath } = await precomputeData(
       url,
       sessionId,
     );
