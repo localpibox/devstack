@@ -155,12 +155,12 @@ def warn(msg):
 
 
 
-def self_update():
+def self_update() -> None:
     """Update lpb itself from the GitHub repo if a newer version is available."""
-    lpb_path = os.path.abspath(sys.argv[0])
-    lpb_dir = os.path.dirname(lpb_path)
-    new_path = os.path.join(lpb_dir, "lpb.new")
-    if not os.path.isfile(lpb_path):
+    lpb_path = Path(sys.argv[0]).resolve()
+    lpb_dir = lpb_path.parent
+    new_path = lpb_dir / "lpb.new"
+    if not lpb_path.is_file():
         return
     script_url = "https://raw.githubusercontent.com/localpibox/devstack/main/scripts/lpb"
     py_url = script_url.replace("/lpb", "/lpb.py")
@@ -173,28 +173,28 @@ def self_update():
             info(f"Updating lpb launcher...")
             with open(new_path, "wb") as f:
                 f.write(new_wrapper)
-            os.rename(new_path, lpb_path)
-            os.chmod(lpb_path, 0o755)
+            new_path.rename(lpb_path)
+            lpb_path.chmod(0o755)
         with urllib.request.urlopen(py_url, timeout=10) as resp:
             new_py = resp.read()
-        py_path = os.path.join(lpb_dir, "lpb.py")
-        if os.path.isfile(py_path):
+        py_path = lpb_dir / "lpb.py"
+        if py_path.is_file():
             with open(py_path, "rb") as f:
                 old_py = f.read()
             if new_py != old_py:
                 info(f"Updating lpb.py...")
                 with open(new_path, "wb") as f:
                     f.write(new_py)
-                os.rename(new_path, py_path)
-        elif not os.path.isfile(py_path):
+                new_path.rename(py_path)
+        elif not py_path.is_file():
             info(f"Installing missing lpb.py...")
             with open(new_path, "wb") as f:
                 f.write(new_py)
-            os.rename(new_path, py_path)
-            os.chmod(py_path, 0o755)
-        for _f in os.listdir(lpb_dir):
-            if _f.endswith(".new"):
-                os.remove(os.path.join(lpb_dir, _f))
+            new_path.rename(py_path)
+            py_path.chmod(0o755)
+        for _f in lpb_dir.iterdir():
+            if _f.name.endswith(".new"):
+                _f.unlink()
     except Exception as exc:  # network/IO failures should never break startup
         warn(f"self-update skipped: {exc}")
 
