@@ -177,6 +177,21 @@ COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
 RUN chmod +x /opt/pi-support/browser-state-cleanup.sh
 
+# ── GitHub MCP Server binary ──
+# Pre-built binary for the github-mcp-server MCP server (stdio mode).
+# Config: localpibox/config → mcp.json → command: /home/lpb/.local/pi-support/bin/github-mcp-server
+# Auth: GITHUB_TOKEN resolved at runtime from gh auth token via start.sh
+# Toolsets: GITHUB_TOOLSETS resolved at runtime (all = enable everything)
+ARG GITHUB_MCP_SERVER_VERSION=v1.8.0
+RUN set -eux; \
+    curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${GITHUB_MCP_SERVER_VERSION}/github-mcp-server_${GITHUB_MCP_SERVER_VERSION#v}_Linux_x86_64.tar.gz" \
+      -o /tmp/github-mcp-server.tar.gz; \
+    mkdir -p /home/lpb/.local/pi-support/bin; \
+    tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin; \
+    chmod +x /home/lpb/.local/pi-support/bin/github-mcp-server; \
+    rm -f /tmp/github-mcp-server.tar.gz; \
+    chown -R 1000:1000 /home/lpb/.local/pi-support
+
 # ── Devstack deployment scripts ──
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
 COPY support/validate.sh /opt/devstack/validate.sh

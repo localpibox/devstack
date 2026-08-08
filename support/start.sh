@@ -120,6 +120,12 @@ export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:
 # ── Exa API key ──
 export LPB_EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
 
+# ── GitHub Token (from gh auth token or shell env) ──
+export LPB_GITHUB_TOKEN="${LPB_GITHUB_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
+
+# ── GitHub MCP Server toolsets ──
+export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
+
 # ── Persistence flags ──
 export LPB_PERSIST_GH_CONFIG="${LPB_PERSIST_GH_CONFIG:-true}"
 
