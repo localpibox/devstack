@@ -130,22 +130,35 @@ export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 _github_mcp_bin="/home/lpb/.local/pi-support/bin/github-mcp-server"
 if [[ ! -x "$_github_mcp_bin" ]]; then
     _version="${LPB_GITHUB_MCP_SERVER_VERSION:-v1.8.0}"
+    _asset_name="github-mcp-server_${_version#v}_Linux_x86_64.tar.gz"
     info "Installing GitHub MCP Server v${_version}..."
     mkdir -p /home/lpb/.local/pi-support/bin
-    if curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${_version}/github-mcp-server_${_version#v}_Linux_x86_64.tar.gz" \
-          -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
-        tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
-        chmod +x "$_github_mcp_bin"
-        rm -f /tmp/github-mcp-server.tar.gz
-        chown -R 1000:1000 /home/lpb/.local/pi-support
-        info "GitHub MCP Server v${_version} installed."
+    # Direct GitHub CDN returns 404 from some networks — use gh API for authenticated downloads
+    _asset_url="$(gh api "repos/github/github-mcp-server/releases/tags/${_version}" --jq '.assets[] | select(.name=="'"$_asset_name"'") | .url' 2>/dev/null)"
+    if [[ -n "$_asset_url" ]]; then
+        _download_url="$(gh api "$_asset_url" --jq '.browser_download_url')"
+        if curl -fsSL "$_download_url" -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
+            tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
+            chmod +x "$_github_mcp_bin"
+            rm -f /tmp/github-mcp-server.tar.gz
+            chown -R 1000:1000 /home/lpb/.local/pi-support
+            info "GitHub MCP Server v${_version} installed."
+        else
+            warn "Failed to download GitHub MCP Server binary via API."
+        fi
     else
-        warn "Failed to download GitHub MCP Server binary from release page."
-        warn "Please ensure the release exists: https://github.com/github/github-mcp-server/releases"
-        warn "You can manually install it with:"
-        warn "  curl -fsSL 'https://github.com/github/github-mcp-server/releases/download/${_version}/github-mcp-server_${_version#v}_Linux_x86_64.tar.gz' -o /tmp/github-mcp-server.tar.gz"
-        warn "  tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin"
-        warn "  chmod +x /home/lpb/.local/pi-support/bin/github-mcp-server"
+        # Fallback: try direct download (may fail from some networks)
+        if curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${_version}/${_asset_name}" \
+              -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
+            tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
+            chmod +x "$_github_mcp_bin"
+            rm -f /tmp/github-mcp-server.tar.gz
+            chown -R 1000:1000 /home/lpb/.local/pi-support
+            info "GitHub MCP Server v${_version} installed."
+        else
+            warn "Failed to download GitHub MCP Server from release page."
+            warn "Manually install with: curl -fsSL 'https://github.com/github/github-mcp-server/releases/download/${_version}/${_asset_name}' -o /tmp/github-mcp-server.tar.gz && tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin && chmod +x /home/lpb/.local/pi-support/bin/github-mcp-server"
+        fi
     fi
 else
     debug "GitHub MCP Server already installed at $_github_mcp_bin"
