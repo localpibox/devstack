@@ -42,6 +42,7 @@ Examples:
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -51,6 +52,14 @@ import time
 import urllib.request
 import uuid
 from pathlib import Path
+
+# ── Structured logging ────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    stream=sys.stderr,
+)
+logger = logging.getLogger()
 
 HOME = os.path.expanduser("~")
 CONFIG_DIR = Path(HOME) / ".localpibox" / "devstack"
@@ -142,20 +151,22 @@ _ERR, _WRN, _RSV = "\033[31m", "\033[33m", "\033[0m"
 _cli_overrides = {}
 
 
-def err(msg, hint=""):
+def err(msg: str, hint: str = "") -> None:
     """Print an error (red) to stderr; optionally with a yellow hint line."""
+    logger.error("%sError: %s%s", _ERR, msg, _RSV)
     print(f"{_ERR}Error: {msg}{_RSV}", file=sys.stderr)
     if hint:
+        logger.warning("  %s%s%s", _WRN, hint, _RSV)
         print(f"  {_WRN}{hint}{_RSV}", file=sys.stderr)
 
 
-def warn(msg):
+def warn(msg: str) -> None:
     """Print a warning (yellow) to stderr."""
+    logger.warning("%sWarning: %s%s", _WRN, msg, _RSV)
     print(f"{_WRN}Warning: {msg}{_RSV}", file=sys.stderr)
 
 
-
-def self_update() -> None:
+# ── Output helpers (stdout) ───────────────────────────────────────────────────def self_update() -> None:
     """Update lpb itself from the GitHub repo if a newer version is available."""
     lpb_path = Path(sys.argv[0]).resolve()
     lpb_dir = lpb_path.parent
