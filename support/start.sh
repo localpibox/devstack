@@ -210,6 +210,31 @@ else
     info "Workspace: ${WORKSPACE_DIR} (${file_count} files)"
 fi
 
+# ─── 4a. CONFIG REPO — CLONE/FETCH INTO ~/.pi/ (BEFORE FIRST-RUN) ─────────
+# The config repo (localpibox/config) IS the runtime config directory (~/.pi/).
+# No copy step — Pi reads the repo root directly via PI_CODING_AGENT_DIR.
+# Done BEFORE first-run mkdirs so ~/.pi/ is empty when we clone into it.
+# Runs every boot: clones on first run, non-destructive fetch afterwards.
+AGENT_DIR="${HOME_DIR}/.pi"
+CONFIG_REMOTE="${LPB_CONFIG_REMOTE:-https://github.com/localpibox/config.git}"
+CONFIG_REF="${LPB_CONFIG_REF:-main}"
+
+export PI_CODING_AGENT_DIR="${AGENT_DIR}"
+
+if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+    info "Cloning config repo from ${CONFIG_REMOTE}..."
+    if git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"; then
+        info "Config repo cloned."
+    else
+        warn "Config clone failed — Pi will use defaults."
+    fi
+else
+    # Non-destructive fetch only — local customizations are never wiped.
+    # Use 'lpb-config update/reset/merge' for actual updates.
+    git -C "${AGENT_DIR}" fetch origin "${CONFIG_REF}" 2>/dev/null || true
+    debug "Config repo fetched (manual update via lpb-config)."
+fi
+
 # ─── 4. FIRST-RUN BOOTSTRAP ─────────────────────────────────────────────────
 
 FIRST_RUN=false
@@ -289,30 +314,6 @@ with open(sys.argv[1], 'w') as f: json.dump(pkg, f, indent=2)
     fi
 
     info "First run bootstrap complete."
-fi
-
-# ─── 4a. CONFIG REPO — CLONE/FETCH INTO ~/.pi/ (EVERY BOOT) ────────────────
-# The config repo (localpibox/config) IS the runtime config directory (~/.pi/).
-# No copy step — Pi reads the repo root directly via PI_CODING_AGENT_DIR.
-# Runs on every boot: clones on first run, fetches (non-destructive) after.
-AGENT_DIR="${HOME_DIR}/.pi"
-CONFIG_REMOTE="${LPB_CONFIG_REMOTE:-https://github.com/localpibox/config.git}"
-CONFIG_REF="${LPB_CONFIG_REF:-main}"
-
-export PI_CODING_AGENT_DIR="${AGENT_DIR}"
-
-if [[ ! -d "${AGENT_DIR}/.git" ]]; then
-    info "Cloning config repo from ${CONFIG_REMOTE}..."
-    if git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"; then
-        info "Config repo cloned."
-    else
-        warn "Config clone failed — Pi will use defaults."
-    fi
-else
-    # Non-destructive fetch only — local customizations are never wiped.
-    # Use 'lpb-config update/reset/merge' for actual updates.
-    git -C "${AGENT_DIR}" fetch origin "${CONFIG_REF}" 2>/dev/null || true
-    debug "Config repo fetched (manual update via lpb-config)."
 fi
 
 # ─── 4b. ENSURE HOME MOUNT PARENTS ARE WRITABLE (EVERY BOOT) ────────────────

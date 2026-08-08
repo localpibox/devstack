@@ -87,9 +87,6 @@ RUN set -eux; \
     npm config set fetch-timeout 300000; \
     npm config set registry https://registry.npmjs.org/; \
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.npmrc; \
-    # Write .npmrc to git install root so all extensions inherit allow-scripts
-    mkdir -p /home/lpb/.pi/agent/git && \
-    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.pi/agent/git/.npmrc; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
     npm cache clean --force; \
     chown -R 1000:1000 /home/lpb/.npm-global
