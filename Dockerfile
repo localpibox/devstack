@@ -141,7 +141,7 @@ COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-outpu
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-COPY --chmod=755 support/lpb-config /opt/pi-support/lpb-config
+COPY support/lpb-config /opt/pi-support/lpb-config
 
 # ── Devstack deployment scripts ──
 COPY --chmod=755 support/install-browser.sh /opt/devstack/install-browser.sh
@@ -151,8 +151,9 @@ COPY --chmod=755 support/start.sh /opt/devstack/start.sh
 COPY lpb.conf.env /opt/devstack/lpb.conf.env
 COPY --chmod=755 support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 
-# Copy lpb-config to PATH (avoid symlinks — chmod fails as non-root user)
-COPY --chmod=755 support/lpb-config /usr/local/bin/lpb-config
+# Copy lpb-config to PATH (user-owned dir — no chmod issues)
+mkdir -p /home/lpb/.local/bin
+COPY --chmod=755 support/lpb-config /home/lpb/.local/bin/lpb-config
 
 RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
 
