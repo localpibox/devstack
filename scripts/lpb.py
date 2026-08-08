@@ -123,8 +123,8 @@ class Config:
     # codium-server always requires auth — always generate/use a token
     # (--without-token flag only affects URL display, not server behavior)
     without_token = False
-    state_dir = os.environ.get("LPB_STATE_DIR", _conf_cfg.get("LPB_STATE_DIR", os.path.join(HOME, ".localpibox", "state")))
-    browser_dir = os.environ.get("LPB_BROWSER_DIR", _conf_cfg.get("LPB_BROWSER_DIR", os.path.join(HOME, ".localpibox", "agent-browser")))
+    state_dir = os.environ.get("LPB_STATE_DIR", _conf_cfg.get("LPB_STATE_DIR", str(Path(HOME) / ".localpibox" / "state")))
+    browser_dir = os.environ.get("LPB_BROWSER_DIR", _conf_cfg.get("LPB_BROWSER_DIR", str(Path(HOME) / ".localpibox" / "agent-browser")))
     project_dir = ""
     project_name = ""
     open_home = False
