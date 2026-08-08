@@ -121,7 +121,10 @@ export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:
 export LPB_EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
 
 # ── GitHub Token (from gh auth token or shell env) ──
-export LPB_GITHUB_TOKEN="${LPB_GITHUB_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
+# lpb.conf.env may set LPB_GITHUB_TOKEN to a literal string; start.sh
+# resolves the actual token by trying: shell env > LPB_GITHUB_TOKEN (literal) > gh auth token.
+export GITHUB_TOKEN="${GITHUB_TOKEN:-${LPB_GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
+export LPB_GITHUB_TOKEN="${GITHUB_TOKEN}"
 
 # ── GitHub MCP Server toolsets ──
 export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
@@ -133,7 +136,7 @@ if [[ ! -x "$_github_mcp_bin" ]]; then
     _asset_name="github-mcp-server_${_version#v}_Linux_x86_64.tar.gz"
     info "Installing GitHub MCP Server v${_version}..."
     mkdir -p /home/lpb/.local/pi-support/bin
-    # Direct GitHub CDN returns 404 from some networks — use gh API for authenticated downloads
+    # Direct GitHub CDN returns 404 from some container networks — use gh API for authenticated downloads
     _asset_url="$(gh api "repos/github/github-mcp-server/releases/tags/${_version}" --jq '.assets[] | select(.name=="'"$_asset_name"'") | .url' 2>/dev/null)"
     if [[ -n "$_asset_url" ]]; then
         _download_url="$(gh api "$_asset_url" --jq '.browser_download_url')"
@@ -144,7 +147,7 @@ if [[ ! -x "$_github_mcp_bin" ]]; then
             chown -R 1000:1000 /home/lpb/.local/pi-support
             info "GitHub MCP Server v${_version} installed."
         else
-            warn "Failed to download GitHub MCP Server binary via API."
+            warn "Failed to download GitHub MCP Server binary via gh API."
         fi
     else
         # Fallback: try direct download (may fail from some networks)
