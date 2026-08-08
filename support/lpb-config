@@ -9,9 +9,12 @@
 
 set -euo pipefail
 
-AGENT_DIR="${1:-/home/lpb/.pi}"
-CONFIG_REMOTE="${2:-https://github.com/localpibox/config.git}"
-CONFIG_REF="${3:-main}"
+# Config repo location — override via env vars (see help below).
+# NOTE: positionals are reserved for the subcommand ($1), so the
+# repo path/remote/ref come from the environment, not $1/$2/$3.
+AGENT_DIR="${AGENT_DIR:-/home/lpb/.pi}"
+CONFIG_REMOTE="${CONFIG_REMOTE:-https://github.com/localpibox/config.git}"
+CONFIG_REF="${CONFIG_REF:-main}"
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 info()  { echo "[lpb-config] $*"; }

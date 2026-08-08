@@ -141,7 +141,6 @@ COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-outpu
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-COPY support/lpb-config /opt/pi-support/lpb-config
 
 # ── Devstack deployment scripts ──
 COPY --chmod=755 support/install-browser.sh /opt/devstack/install-browser.sh
@@ -157,7 +156,8 @@ COPY --chmod=755 support/lpb-config /home/lpb/.local/bin/lpb-config
 
 # ─── Ownership (must run as root — COPY creates files as root) ───────────
 USER root
-RUN chown -R 1000:1000 /home/lpb /opt/devstack /opt/pi-support /home/lpb/.agent-browser
+RUN mkdir -p /home/lpb/.agent-browser/sessions \
+    && chown -R 1000:1000 /home/lpb /opt/devstack /opt/pi-support
 USER lpb
 
 # ─── Git credential helper ────────────────────────────────────────────
@@ -222,8 +222,7 @@ RUN set -eux; \
     install_ext pi0 pi-vscode || echo "WARN: pi-vscode install failed"; \
     chown -R 1000:1000 /home/lpb/.vscodium-server
 
-COPY support/entrypoint-web.sh /opt/devstack/entrypoint-web.sh
-RUN chmod +x /opt/devstack/entrypoint-web.sh
+COPY --chmod=755 support/entrypoint-web.sh /opt/devstack/entrypoint-web.sh
 
 RUN chown -R 1000:1000 /home/lpb
 
