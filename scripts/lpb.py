@@ -332,7 +332,7 @@ class ContainerClient:
         _, _, rc = run_cmd(args)
         return rc == 0
 
-    def containers_exec(self, name, command, tty=True, interactive=True):
+    def containers_exec(self, name: str, command: list[str] | str, tty: bool = True, interactive: bool = True) -> int:
         args = [self.cmd, "exec"]
         if tty:
             args.append("-t")
@@ -343,7 +343,12 @@ class ContainerClient:
             args += command
         else:
             args.append(command)
-        return subprocess.run(args, check=False).returncode
+        try:
+            result = subprocess.run(args, check=False)
+            return result.returncode
+        except FileNotFoundError:
+            print(f"Error: {args[0]} not found", file=sys.stderr)
+            return 127
 
     def pi_running(self, name):
         """Check if a Pi process is running inside the container."""
@@ -351,14 +356,18 @@ class ContainerClient:
         _, out, rc = run_cmd(args)
         return rc == 0 and bool(out.strip())
 
-    def containers_logs(self, name, follow=True, tail=None):
+    def containers_logs(self, name: str, follow: bool = True, tail: int | None = None) -> bool:
         args = [self.cmd, "logs"]
         if follow:
             args.append("-f")
         if tail:
             args += ["--tail", str(tail)]
         args.append(name)
-        return subprocess.run(args, check=False).returncode == 0
+        try:
+            return subprocess.run(args, check=False).returncode == 0
+        except FileNotFoundError:
+            print(f"Error: {args[0]} not found", file=sys.stderr)
+            return False
 
     def images_pull(self, name):
         """Pull image with full verbosity, no stdin, and no timeout.
