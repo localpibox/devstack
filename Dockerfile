@@ -134,34 +134,25 @@ FROM base AS cli
 
 # ── Support utilities (moved from config/support/ to devstack/support/) ──
 # Copied to /opt/pi-support/ — used by start.sh at runtime
-COPY support/browser-state-cleanup.sh /opt/pi-support/browser-state-cleanup.sh
+COPY --chmod=755 support/browser-state-cleanup.sh /opt/pi-support/browser-state-cleanup.sh
 COPY support/browser-validate.ts /opt/pi-support/browser-validate.ts
 COPY support/session-uuid.ts /opt/pi-support/session-uuid.ts
 COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-output.ts
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-COPY support/lpb-config /opt/pi-support/lpb-config
-RUN chmod +x /opt/pi-support/browser-state-cleanup.sh \
-    && chmod +x /opt/pi-support/lpb-config
+COPY --chmod=755 support/lpb-config /opt/pi-support/lpb-config
 
 # ── Devstack deployment scripts ──
-COPY support/install-browser.sh /opt/devstack/install-browser.sh
-COPY support/validate.sh /opt/devstack/validate.sh
-COPY support/install-openspec.sh /opt/pi-support/install-openspec.sh
-COPY support/start.sh /opt/devstack/start.sh
+COPY --chmod=755 support/install-browser.sh /opt/devstack/install-browser.sh
+COPY --chmod=755 support/validate.sh /opt/devstack/validate.sh
+COPY --chmod=755 support/install-openspec.sh /opt/pi-support/install-openspec.sh
+COPY --chmod=755 support/start.sh /opt/devstack/start.sh
 COPY lpb.conf.env /opt/devstack/lpb.conf.env
-COPY support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
+COPY --chmod=755 support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 
-# Copy to /usr/local/bin/ for easy access (avoid symlinks — CI has issues with ln -sf)
-COPY support/lpb-config /usr/local/bin/lpb-config
-RUN chmod +x /opt/devstack/install-browser.sh \
-           /opt/devstack/validate.sh \
-           /opt/devstack/start.sh \
-           /opt/devstack/entrypoint-cli.sh \
-           /opt/pi-support/install-openspec.sh \
-           /opt/pi-support/lpb-config \
-           /usr/local/bin/lpb-config
+# Copy lpb-config to PATH (avoid symlinks — chmod fails as non-root user)
+COPY --chmod=755 support/lpb-config /usr/local/bin/lpb-config
 
 RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
 
