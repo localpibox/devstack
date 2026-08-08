@@ -136,7 +136,7 @@ export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 _github_mcp_bin="/home/lpb/.local/pi-support/bin/github-mcp-server"
 if [[ ! -x "$_github_mcp_bin" ]]; then
     _version="${LPB_GITHUB_MCP_SERVER_VERSION:-v1.8.0}"
-    info "Installing GitHub MCP Server v${_version}..."
+    info "Installing GitHub MCP Server ${_version}..."
     mkdir -p /home/lpb/.local/pi-support/bin
     # Direct GitHub CDN (github.com/.../releases/download/...) returns 404 from
     # this network, and gh's .browser_download_url resolves to that same blocked
