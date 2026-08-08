@@ -666,9 +666,9 @@ def cmd_remove():
     ensure_container_cmd()
     c = client()
     c.containers_remove(cfg.container_name)
-    dir_browser = resolve_path(cfg.browser_dir)
-    for d in (resolve_path(cfg.state_dir), dir_browser):
-        if os.path.isdir(d):
+    dir_browser = Path(cfg.browser_dir).resolve()
+    for d in (Path(cfg.state_dir).resolve(), dir_browser):
+        if d.is_dir():
             print(f"\nWarning: this will permanently delete stored data:")
             print(f"  {d}")
             try:
@@ -812,18 +812,18 @@ def cmd_run():
     # ── 1. Resolve project directory ─────────────────────────────────────
     project_dir = cfg.project_dir
     if not project_dir:
-        if os.path.isfile(LAST_PROJECT_FILE):
+        if LAST_PROJECT_FILE.is_file():
             with open(LAST_PROJECT_FILE) as f:
                 project_dir = f.read().strip()
     if not project_dir:
         cfg.open_home = True
         project_dir = HOME
     project_dir = resolve_path(project_dir)
-    if not os.path.isdir(project_dir):
+    if not Path(project_dir).is_dir():
         err(f"directory not found: {project_dir}"); sys.exit(1)
 
     # ── 2. Project name ──────────────────────────────────────────────────
-    cfg.project_name = os.path.basename(project_dir)
+    cfg.project_name = Path(project_dir).name
     if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$', cfg.project_name):
         err(f"project name '{cfg.project_name}' contains invalid characters",
             "Use only alphanumeric, dots, hyphens, underscores.")
@@ -853,10 +853,10 @@ def cmd_run():
     info("")
 
     # ── 6. Resolve & ensure state dirs ───────────────────────────────────
-    resolved_state = resolve_path(cfg.state_dir)
-    dir_browser = resolve_path(cfg.browser_dir)
-    os.makedirs(resolved_state, exist_ok=True)
-    os.makedirs(dir_browser, exist_ok=True)
+    resolved_state = Path(cfg.state_dir).resolve()
+    dir_browser = Path(cfg.browser_dir).resolve()
+    resolved_state.mkdir(parents=True, exist_ok=True)
+    dir_browser.mkdir(parents=True, exist_ok=True)
 
     # ── 7. Shell mode: attach to existing container ─────────────────────
     # (SSH mode skips this — it always does a fresh detached server)
@@ -994,15 +994,15 @@ def cmd_run():
         f"{dir_browser}:/home/lpb/.agent-browser{mount_flags}",
     ]
     # ── 13. Mount gh config (persisted across restarts) ──────────────────
-    gh_config = resolve_path(os.path.join(cfg.state_dir, "gh-config"))
-    os.makedirs(gh_config, exist_ok=True)
+    gh_config = resolve_path(str(Path(cfg.state_dir) / "gh-config"))
+    Path(gh_config).mkdir(parents=True, exist_ok=True)
     volumes.append(f"{gh_config}:/home/lpb/.config/gh{mount_flags}")
     # ── 13b. Sync timezone with host (read-only; no relabel needed) ──────
     # Bind-mount the host's /etc/localtime (and /etc/timezone if present) so
     # the container time always matches the host. Read-only, no Z/z relabel.
-    if os.path.isfile("/etc/localtime"):
+    if Path("/etc/localtime").is_file():
         volumes.append("/etc/localtime:/etc/localtime:ro")
-    if os.path.isfile("/etc/timezone"):
+    if Path("/etc/timezone").is_file():
         volumes.append("/etc/timezone:/etc/timezone:ro")
 
     userns = "keep-id" if is_podman() else None
@@ -1024,7 +1024,7 @@ def cmd_run():
             print("  lpb --remove   \u2014 Remove everything and start fresh")
             sys.exit(1)
 
-        os.makedirs(os.path.dirname(LAST_PROJECT_FILE), exist_ok=True)
+        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
         save_last_image("web")
@@ -1075,7 +1075,7 @@ def cmd_run():
             print("  lpb --remove   \u2014 Remove everything and start fresh")
             sys.exit(1)
 
-        os.makedirs(os.path.dirname(LAST_PROJECT_FILE), exist_ok=True)
+        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
         save_last_image("cli")
@@ -1096,7 +1096,7 @@ def cmd_run():
         # CLI mode: foreground, stop on exit
         info("Starting container (foreground)...\n")
         # Save last-project for reconnection
-        os.makedirs(os.path.dirname(LAST_PROJECT_FILE), exist_ok=True)
+        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
         save_last_image("cli")
