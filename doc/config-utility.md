@@ -8,7 +8,7 @@ container).
 
 - The utility's **only domain is the runtime config copy** `~/.pi/agent/`
   (`settings.json`, `mcp.json`, `pi-defaults.json`, `subagents.json`,
-  `hermes-memory-config.json`, `skills/`, `agents/`).
+  `lpb-memory-config.json`, `skills/`, `agents/`).
 - `localpibox/config` is a **preset** — a bootstrap seed copied to
   `~/.pi/agent/` at first run. The utility **never commits back to it**. Drift
   from the preset is expected (runtime is the authoritative, user-specific

@@ -390,7 +390,7 @@ devstack/
 │   ├── entrypoint-web.sh      # Web image entrypoint (VSCodium server)
 │   ├── install-browser.sh     # Browser setup script
 │   ├── install-openspec.sh    # OpenSpec skills installer
-│   ├── start.sh               # Legacy entrypoint (superseded by entrypoint-*)
+│   ├── start.sh               # Runtime env + validation (drives --shell/--ssh shells)
 │   └── validate.sh            # Health validation
 ├── .env.example               # Template — copy to .env for real values
 └── .env                       # Local env vars (gitignored)
@@ -401,4 +401,6 @@ devstack/
 - [localpibox/pi](https://github.com/localpibox/pi) — Forked Pi monorepo with Qwen reasoning support
 - [localpibox/lemonade-pi-plugin](https://github.com/localpibox/lemonade-pi-plugin) — Lemonade provider plugin
 - [localpibox/config](https://github.com/localpibox/config) — Pi configuration (settings, mcp, skills)
-- [localpibox/pi-hermes-memory](https://github.com/localpibox/pi-hermes-memory) — Memory extension
+- [localpibox/lpb-memory](https://github.com/localpibox/lpb-memory) — Persistent memory + session search extension
+- [localpibox/localpibox](https://github.com/localpibox/localpibox) — Project overview & stack reference
+- [localpibox/localpibox.github.io](https://github.com/localpibox/localpibox.github.io) — Project site (GitHub Pages)

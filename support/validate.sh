@@ -123,7 +123,7 @@ echo ""
 
 # ── 6. Extensions ───────────────────────────────────────────────────────────
 echo -e "${CYAN}── Extensions ────────────────────────────────────────────${NC}"
-for ext_repo in localpibox/lemonade-pi-plugin localpibox/pi-hermes-memory; do
+for ext_repo in localpibox/lemonade-pi-plugin localpibox/lpb-memory; do
     ext_path=$(find "${EXT_BASE}" -path "*${ext_repo}*" -name "package.json" 2>/dev/null | head -1)
     if [ -n "$ext_path" ]; then
         ext_name=$(basename "$(dirname "$ext_path")")

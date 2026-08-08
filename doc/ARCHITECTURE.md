@@ -55,7 +55,7 @@ Image (localpibox/devstack:latest):
   pi-mcp-adapter          ← same
   @tintinweb/pi-subagents  ← same
   lemonade-pi-plugin      ← git clone + checkout from configured ref
-  pi-hermes-memory        ← git clone + checkout from configured ref
+  lpb-memory              ← git clone + checkout from configured ref
 ```
 
 ## Extension Update Flow

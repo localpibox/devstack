@@ -13,7 +13,7 @@
 #   Sourced at build time to populate ARG defaults:
 #   LPB_PI_FORK, LPB_PI_REF, LPB_NODE_VERSION, LPB_VSCODIUM_VERSION
 #
-# NOTE: Runtime extensions (lemonade-pi-plugin, pi-hermes-memory) are NOT
+# NOTE: Runtime extensions (lemonade-pi-plugin, lpb-memory) are NOT
 #       built into the image. They are cloned at container startup by
 #       `pi update --extensions`, which reads their branches from
 #       .pi/agent/settings.json → "packages" array.
@@ -138,7 +138,7 @@ RUN set -eux; \
     mkdir -p /home/lpb/.pi/agent; \
     [ -f /home/lpb/.local/pi-config/settings.json ] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ || echo "WARN: no settings.json"; \
     [ -f /home/lpb/.local/pi-config/mcp.json ] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/ || echo "WARN: no mcp.json"; \
-    [ -f /home/lpb/.local/pi-config/hermes-memory-config.json ] && cp /home/lpb/.local/pi-config/hermes-memory-config.json /home/lpb/.pi/agent/ || echo "WARN: no hermes-memory-config.json"; \
+    [ -f /home/lpb/.local/pi-config/lpb-memory-config.json ] && cp /home/lpb/.local/pi-config/lpb-memory-config.json /home/lpb/.pi/agent/ || echo "WARN: no lpb-memory-config.json"; \
     [ -f /home/lpb/.local/pi-config/pi-defaults.json ] && cp /home/lpb/.local/pi-config/pi-defaults.json /home/lpb/.pi/agent/ || echo "WARN: no pi-defaults.json"; \
     [ -f /home/lpb/.local/pi-config/subagents.json ] && cp /home/lpb/.local/pi-config/subagents.json /home/lpb/.pi/agent/ || echo "WARN: no subagents.json"; \
     [ -f /home/lpb/.local/pi-config/models.json ] && cp /home/lpb/.local/pi-config/models.json /home/lpb/.pi/agent/ || echo "WARN: no models.json"; \

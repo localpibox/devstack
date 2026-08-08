@@ -87,7 +87,7 @@
 
 ---
 
-## 4. pi-hermes-memory (`localpibox/pi-hermes-memory`)
+## 4. lpb-memory (`localpibox/lpb-memory`)
 
 | Branch | Status | Priority | Action |
 |--------|--------|----------|--------|
@@ -134,7 +134,7 @@
 |----------|--------|------|---------------------|
 | 🔴 CRITICAL | `patches/api-key-auth` | lemonade-pi-plugin | Lemonade provider fails to register |
 | 🔴 HIGH | `fix-budget-tokens-fetch` | pi | Qwen models enter infinite reasoning loops |
-| 🟡 HIGH | `fix/batch-consolidation` | pi-hermes-memory | Memory extension fails with context overflow |
+| 🟡 HIGH | `fix/batch-consolidation` | lpb-memory | Memory extension fails with context overflow |
 | 🟠 MEDIUM | `fix/exa-mcp-tool-names` | config | Exa-search agent preset broken |
 | 🟢 LOW | `patches/qwen-vision` | lemonade-pi-plugin | Repo URL mismatch (cosmetic) |
 
@@ -149,7 +149,7 @@
 | `devstack` | `fix/qwen-thinking-overflow-2026` | Merged into lpb |
 | `devstack` | `refactor/cli-web-split` | Merged into lpb |
 | `devstack` | `fix/opt-pi-support-permission` | Abandoned redesign |
-| `pi-hermes-memory` | `fix/subprocess-provider` | Superseded by batch-consolidation |
+| `lpb-memory` | `fix/subprocess-provider` | Superseded by batch-consolidation |
 
 ---
 
@@ -160,7 +160,7 @@ To ship the next release (`v0.2.0-lpb`):
 1. **Merge in priority order:**
    - `lemonade-pi-plugin` → `origin/patches/api-key-auth`
    - `pi` → `fix-budget-tokens-fetch`
-   - `pi-hermes-memory` → `origin/fix/batch-consolidation`
+   - `lpb-memory` → `origin/fix/batch-consolidation`
    - `config` → `origin/fix/exa-mcp-tool-names`
    - `lemonade-pi-plugin` → `origin/patches/qwen-vision`
 
@@ -168,6 +168,6 @@ To ship the next release (`v0.2.0-lpb`):
 
 3. **Tag and push:** Push `lpb` branches → CI triggers → tags `:v0.2.0-lpb-cli` and `:v0.2.0-lpb-web`
 
-4. **Enable memory extension** (if desired): Add `pi-hermes-memory` back to `settings.json` packages
+4. **Enable memory extension** (if desired): Add `lpb-memory` back to `settings.json` packages
 
 5. **Clean up branches:** Delete merged/superseded branches from remotes

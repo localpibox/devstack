@@ -2,69 +2,76 @@
 
 ## Overview
 
-The LocalPibox project uses a `lpb` branch on all 5 repositories as the stable integration point. All feature work branches from `lpb` and merges back via PR. The CI pipeline builds from `lpb` only.
+LocalPibox uses a **two-tier branch convention**:
+
+- **Own / independent repos** — `main` is the stable integration point
+  (devstack, config, localpibox, localpibox.github.io, lpb-memory).
+- **Forks of upstream projects** — a dedicated `lpb` branch carries the
+  LocalPibox patch on top of upstream; `main`/`master` tracks upstream as much
+  as needed for rebase. The CI builds from `main` on devstack.
+
+| Repo | Kind | Stable branch |
+|------|------|---------------|
+| devstack | own | `main` |
+| config | own | `main` |
+| localpibox | own | `main` |
+| localpibox.github.io | own | `main` |
+| lpb-memory | independent (refactored) | `main` |
+| pi | fork of `earendil-works/pi` | `lpb` |
+| lemonade-pi-plugin | fork of `lemonade-sdk/…` | `lpb` |
+| pi-subagents | fork of `tintinweb/…` | `lpb` (hence `@lpb` refs) |
+
+Forks carry all LocalPibox work as a **single squashed commit** on `lpb`; `main`
+/`master` is the upstream default branch used for rebasing.
 
 ## Versioning
 
-Stack version is tracked in `VERSION` files across all repos (source of truth: `config/VERSION`).
+Stack version is tracked in `VERSION` files across repos; **`config/VERSION`
+is the source of truth** (CI reads it to tag images). The devstack workflow
+does **not** read a `VERSION` in devstack itself — it fetches it from the
+config repo reference.
 
-**Format:** `v0.X.0-lpb` (SemVer-compatible, `-lpb` suffix distinguishes from upstream pi versions)
+**Format:** `v0.X.0-lpb` (SemVer-compatible, `-lpb` suffix distinguishes from
+upstream pi versions). `VERSION` files store the value **without** the leading
+`v` (e.g. `0.2.0-lpb`).
 
-- `v0.1.0-lpb` — first stack release
-- `v0.2.0-lpb` — next major release
-- `v0.2.1-lpb` — patch to v0.2.0-lpb
-- `v0.2.1-lpb-dev` — work-in-progress (not finalized)
+Current version: **`0.2.0-lpb`**
 
-## Branch Model
+## Branch & CI Behavior
 
-```
-lpb (stable base for all repos)
-├── feat/qwen-reasoning           (feature branch → merge back to lpb)
-├── fix/batch-consolidation       (fix branch → merge back to lpb)
-├── fix/exa-mcp-tools             (fix branch → merge back to lpb)
-└── experimental/...              (experimental → not merged yet)
-```
+devstack CI on `main`:
 
-## Repositories
-
-| Repo | Role | lpb Source | Stack Version Location |
-|------|------|-----------|----------------------|
-| `pi` | Core (forked & patched) | `50e24690` | N/A (has own v0.83.0 tag) |
-| `devstack` | Docker image builds | `main` HEAD | `.github/workflows/build-and-publish.yml` |
-| `config` | Settings, skills, agents | `main` HEAD | `config/VERSION` |
-| `lemonade-pi-plugin` | LLM provider extension | `main` HEAD | `VERSION` |
-| `pi-hermes-memory` | Memory extension | `main` HEAD | `VERSION` |
-
-## CI Behavior
-
-devstack CI on `main` branch:
-1. Checks out `lpb` from config repo
-2. Reads `VERSION` file
-3. Clones pi repo from `lpb` branch
-4. Builds image tagged as `ghcr.io/localpibox/devstack:<version>-cli` (and `...-web`)
+1. Sources `lpb.stack.env` for fork URLs and refs.
+2. Reads config repo `VERSION` (via `raw.githubusercontent.com`).
+3. Clones `localpibox/pi` from the `lpb` branch.
+4. Builds images tagged as `ghcr.io/localpibox/devstack:<version>-cli` and
+   `...-web` (and `latest`/`main-*`/`<sha>-*`).
 
 ## Bumping Version
 
 To release a new stack version:
-1. Merge all tested feature branches into `lpb` on all repos
-2. Update `config/VERSION` to new version (e.g., `v0.2.0-lpb`)
-3. Update `VERSION` in other repos to match
-4. Commit and push to `lpb` on all repos
-5. CI triggers and builds with new tags
+
+1. Merge all tested feature branches into the stable branch of each repo.
+2. Update `config/VERSION` to the new version (e.g. `0.2.1-lpb`).
+3. Update `VERSION` in devstack, lpb-memory, lemonade-pi-plugin to match.
+4. Commit and push on the stable branch of each repo.
+5. CI triggers and rebuilds with the new tags.
 
 ## Configuration References
 
-In `settings.json` (config repo), extension refs use git branch references:
+In `settings.json` (config repo), extension refs use git branch references
+matching each repo's actual branch:
+
 ```json
 {
   "packages": [
     "git:github.com/localpibox/lemonade-pi-plugin@lpb",
-    "git:github.com/localpibox/pi-hermes-memory@lpb"
+    "git:github.com/localpibox/lpb-memory@main",
+    "git:github.com/localpibox/pi-subagents@lpb"
   ]
 }
 ```
 
-At runtime, `pi update --extensions` clones these branches. To pin to a specific version for stability, update to:
-```json
-"git:github.com/localpibox/lemonade-pi-plugin@v0.2.0-lpb"
-```
+At runtime, `pi update --extensions` clones these branches. To pin to a
+specific version for stability, update to e.g.:
+`"git:github.com/localpibox/lemonade-pi-plugin@v0.2.0-lpb"`.
