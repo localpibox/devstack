@@ -126,6 +126,31 @@ export LPB_GITHUB_TOKEN="${LPB_GITHUB_TOKEN:-${GITHUB_TOKEN:-$(gh auth token 2>/
 # ── GitHub MCP Server toolsets ──
 export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 
+# ── GitHub MCP Server binary (install at startup if missing) ──
+_github_mcp_bin="/home/lpb/.local/pi-support/bin/github-mcp-server"
+if [[ ! -x "$_github_mcp_bin" ]]; then
+    _version="${LPB_GITHUB_MCP_SERVER_VERSION:-v1.8.0}"
+    info "Installing GitHub MCP Server v${_version}..."
+    mkdir -p /home/lpb/.local/pi-support/bin
+    if curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${_version}/github-mcp-server_${_version#v}_Linux_x86_64.tar.gz" \
+          -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
+        tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
+        chmod +x "$_github_mcp_bin"
+        rm -f /tmp/github-mcp-server.tar.gz
+        chown -R 1000:1000 /home/lpb/.local/pi-support
+        info "GitHub MCP Server v${_version} installed."
+    else
+        warn "Failed to download GitHub MCP Server binary from release page."
+        warn "Please ensure the release exists: https://github.com/github/github-mcp-server/releases"
+        warn "You can manually install it with:"
+        warn "  curl -fsSL 'https://github.com/github/github-mcp-server/releases/download/${_version}/github-mcp-server_${_version#v}_Linux_x86_64.tar.gz' -o /tmp/github-mcp-server.tar.gz"
+        warn "  tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin"
+        warn "  chmod +x /home/lpb/.local/pi-support/bin/github-mcp-server"
+    fi
+else
+    debug "GitHub MCP Server already installed at $_github_mcp_bin"
+fi
+
 # ── Persistence flags ──
 export LPB_PERSIST_GH_CONFIG="${LPB_PERSIST_GH_CONFIG:-true}"
 
