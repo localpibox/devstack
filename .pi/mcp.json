@@ -1,7 +1,3 @@
 {
-  "mcpServers": {
-    "exa": {
-      "disabled": true
-    }
-  }
+  "mcpServers": {}
 }
