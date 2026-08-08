@@ -522,9 +522,10 @@ def apply_overrides(project_dir: str | None = None, project_name: str | None = N
 
 
 # ─── CLI parsing ─────────────────────────────────────────────────────────────
+import argparse
 
 HELP = (
-    "lpb — LocalPibox Devstack launcher\n\n"
+    "lpb \u2014 LocalPibox Devstack launcher\n\n"
     "Usage:\n"
     "  lpb [/path/to/project]           Start Pi CLI session at project\n"
     "  lpb /path -- <pi-args...>        Pass flags through to pi (-p, --session, etc.)\n"
@@ -537,7 +538,7 @@ HELP = (
     "  lpb --update                     Pull latest image(s)\n"
     "  lpb --config                     Show config file location\n"
     "  lpb --help                       Show this help\n\n"
-    "Pi passthrough (after ""--""):\n"
+    "Pi passthrough (after \"--\"):\n"
     '  lpb /myproject -- -p "summarize"           # Non-interactive, process & exit\n'
     '  lpb /myproject -- --session abc123          # Resume specific session\n'
     '  lpb /myproject -- --continue                # Continue last session\n'
@@ -549,7 +550,7 @@ HELP = (
     "  --without-token        Hide token in URL display (server still requires auth)\n\n"
     "Examples:\n"
     "  lpb /path/to/project                    Start Pi CLI at project\n"
-    "  lpb /path -- -p \"fix the bug\"              Non-interactive pi run\n"
+    '  lpb /path -- -p "fix the bug"              Non-interactive pi run\n'
     "  lpb --shell /path/to/project            Bash shell in container\n"
     "  lpb --web /path/to/project              Open VSCodium at project\n"
     "  lpb --web --port 8080                   Custom VSCodium port\n"
@@ -557,103 +558,113 @@ HELP = (
 )
 
 
-def parse_cli(args):
-    """Parse the CLI argument list, updating the global config and CLI-override map.
-    Unknown/--web flags, pi passthrough (after "--"), and modes are handled here."""
-    positional = []
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == "--host":
-            if i+1 >= len(args): err("--host requires a value"); sys.exit(1)
-            cfg.host = args[i+1]; _cli_overrides["host"] = True; i += 2
-        elif a == "--port":
-            if i+1 >= len(args): err("--port requires a value"); sys.exit(1)
-            try:
-                cfg.port = int(args[i+1]); _cli_overrides["port"] = True
-            except ValueError:
-                err(f"--port requires an integer, got: {args[i+1]}"); sys.exit(1)
-            i += 2
-        elif a == "--token":
-            if i+1 >= len(args): err("--token requires a value"); sys.exit(1)
-            cfg.token = args[i+1]; _cli_overrides["token"] = True; i += 2
-        elif a == "--without-token":
-            cfg.without_token = True; i += 1
-        elif a in ("--data-dir",):
-            if i+1 >= len(args): err("--data-dir requires a value"); sys.exit(1)
-            cfg.data_dir = args[i+1]; i += 2
-        elif a in ("--user-data-dir",):
-            if i+1 >= len(args): err("--user-data-dir requires a value"); sys.exit(1)
-            cfg.user_data_dir = args[i+1]; i += 2
-        elif a in ("--ext-dir",):
-            if i+1 >= len(args): err("--ext-dir requires a value"); sys.exit(1)
-            cfg.ext_dir = args[i+1]; i += 2
-        elif a in ("--base-path",):
-            if i+1 >= len(args): err("--base-path requires a value"); sys.exit(1)
-            cfg.base_path = args[i+1]; i += 2
-        elif a == "--shell":
-            cfg.shell_mode = True; i += 1
-        elif a == "--ssh":
-            # --ssh [<pubkey|path>] — start sshd server; pubkey required
-            cfg.ssh_mode = True; cfg.shell_mode = True; i += 1
-            if i < len(args) and not args[i].startswith("-"):
-                val = args[i]
-                if Path(val).is_file():
-                    with open(val, encoding="utf-8") as f:
-                        cfg.ssh_pubkey = f.read().strip()
-                else:
-                    cfg.ssh_pubkey = val.strip()
-                i += 1
-            if not cfg.ssh_pubkey:
-                err("--ssh requires a public key or path to a .pub file",
-                    "Usage: lpb --ssh 'ssh-ed25519 AAAA... user@host' [/path]")
-                sys.exit(1)
-        elif a == "--ssh-port":
-            if i+1 >= len(args): err("--ssh-port requires a value"); sys.exit(1)
-            try:
-                cfg.ssh_port = str(int(args[i+1]))
-            except ValueError:
-                err(f"--ssh-port requires an integer, got: {args[i+1]}"); sys.exit(1)
-            i += 2
-        elif a == "--web":
-            cfg.web_mode = True; i += 1
-        elif a in ("--stop", "-s"):
-            cfg.command = "stop"; i += 1
-        elif a in ("--remove", "-r"):
-            cfg.command = "remove"; i += 1
-        elif a in ("--logs", "-l"):
-            cfg.command = "logs"; i += 1
-        elif a in ("--update", "-u"):
-            cfg.command = "update"; i += 1
-        elif a in ("--config", "-c"):
-            cfg.command = "config"; i += 1
-        elif a in ("--help", "-h", "help"):
-            cfg.command = "help"; i += 1
-        elif a == "--":
-            # Everything after "--" is forwarded to pi inside the container.
-            # If no project dir was set by a positional arg, first arg after --
-            # could be a project path OR a pi flag. Heuristic: if it starts with
-            # '-', treat everything as pi args; otherwise first is project.
-            remaining = args[i+1:]
-            if remaining and not remaining[0].startswith("-") and not cfg.project_dir:
-                cfg.project_dir = remaining[0]
-                cfg.pi_args.extend(remaining[1:])
-            else:
-                cfg.pi_args.extend(remaining)
-            break
-        elif a.startswith("--"):
-            err(f"Unknown option: {a}", "Run 'lpb --help' for usage.")
+def _build_parser() -> argparse.ArgumentParser:
+    """Build the argparse parser for all known flags."""
+    parser = argparse.ArgumentParser(
+        add_help=False,
+        description=HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    parser.add_argument("--token", default=None)
+    parser.add_argument("--without-token", action="store_true")
+    parser.add_argument("--data-dir", default=None)
+    parser.add_argument("--user-data-dir", default=None)
+    parser.add_argument("--ext-dir", default=None)
+    parser.add_argument("--base-path", default=None)
+    parser.add_argument("--ssh-port", type=int, default=None)
+    parser.add_argument("--shell", action="store_true")
+    parser.add_argument("--ssh", nargs="?", const="", metavar="PUBKEY")
+    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--stop", "-s", action="store_true")
+    parser.add_argument("--remove", "-r", action="store_true")
+    parser.add_argument("--logs", "-l", action="store_true")
+    parser.add_argument("--update", "-u", action="store_true")
+    parser.add_argument("--config", "-c", action="store_true")
+    parser.add_argument("--help", "-h", action="store_true")
+    parser.add_argument("--", dest="_pi_args", nargs=argparse.REMAINDER)
+    return parser
+
+
+def parse_cli(args: list[str]) -> None:
+    """Parse CLI args using argparse for known flags; manual handling for -- and positionals."""
+    parser = _build_parser()
+
+    # Split at -- boundary
+    try:
+        dash_idx = args.index("--")
+        known_args, after_dash = args[:dash_idx], args[dash_idx + 1:]
+    except ValueError:
+        known_args, after_dash = args, []
+
+    known, extra = parser.parse_known_args(known_args)
+
+    # Apply argparse results to global config
+    if known.host is not None:
+        cfg.host, _cli_overrides["host"] = known.host, True
+    if known.port is not None:
+        cfg.port, _cli_overrides["port"] = known.port, True
+    if known.token is not None:
+        cfg.token, _cli_overrides["token"] = known.token, True
+    if known.without_token:
+        cfg.without_token = True
+    if known.data_dir is not None:
+        cfg.data_dir = known.data_dir
+    if known.user_data_dir is not None:
+        cfg.user_data_dir = known.user_data_dir
+    if known.ext_dir is not None:
+        cfg.ext_dir = known.ext_dir
+    if known.base_path is not None:
+        cfg.base_path = known.base_path
+    if known.ssh_port is not None:
+        cfg.ssh_port = str(known.ssh_port)
+    if known.shell:
+        cfg.shell_mode = True
+    if known.web:
+        cfg.web_mode = True
+    if known.stop:
+        cfg.command = "stop"
+    if known.remove:
+        cfg.command = "remove"
+    if known.logs:
+        cfg.command = "logs"
+    if known.update:
+        cfg.command = "update"
+    if known.config:
+        cfg.command = "config"
+    if known.help:
+        cfg.command = "help"
+
+    # Handle --ssh (special: nargs="?", pubkey may follow)
+    if known.ssh is not None:
+        cfg.ssh_mode = cfg.shell_mode = True
+        if known.ssh:
+            p = Path(known.ssh)
+            cfg.ssh_pubkey = p.read_text(encoding="utf-8").strip() if p.is_file() else known.ssh.strip()
+        if not cfg.ssh_pubkey:
+            err("--ssh requires a public key or path to a .pub file",
+                "Usage: lpb --ssh 'ssh-ed25519 AAAA... user@host' [/path]")
             sys.exit(1)
-        elif a.startswith("-"):
-            # Single-dash flags (e.g. -p) are pi flags — require "--" before them
+
+    # Handle extra/positional args (single-dash flags = error, rest = positional)
+    positional: list[str] = []
+    for a in extra:
+        if a.startswith("-") and not a.startswith("--"):
             err(f"Pi flag '{a}' must come after '--'", "Usage: lpb /path -- -p 'message'")
             sys.exit(1)
-        else:
-            positional.append(a); i += 1
+        positional.append(a)
+
+    # -- passthrough: first non-flag arg after -- is project, rest go to pi
+    cfg.pi_args.extend(after_dash)
+    if after_dash and not cfg.project_dir and after_dash[0] and not after_dash[0].startswith("-"):
+        # First is project dir, rest are pi args
+        cfg.project_dir = after_dash[0]
+        cfg.pi_args.extend(after_dash[1:])
+
+    # First positional is the project directory
     if positional:
         cfg.project_dir = positional[0]
-
-
 def cmd_help():
     """Print the full usage/help text and exit."""
     print(HELP); sys.exit(0)
