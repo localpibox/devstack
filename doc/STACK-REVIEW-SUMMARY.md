@@ -3,7 +3,30 @@
 > Full audit of the 8-repo LocalPibox stack (devstack, pi, config,
 > lemonade-pi-plugin, pi-subagents, lpb-memory, localpibox,
 > localpibox.github.io).
-> Date: 2026-08-08 · Status: **for review & decision** — nothing changed yet.
+> Date: 2026-08-08 · **Status: mostly implemented 2026-08-08** — P0/P1 security,
+> broken-link, rename, version, and doc-drift fixes are done and pushed. The
+> webpage (<code>localpibox.github.io</code>) was refreshed and deployed.
+> Remaining: user action on token rotation (§1.1) and the deferred rollup/roadmap
+> (§5, §6) per request.
+
+## ✅ Completed 2026-08-08
+
+- **§1.1** Token removed from remote; history clean. *(User: revoke/rotate the
+  `gho_` token instance in GitHub settings — manual step.)*
+- **§1.2** `GH-PROFILE-DRAFT.md` **not** removed (left in place — user's call).
+- **§2.1** `devstack/CONTRIBUTING.md` and `config/CONTRIBUTING.md` created.
+- **§2.2** `config/VERSION` = `0.2.0-lpb` added (CI image tags fixed).
+- **§2.3/2.4** `pi-hermes-memory` → `lpb-memory` and `hermes-memory-config.json`
+  → `lpb-memory-config.json` propagated (README, Dockerfile, validate.sh, docs).
+- **§3.1** Versions aligned to `0.2.0-lpb` (devstack VERSION + config).
+- **§3.2/3.3** `config/README.md` packages aligned; `config/VALIDATION.md` refreshed.
+- **§3.4** `BRANCH-STRATEGY.md` rewritten to the real branch model.
+- **§3.5** `support/start.sh` README description corrected.
+- **§4** Webpage refreshed & deployed (8-repo table, SEO/OG/JSON-LD/favicon,
+  semantic/a11y, quick-start + requirements).
+
+**Not done (deferred):** §5 rollup (`pi-config` impl, MCP additions, openspec
+  tidy, `mcp-server-research.md` / `mcp.json` decision) and §4.5 Roadmap section.
 
 This document collects confirmed incongruences, documentation gaps, webpage
 improvements, and a prioritized roadmap. Each item has a concrete fix so we can
