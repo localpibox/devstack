@@ -104,9 +104,7 @@ RUN --mount=type=cache,target=/home/lpb/.npm \
     chown -R 1000:1000 /home/lpb/.npm-global
 
 # ── Pi monorepo build ───────────────────────────────────────────────────────
-# Cache mounted — persists node_modules across builds when Pi source is unchanged.
-RUN --mount=type=cache,target=/opt/pi-src/node_modules \
-    set -eux; \
+RUN set -eux; \
     export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
     git clone --depth=1 --single-branch --branch ${PI_REF} ${PI_FORK} .; \
