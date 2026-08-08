@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ═══════════════════════════════════════════════════════════════════════════
 # LOCALPIBOX DEVSTACK — MULTI-STAGE DOCKERFILE
 # ═══════════════════════════════════════════════════════════════════════════
@@ -29,6 +30,10 @@ ARG PI_FORK=https://github.com/localpibox/pi.git
 ARG PI_REF=lpb
 ARG PI_HEAD_SHA=unknown
 
+# Provenance — set via --build-arg in CI, defaults to "unknown" for local builds
+ARG IMAGE_REVISION=unknown
+ARG IMAGE_BUILT=unknown
+
 # ═══════════════════════════════════════════════════════════════════════════
 # BASE STAGE — Common setup for both cli and web images
 # ═══════════════════════════════════════════════════════════════════════════
@@ -39,6 +44,8 @@ ARG VSCODIUM_VERSION
 ARG PI_FORK
 ARG PI_REF
 ARG PI_HEAD_SHA
+ARG IMAGE_REVISION
+ARG IMAGE_BUILT
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -48,6 +55,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV LPB_MAX_TOKENS_CONTEXT_RATIO=0.06
 ENV LPB_VERSION=
 
+# ── System packages ─────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config \
     curl ca-certificates gnupg \
@@ -57,11 +65,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gh ripgrep fzf fd-find tmux \
     && rm -rf /var/lib/apt/lists/*
 
+# ── Node.js ─────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
     && npm install -g npm@latest \
     && corepack enable
 
+# ── User lpb (UID 1000) ────────────────────────────────────────────────────
 RUN set -eux; \
     if getent passwd 1000 >/dev/null; then \
       oldname="$(getent passwd 1000 | cut -d: -f1)"; \
@@ -79,7 +89,10 @@ RUN set -eux; \
 
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/nopasswd && chmod 440 /etc/sudoers.d/nopasswd
 
-RUN set -eux; \
+# ── Global npm packages ─────────────────────────────────────────────────────
+# Cache mounted — persists downloaded tarballs across builds.
+RUN --mount=type=cache,target=/home/lpb/.npm \
+    set -eux; \
     npm config set prefix '/home/lpb/.npm-global'; \
     npm config set fetch-retries 5; \
     npm config set fetch-retry-mintimeout 20000; \
@@ -88,12 +101,12 @@ RUN set -eux; \
     npm config set registry https://registry.npmjs.org/; \
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > /home/lpb/.npmrc; \
     npm install -g zod@3 agent-browser exa-mcp-server; \
-    npm cache clean --force; \
     chown -R 1000:1000 /home/lpb/.npm-global
 
 # ── Pi monorepo build ───────────────────────────────────────────────────────
-USER root
-RUN set -eux; \
+# Cache mounted — persists node_modules across builds when Pi source is unchanged.
+RUN --mount=type=cache,target=/opt/pi-src/node_modules \
+    set -eux; \
     export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
     git clone --depth=1 --single-branch --branch ${PI_REF} ${PI_FORK} .; \
@@ -120,9 +133,11 @@ RUN set -eux; \
     ls -la /home/lpb/.npm-global/bin/; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
+# ── Switch to non-root user ─────────────────────────────────────────────────
+USER lpb
+
 # ── Extensions + Config ─────────────────────────────────────────────────────
 # Config repo is cloned at container start by start.sh — the image stays lean.
-USER lpb
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CLI IMAGE
@@ -147,37 +162,29 @@ COPY --chmod=755 support/start.sh /opt/devstack/start.sh
 COPY lpb.conf.env /opt/devstack/lpb.conf.env
 COPY --chmod=755 support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 
-# Copy lpb-config to PATH (user-owned dir — no chmod issues)
+# ── Shell PATH helper ───────────────────────────────────────────────────────
 RUN mkdir -p /home/lpb/.local/bin
 COPY --chmod=755 support/lpb-config /home/lpb/.local/bin/lpb-config
 
-# ─── Ownership (must run as root — COPY creates files as root) ───────────
+# ── Root operations: ownership + gitconfig + shell PATH ─────────────────────
 USER root
 RUN mkdir -p /home/lpb/.agent-browser/sessions \
-    && chown -R 1000:1000 /home/lpb /opt/devstack /opt/pi-support
-USER lpb
-
-# ─── Git credential helper ────────────────────────────────────────────
-# Points git to gh auth for GitHub HTTPS operations. No sensitive data
-# baked in — the actual token is resolved at runtime from
-# /home/lpb/.config/gh/hosts.yml (volume-mounted from host).
-USER root
-RUN printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/lpb/.gitconfig && chown 1000:1000 /home/lpb/.gitconfig
-USER lpb
-
-# ─── Shell PATH (npm global bin, local bin) ──────────────────────────
-# Ensures agent-browser, pi, and other npm-global tools are on PATH
-# for all interactive and non-interactive shells.
-RUN printf '\n# LocalPibox: npm-global and local bin on PATH\nexport PATH="/home/lpb/.npm-global/bin:/home/lpb/.local/bin:${PATH}"\n' >> /home/lpb/.bashrc
+    && chown -R 1000:1000 /home/lpb /opt/devstack /opt/pi-support \
+    && printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/lpb/.gitconfig \
+    && chown 1000:1000 /home/lpb/.gitconfig \
+    && printf '\n# LocalPibox: npm-global and local bin on PATH\nexport PATH="/home/lpb/.npm-global/bin:/home/lpb/.local/bin:${PATH}"\n' >> /home/lpb/.bashrc
 
 USER lpb
+
 WORKDIR /home/lpb/workspace
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — CLI" \
       org.opencontainers.image.description="AI-powered dev environment with Pi CLI (interactive terminal)" \
       org.opencontainers.image.source="https://github.com/localpibox/devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.created="${IMAGE_BUILT}"
 
 ENTRYPOINT ["/opt/devstack/entrypoint-cli.sh"]
 
@@ -195,7 +202,7 @@ RUN curl -fsSL \
     && tar -xzf /tmp/vscodium.tar.gz -C /opt/vscodium --strip-components=1 \
     && rm /tmp/vscodium.tar.gz
 
-USER root
+# ── VSCodium extensions ─────────────────────────────────────────────────────
 RUN set -eux; \
     export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
     EXT_DIR="/home/lpb/.vscodium-server/extensions"; \
@@ -224,6 +231,7 @@ COPY --chmod=755 support/entrypoint-web.sh /opt/devstack/entrypoint-web.sh
 RUN chown -R 1000:1000 /home/lpb
 
 USER lpb
+
 WORKDIR /home/lpb/workspace
 
 ENV ED_PORT=3000
@@ -240,6 +248,8 @@ LABEL org.opencontainers.image.title="LocalPibox Devstack — Web" \
       org.opencontainers.image.description="AI-powered dev environment with VSCodium web editor" \
       org.opencontainers.image.source="https://github.com/localpibox/devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.created="${IMAGE_BUILT}"
 
 ENTRYPOINT ["/opt/devstack/entrypoint-web.sh"]

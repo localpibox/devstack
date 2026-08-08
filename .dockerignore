@@ -31,7 +31,6 @@ Thumbs.db
 # Biome
 biome.base.json
 
-# Keep these:
-# Dockerfile
-# support/
-# lpb.stack.env
+# Local build artifacts
+support/node_modules
+*.tgz
