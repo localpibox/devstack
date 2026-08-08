@@ -278,9 +278,11 @@ def test_unknown_flag():
         mod.parse_cli(["--foo-bar"])
         mod.apply_overrides()
         mod.cmd_run()
-        assert False
-    except SystemExit as e:
-        assert e.code == 1
+        assert False, "should have raised an error"
+    except (SystemExit, mod.DevstackError) as e:
+        # DevstackError (new) or SystemExit(code=1) (legacy path)
+        if isinstance(e, SystemExit):
+            assert e.code == 1
     print("  PASS\n")
 
 

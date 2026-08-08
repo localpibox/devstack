@@ -61,6 +61,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
+# ── Custom exceptions ─────────────────────────────────────────────────────────
+class DevstackError(Exception):
+    """Raised when a devstack operation fails (e.g. missing container, invalid config)."""
+
+class DevstackConfigError(DevstackError):
+    """Raised when configuration is invalid (e.g. missing files, bad env vars)."""
+
 HOME = os.path.expanduser("~")
 CONFIG_DIR = Path(HOME) / ".localpibox" / "devstack"
 CONFIG_FILE = CONFIG_DIR / "config"
@@ -237,8 +244,7 @@ def ensure_container_cmd() -> None:
     cfg.container_cmd = shutil.which("podman") or shutil.which("docker") or ""
     if not cfg.container_cmd:
         err("podman or docker is required", "Install one of them and retry.")
-        sys.exit(1)
-
+        raise DevstackError
 
 def is_podman() -> bool:
     """Return True when the container runtime is podman (vs docker)."""
@@ -645,14 +651,15 @@ def parse_cli(args: list[str]) -> None:
         if not cfg.ssh_pubkey:
             err("--ssh requires a public key or path to a .pub file",
                 "Usage: lpb --ssh 'ssh-ed25519 AAAA... user@host' [/path]")
-            sys.exit(1)
+            raise DevstackError
 
     # Handle extra/positional args (single-dash flags = error, rest = positional)
     positional: list[str] = []
     for a in extra:
         if a.startswith("-") and not a.startswith("--"):
             err(f"Pi flag '{a}' must come after '--'", "Usage: lpb /path -- -p 'message'")
-            sys.exit(1)
+            raise DevstackError
+
         positional.append(a)
 
     # -- passthrough: first non-flag arg after -- is project, rest go to pi
@@ -678,7 +685,8 @@ def cmd_stop():
         info(f"Container '{cfg.container_name}' is not running."); sys.exit(0)
     info(f"Stopping {cfg.container_name}...")
     if not c.containers_stop(cfg.container_name):
-        err("Failed to stop", "Check: lpb --logs"); sys.exit(1)
+        err("Failed to stop", "Check: lpb --logs"); raise DevstackError
+
     c.containers_remove(cfg.container_name)
     done(f"Stopped and removed {cfg.container_name}.")
 
@@ -712,8 +720,7 @@ def cmd_logs():
         err("Container not found", "Run 'lpb --remove' then 'lpb' to start fresh.")
         sys.exit(0)
     if not c.containers_logs(cfg.container_name, follow=False):
-        err("Failed to get logs"); sys.exit(1)
-
+        err("Failed to get logs"); raise DevstackError
 
 def cmd_config():
     """Print resolved config, projects, and state paths for the current stack."""
@@ -743,7 +750,8 @@ def cmd_update():
             images_to_update.append(last_img)
         else:
             err("No devstack images found locally", "Run 'lpb' or 'lpb --web' first to pull an image.")
-            sys.exit(1)
+            raise DevstackError
+
     for img in images_to_update:
         info(f"Pulling {img}...")
         rc = c.images_pull(img)
@@ -842,14 +850,14 @@ def cmd_run():
         project_dir = HOME
     project_dir = resolve_path(project_dir)
     if not Path(project_dir).is_dir():
-        err(f"directory not found: {project_dir}"); sys.exit(1)
+        err(f"directory not found: {project_dir}"); raise DevstackError
 
     # ── 2. Project name ──────────────────────────────────────────────────
     cfg.project_name = Path(project_dir).name
     if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.\-]*$', cfg.project_name):
         err(f"project name '{cfg.project_name}' contains invalid characters",
             "Use only alphanumeric, dots, hyphens, underscores.")
-        sys.exit(1)
+        raise DevstackError
 
     # ── 3. Mount path inside container ───────────────────────────────────
     if cfg.open_home:
@@ -920,7 +928,8 @@ def cmd_run():
             _, _, rc = run_cmd([cfg.container_cmd, "start", cfg.container_name])
             if rc != 0:
                 err("Failed to start container", "Try 'lpb --remove' then 'lpb --shell'.")
-                sys.exit(1)
+                raise DevstackError
+
             info(f"Attaching to container '{cfg.container_name}'...")
             ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
             sys.exit(ret)
@@ -966,7 +975,7 @@ def cmd_run():
         rc = c.images_pull(cfg.image_name)
         if rc != 0:
             err("Failed to pull image")
-            sys.exit(1)
+            raise DevstackError
 
     # ── 10. Detect SELinux mount flags ────────────────────────────────────
     mount_flags = detect_mount_flags(project_dir)
@@ -1044,7 +1053,7 @@ def cmd_run():
             print("  lpb --logs     \u2014 View container logs")
             print("  lpb --stop     \u2014 Stop existing container")
             print("  lpb --remove   \u2014 Remove everything and start fresh")
-            sys.exit(1)
+            raise DevstackError
 
         LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
@@ -1095,7 +1104,7 @@ def cmd_run():
             print("  lpb --logs     \u2014 View container logs")
             print("  lpb --stop     \u2014 Stop existing container")
             print("  lpb --remove   \u2014 Remove everything and start fresh")
-            sys.exit(1)
+            raise DevstackError
 
         LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
