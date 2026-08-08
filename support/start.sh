@@ -124,6 +124,9 @@ export LPB_EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
 # lpb.conf.env may set LPB_GITHUB_TOKEN to a literal string; start.sh
 # resolves the actual token by trying: shell env > LPB_GITHUB_TOKEN (literal) > gh auth token.
 export GITHUB_TOKEN="${GITHUB_TOKEN:-${LPB_GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}}"
+# Canonical env var name the github-mcp-server binary reads for stdio auth.
+# mcp.json resolves ${GITHUB_PERSONAL_ACCESS_TOKEN} from this export.
+export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_TOKEN}"
 export LPB_GITHUB_TOKEN="${GITHUB_TOKEN}"
 
 # ── GitHub MCP Server toolsets ──
@@ -133,14 +136,20 @@ export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 _github_mcp_bin="/home/lpb/.local/pi-support/bin/github-mcp-server"
 if [[ ! -x "$_github_mcp_bin" ]]; then
     _version="${LPB_GITHUB_MCP_SERVER_VERSION:-v1.8.0}"
-    _asset_name="github-mcp-server_${_version#v}_Linux_x86_64.tar.gz"
     info "Installing GitHub MCP Server v${_version}..."
     mkdir -p /home/lpb/.local/pi-support/bin
-    # Direct GitHub CDN returns 404 from some container networks — use gh API for authenticated downloads
-    _asset_url="$(gh api "repos/github/github-mcp-server/releases/tags/${_version}" --jq '.assets[] | select(.name=="'"$_asset_name"'") | .url' 2>/dev/null)"
-    if [[ -n "$_asset_url" ]]; then
-        _download_url="$(gh api "$_asset_url" --jq '.browser_download_url')"
-        if curl -fsSL "$_download_url" -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
+    # Direct GitHub CDN (github.com/.../releases/download/...) returns 404 from
+    # this network, and gh's .browser_download_url resolves to that same blocked
+    # URL. Instead download the release asset via the authenticated gh API
+    # octet-stream endpoint (redirects to object storage). Match by filename
+    # substring — full-string `==` on asset .name intermittently fails in gh's
+    # gojq, so use `contains`.
+    # Release tarball names carry NO version (github-mcp-server_Linux_x86_64.tar.gz).
+    # Match by the OS_ARCH substring only.
+    _asset_match="Linux_x86_64"
+    _asset_id="$(gh api "repos/github/github-mcp-server/releases/tags/${_version}" --jq '.assets[] | select(.name | contains("'"$_asset_match"'")) | .id' 2>/dev/null | head -1)"
+    if [[ -n "$_asset_id" ]]; then
+        if gh api -H "Accept: application/octet-stream" "repos/github/github-mcp-server/releases/assets/${_asset_id}" > /tmp/github-mcp-server.tar.gz 2>/dev/null; then
             tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
             chmod +x "$_github_mcp_bin"
             rm -f /tmp/github-mcp-server.tar.gz
@@ -150,18 +159,8 @@ if [[ ! -x "$_github_mcp_bin" ]]; then
             warn "Failed to download GitHub MCP Server binary via gh API."
         fi
     else
-        # Fallback: try direct download (may fail from some networks)
-        if curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${_version}/${_asset_name}" \
-              -o /tmp/github-mcp-server.tar.gz 2>/dev/null; then
-            tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin
-            chmod +x "$_github_mcp_bin"
-            rm -f /tmp/github-mcp-server.tar.gz
-            chown -R 1000:1000 /home/lpb/.local/pi-support
-            info "GitHub MCP Server v${_version} installed."
-        else
-            warn "Failed to download GitHub MCP Server from release page."
-            warn "Manually install with: curl -fsSL 'https://github.com/github/github-mcp-server/releases/download/${_version}/${_asset_name}' -o /tmp/github-mcp-server.tar.gz && tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin && chmod +x /home/lpb/.local/pi-support/bin/github-mcp-server"
-        fi
+        warn "Could not resolve GitHub MCP Server release asset for v${_version}."
+        warn "Manually install with: gh api -H 'Accept: application/octet-stream' <asset_url> > /tmp/github-mcp-server.tar.gz && tar -xzf /tmp/github-mcp-server.tar.gz -C /home/lpb/.local/pi-support/bin"
     fi
 else
     debug "GitHub MCP Server already installed at $_github_mcp_bin"
