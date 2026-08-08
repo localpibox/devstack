@@ -50,14 +50,15 @@ import sys
 import time
 import urllib.request
 import uuid
+from pathlib import Path
 
 HOME = os.path.expanduser("~")
-CONFIG_DIR = os.path.join(HOME, ".localpibox", "devstack")
-CONFIG_FILE = os.path.join(CONFIG_DIR, "config")
-PROJECTS_DIR = os.path.join(CONFIG_DIR, "projects")
-LAST_PROJECT_FILE = os.path.join(CONFIG_DIR, "last-project")
-LAST_IMAGE_FILE = os.path.join(CONFIG_DIR, "last-image")
-TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
+CONFIG_DIR = Path(HOME) / ".localpibox" / "devstack"
+CONFIG_FILE = CONFIG_DIR / "config"
+PROJECTS_DIR = CONFIG_DIR / "projects"
+LAST_PROJECT_FILE = CONFIG_DIR / "last-project"
+LAST_IMAGE_FILE = CONFIG_DIR / "last-image"
+TOKEN_FILE = CONFIG_DIR / "token"
 
 # ─── Load stack configuration ────────────────────────────────────────────
 # lpb.stack.env defines build/image identity (fork URL, images, container)
@@ -207,7 +208,7 @@ def done(msg):
     print(f"\033[32m{msg}\033[0m")
 
 
-def run_cmd(args, timeout=120):
+def run_cmd(args: list[str], timeout: int = 120) -> tuple[str, str, int]:
     """Run a subprocess, capture stdout/stderr, and return (stdout, stderr, code)."""
     try:
         r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
@@ -218,7 +219,7 @@ def run_cmd(args, timeout=120):
         return "", f"not found: {args[0]}", 127
 
 
-def ensure_container_cmd():
+def ensure_container_cmd() -> None:
     """Locate podman or docker; fail with a helpful message if neither exists."""
     if cfg.container_cmd:
         return
@@ -228,27 +229,27 @@ def ensure_container_cmd():
         sys.exit(1)
 
 
-def is_podman():
+def is_podman() -> bool:
     """Return True when the container runtime is podman (vs docker)."""
     return "podman" in cfg.container_cmd
 
 
-def save_last_image(mode):
+def save_last_image(mode: str) -> None:
     """Persist the last-used image mode (cli/web) to support reconnect/update."""
-    os.makedirs(os.path.dirname(LAST_IMAGE_FILE), exist_ok=True)
+    LAST_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LAST_IMAGE_FILE, "w") as f:
         f.write(mode)
 
 
-def load_last_image():
+def load_last_image() -> str:
     """Read the persisted last-used image mode; defaults to 'cli'."""
-    if os.path.isfile(LAST_IMAGE_FILE):
+    if LAST_IMAGE_FILE.is_file():
         with open(LAST_IMAGE_FILE) as f:
             return f.read().strip()
     return "cli"
 
 
-def ensure_token():
+def ensure_token() -> str:
     """Return a stable connection token.
 
     If the user configured one (env/cli), use it unchanged. Otherwise generate a
@@ -257,15 +258,15 @@ def ensure_token():
     """
     if cfg.token:
         return cfg.token
-    if os.path.isfile(TOKEN_FILE):
+    if TOKEN_FILE.is_file():
         with open(TOKEN_FILE) as f:
             persisted = f.read().strip()
         if persisted:
             cfg.token = persisted
             return persisted
-    fresh = "%s" % (uuid.uuid4())
+    fresh = str(uuid.uuid4())
     try:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         with open(TOKEN_FILE, "w") as f:
             f.write(fresh)
     except OSError:
@@ -393,12 +394,15 @@ def client():
     return ContainerClient(cfg.container_cmd)
 
 
-def resolve_path(p):
+def resolve_path(p: str) -> str:
     """Expand ~, ${HOME} and make an absolute path."""
-    return os.path.abspath(os.path.expanduser(p).replace("${HOME}", HOME))
+    path = Path(p).expanduser()
+    if "${HOME}" in str(path):
+        path = Path(str(path).replace("${HOME}", HOME))
+    return str(path.resolve())
 
 
-def detect_mount_flags(project_dir):
+def detect_mount_flags(project_dir: str) -> str:
     """Probe SELinux behaviour and return the appropriate bind-mount flag (:Z/:z)."""
     c = client()
     _, _, stderr, _ = c.containers_run(
@@ -482,10 +486,10 @@ def load_project_override(name):
         pass
 
 
-def apply_overrides(project_dir=None, project_name=None, cli_overrides=None):
+def apply_overrides(project_dir: str | None = None, project_name: str | None = None, cli_overrides: dict[str, bool] | None = None) -> None:
     load_config_file()
     _apply_env(cli_overrides)
-    if project_dir and os.path.isfile(os.path.join(project_dir, ".env")):
+    if project_dir and (Path(project_dir) / ".env").is_file():
         load_project_env(project_dir)
         _apply_env(cli_overrides)
     if project_name:

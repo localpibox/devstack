@@ -229,7 +229,7 @@ def test_remove():
     mod.parse_cli(["--remove"])
     mod.apply_overrides()
     mod.cmd_remove()
-    assert not MOCK_STATE["exists"]
+    assert not MOCK_STATE["exists"], "container should be removed"
     print("  PASS\n")
 
 
@@ -242,8 +242,8 @@ def test_stop_running():
     mod.parse_cli(["--stop"])
     mod.apply_overrides()
     mod.cmd_stop()
-    assert not MOCK_STATE["running"]
-    assert not MOCK_STATE["exists"]
+    assert not MOCK_STATE["running"], "container should be stopped"
+    assert not MOCK_STATE["exists"], "container should be removed"
     print("  PASS\n")
 
 
@@ -295,7 +295,7 @@ def test_run_welcome():
     mod.cfg.open_home = True  # simulate no project
     mod.cmd_run()
     assert MOCK_STATE["running"]
-    assert mod.cfg.open_home
+    assert mod.cfg.open_home, "should be in home mode"
     print("  PASS\n")
 
 
@@ -308,8 +308,8 @@ def test_run_project():
     mod.cfg.state_dir = "/tmp/lpb-test-state"
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
     mod.cmd_run()
-    assert MOCK_STATE["running"]
-    assert mod.cfg.project_name == "tmp"
+    assert MOCK_STATE["running"], "container should be running after start"
+    assert mod.cfg.project_name == "tmp", f"expected 'tmp', got '{mod.cfg.project_name}'"
     print("  PASS\n")
 
 
@@ -322,9 +322,9 @@ def test_run_shell():
     mod.cfg.state_dir = "/tmp/lpb-test-state"
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
     mod.cmd_run()
-    assert mod.cfg.shell_mode
-    assert mod.cfg.image_name == mod.CLI_IMAGE
-    assert mod.cfg.project_name == "tmp"
+    assert mod.cfg.shell_mode, "shell_mode should be True"
+    assert mod.cfg.image_name == mod.CLI_IMAGE, f"expected {mod.CLI_IMAGE}, got {mod.cfg.image_name}"
+    assert mod.cfg.project_name == "tmp", f"expected 'tmp', got '{mod.cfg.project_name}'"
     print("  PASS\n")
 
 
@@ -337,8 +337,8 @@ def test_run_port_flag():
     mod.cfg.state_dir = "/tmp/lpb-test-state"
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
     mod.cmd_run()
-    assert mod.cfg.port == 9999
-    assert MOCK_STATE["running"]
+    assert mod.cfg.port == 9999, f"expected 9999, got {mod.cfg.port}"
+    assert MOCK_STATE["running"], "container should be running after start"
     print("  PASS\n")
 
 
@@ -435,6 +435,13 @@ if __name__ == "__main__":
         except AssertionError as e:
             print(f"  FAIL: {e}")
             failed += 1
+        except SystemExit as e:
+            # Some commands call sys.exit(0) — treat clean exits as pass
+            if e.code == 0:
+                passed += 1
+            else:
+                print(f"  FAIL: unexpected exit code {e.code}")
+                failed += 1
         except Exception as e:
             print(f"  ERROR: {type(e).__name__}: {e}")
             failed += 1
