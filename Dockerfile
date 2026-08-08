@@ -155,15 +155,18 @@ COPY --chmod=755 support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 RUN mkdir -p /home/lpb/.local/bin
 COPY --chmod=755 support/lpb-config /home/lpb/.local/bin/lpb-config
 
-RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
+# ─── Ownership (must run as root — COPY creates files as root) ───────────
+USER root
+RUN chown -R 1000:1000 /home/lpb /opt/devstack /opt/pi-support /home/lpb/.agent-browser
+USER lpb
 
 # ─── Git credential helper ────────────────────────────────────────────
 # Points git to gh auth for GitHub HTTPS operations. No sensitive data
 # baked in — the actual token is resolved at runtime from
 # /home/lpb/.config/gh/hosts.yml (volume-mounted from host).
+USER root
 RUN printf '[credential "https://github.com"]\n    helper = !gh auth git-credential\n[credential "https://gist.github.com"]\n    helper = !gh auth git-credential\n' > /home/lpb/.gitconfig && chown 1000:1000 /home/lpb/.gitconfig
-
-RUN chown -R 1000:1000 /home/lpb
+USER lpb
 
 # ─── Shell PATH (npm global bin, local bin) ──────────────────────────
 # Ensures agent-browser, pi, and other npm-global tools are on PATH
