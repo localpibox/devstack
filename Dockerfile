@@ -152,16 +152,16 @@ COPY support/install-openspec.sh /opt/pi-support/install-openspec.sh
 COPY support/start.sh /opt/devstack/start.sh
 COPY lpb.conf.env /opt/devstack/lpb.conf.env
 COPY support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
-RUN ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
-    && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack \
-    && ln -sf /opt/pi-support/install-openspec.sh /usr/local/bin/install-openspec \
-    && ln -sf /opt/pi-support/lpb-config /usr/local/bin/lpb-config \
-    && chmod +x /opt/devstack/install-browser.sh \
+
+# Copy to /usr/local/bin/ for easy access (avoid symlinks — CI has issues with ln -sf)
+COPY support/lpb-config /usr/local/bin/lpb-config
+RUN chmod +x /opt/devstack/install-browser.sh \
            /opt/devstack/validate.sh \
            /opt/devstack/start.sh \
            /opt/devstack/entrypoint-cli.sh \
            /opt/pi-support/install-openspec.sh \
-           /opt/pi-support/lpb-config
+           /opt/pi-support/lpb-config \
+           /usr/local/bin/lpb-config
 
 RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
 
