@@ -124,42 +124,8 @@ RUN set -eux; \
     rm -rf /opt/pi-src/.git /opt/pi-src/src /opt/pi-src/test /opt/pi-src/tests
 
 # ── Extensions + Config ─────────────────────────────────────────────────────
-USER root
-RUN set -eux; \
-    export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
-    export HOME="/home/lpb"; \
-    mkdir -p /home/lpb/.local/pi-config; \
-    rm -rf /tmp/pi-config-repo; \
-    git clone --depth=1 --branch main https://github.com/localpibox/config.git /tmp/pi-config-repo 2>&1 && \
-    (cd /tmp/pi-config-repo && cp -r . /home/lpb/.local/pi-config/) || echo "WARN: config clone failed"; \
-    rm -rf /tmp/pi-config-repo; \
-    # Copy lpb.conf.env into the image for start.sh to load at runtime \
-    [ -f /opt/devstack/lpb.conf.env ] && cp /opt/devstack/lpb.conf.env /home/lpb/.local/lpb.conf.env || echo "WARN: no lpb.conf.env"; \
-    mkdir -p /home/lpb/.pi/agent; \
-    [ -f /home/lpb/.local/pi-config/settings.json ] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ || echo "WARN: no settings.json"; \
-    [ -f /home/lpb/.local/pi-config/mcp.json ] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/ || echo "WARN: no mcp.json"; \
-    [ -f /home/lpb/.local/pi-config/lpb-memory-config.json ] && cp /home/lpb/.local/pi-config/lpb-memory-config.json /home/lpb/.pi/agent/ || echo "WARN: no lpb-memory-config.json"; \
-    [ -f /home/lpb/.local/pi-config/pi-defaults.json ] && cp /home/lpb/.local/pi-config/pi-defaults.json /home/lpb/.pi/agent/ || echo "WARN: no pi-defaults.json"; \
-    [ -f /home/lpb/.local/pi-config/subagents.json ] && cp /home/lpb/.local/pi-config/subagents.json /home/lpb/.pi/agent/ || echo "WARN: no subagents.json"; \
-    [ -f /home/lpb/.local/pi-config/models.json ] && cp /home/lpb/.local/pi-config/models.json /home/lpb/.pi/agent/ || echo "WARN: no models.json"; \
-    [ -f /home/lpb/.local/pi-config/AGENTS.md ] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ || echo "WARN: no AGENTS.md"; \
-    [ -f /home/lpb/.local/pi-config/SYSTEM.md ] && cp /home/lpb/.local/pi-config/SYSTEM.md /home/lpb/.pi/agent/ || true; \
-    [ -f /home/lpb/.local/pi-config/APPEND_SYSTEM.md ] && cp /home/lpb/.local/pi-config/APPEND_SYSTEM.md /home/lpb/.pi/agent/ || true; \
-    mkdir -p /home/lpb/.pi/agent/skills; \
-    if [ -d /home/lpb/.local/pi-config/skills ]; then \
-        for d in /home/lpb/.local/pi-config/skills/*/; do \
-            [ -d "$d" ] || continue; \
-            name=$(basename "$d"); \
-            mkdir -p "/home/lpb/.pi/agent/skills/$name"; \
-            cp "$d"* "/home/lpb/.pi/agent/skills/$name/" 2>/dev/null || true; \
-        done; \
-    fi; \
-    mkdir -p /home/lpb/.pi/agent/agents; \
-    if [ -d /home/lpb/.local/pi-config/agents ]; then \
-        rsync -a --delete /home/lpb/.local/pi-config/agents/ /home/lpb/.pi/agent/agents/ 2>/dev/null || \
-        cp -r /home/lpb/.local/pi-config/agents/* /home/lpb/.pi/agent/agents/ 2>/dev/null || true; \
-    fi; \
-    chown -R 1000:1000 /home/lpb/.pi /home/lpb/.local
+# Config repo is cloned at container start by start.sh — the image stays lean.
+USER lpb
 
 # ═══════════════════════════════════════════════════════════════════════════
 # CLI IMAGE
@@ -175,7 +141,9 @@ COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-outpu
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-RUN chmod +x /opt/pi-support/browser-state-cleanup.sh
+COPY support/lpb-config /opt/pi-support/lpb-config
+RUN chmod +x /opt/pi-support/browser-state-cleanup.sh \
+    && chmod +x /opt/pi-support/lpb-config
 
 # ── Devstack deployment scripts ──
 COPY support/install-browser.sh /opt/devstack/install-browser.sh
@@ -187,11 +155,13 @@ COPY support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 RUN ln -sf /opt/devstack/install-browser.sh /usr/local/bin/install-browser \
     && ln -sf /opt/devstack/validate.sh /usr/local/bin/validate-devstack \
     && ln -sf /opt/pi-support/install-openspec.sh /usr/local/bin/install-openspec \
+    && ln -sf /opt/pi-support/lpb-config /usr/local/bin/lpb-config \
     && chmod +x /opt/devstack/install-browser.sh \
            /opt/devstack/validate.sh \
            /opt/devstack/start.sh \
            /opt/devstack/entrypoint-cli.sh \
-           /opt/pi-support/install-openspec.sh
+           /opt/pi-support/install-openspec.sh \
+           /opt/pi-support/lpb-config
 
 RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
 

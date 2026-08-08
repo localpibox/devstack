@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# lpb-config — Manage the LocalPibox Pi config repo inside the container
+#
+# Usage:
+#   lpb-config status    — Show current commit, remote HEAD, local changes
+#   lpb-config update    — Fetch + fast-forward (safe: refuses on local changes)
+#   lpb-config reset     — Re-clone, destroy local changes (with confirmation)
+#   lpb-config merge     — Open git merge flow for advanced users
+
+set -euo pipefail
+
+AGENT_DIR="${1:-/home/lpb/.pi}"
+CONFIG_REMOTE="${2:-https://github.com/localpibox/config.git}"
+CONFIG_REF="${3:-main}"
+
+# ─── Helpers ────────────────────────────────────────────────────────────────
+info()  { echo "[lpb-config] $*"; }
+warn()  { echo "[lpb-config] $*" >&2; }
+err()   { echo "[lpb-config] ERROR: $*" >&2; exit 1; }
+
+# ─── status ─────────────────────────────────────────────────────────────────
+cmd_status() {
+    if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+        warn "No config repo at ${AGENT_DIR}"
+        echo "  Run 'lpb-config update' to clone it."
+        exit 0
+    fi
+
+    local cur_head remote_head local_changes
+    cur_head=$(git -C "${AGENT_DIR}" rev-parse HEAD 2>/dev/null || echo "?")
+    cur_short="${cur_head:0:8}"
+
+    info "Current:     ${cur_short} ($(git -C "${AGENT_DIR}" log --oneline -1 2>/dev/null || echo '?'))"
+
+    if ! git -C "${AGENT_DIR}" remote get-url origin &>/dev/null; then
+        warn "No remote configured"
+        exit 0
+    fi
+
+    remote_head=$(git -C "${AGENT_DIR}" rev-parse "origin/${CONFIG_REF}" 2>/dev/null || echo "")
+    if [[ -n "$remote_head" ]]; then
+        remote_short="${remote_head:0:8}"
+        info "Remote:      ${remote_short} origin/${CONFIG_REF}"
+    fi
+
+    # Check for uncommitted local changes
+    local_changes=$(git -C "${AGENT_DIR}" status --porcelain 2>/dev/null || echo "")
+    if [[ -n "$local_changes" ]]; then
+        warn "Uncommitted changes detected (${#local_changes} lines):"
+        echo "$local_changes" | head -10
+    else
+        info "Working tree: clean"
+    fi
+
+    # Check if behind remote
+    if [[ -n "$remote_head" ]]; then
+        if git -C "${AGENT_DIR}" merge-base --is-ancestor "$cur_head" "$remote_head" 2>/dev/null; then
+            info "Status:      up to date (or ahead)"
+        else
+            warn "Status:      behind remote — run 'lpb-config update' to fetch"
+        fi
+    fi
+}
+
+# ─── update ─────────────────────────────────────────────────────────────────
+cmd_update() {
+    if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+        info "Cloning config repo from ${CONFIG_REMOTE}..."
+        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
+        info "Cloned. Run 'lpb-config status' to verify."
+        exit 0
+    fi
+
+    info "Fetching updates from ${CONFIG_REMOTE}..."
+    if ! git -C "${AGENT_DIR}" fetch origin "${CONFIG_REF}" 2>/dev/null; then
+        err "Failed to fetch from ${CONFIG_REMOTE}"
+    fi
+
+    remote_head=$(git -C "${AGENT_DIR}" rev-parse "origin/${CONFIG_REF}" 2>/dev/null)
+    cur_head=$(git -C "${AGENT_DIR}" rev-parse HEAD 2>/dev/null)
+
+    if [[ "$remote_head" = "$cur_head" ]]; then
+        info "Already up to date."
+        exit 0
+    fi
+
+    # Check for local changes — refuse to overwrite
+    local_changes=$(git -C "${AGENT_DIR}" status --porcelain 2>/dev/null || echo "")
+    if [[ -n "$local_changes" ]]; then
+        warn "Uncommitted changes detected:"
+        echo "$local_changes"
+        warn "Aborting — local changes would be lost."
+        echo ""
+        echo "Options:"
+        echo "  1. Commit your changes first, then re-run 'lpb-config update'"
+        echo "  2. Use 'lpb-config reset' to discard local changes (destructive)"
+        echo "  3. Use 'lpb-config merge' for an interactive git merge"
+        exit 1
+    fi
+
+    # Fast-forward
+    if git -C "${AGENT_DIR}" merge-base --is-ancestor "$cur_head" "$remote_head" 2>/dev/null; then
+        git -C "${AGENT_DIR}" reset --hard "origin/${CONFIG_REF}"
+        info "Updated to $(git -C "${AGENT_DIR}" log --oneline -1)"
+    else
+        warn "Cannot fast-forward — conflicts detected."
+        echo ""
+        echo "Run 'lpb-config merge' for an interactive merge, or"
+        echo "use 'lpb-config reset' to discard local changes (destructive)."
+        exit 1
+    fi
+}
+
+# ─── reset ──────────────────────────────────────────────────────────────────
+cmd_reset() {
+    if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+        info "Cloning config repo from ${CONFIG_REMOTE}..."
+        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
+        info "Cloned."
+        exit 0
+    fi
+
+    warn "This will destroy ALL local changes in ${AGENT_DIR}."
+    echo "  Current: $(git -C "${AGENT_DIR}" rev-parse HEAD 2>/dev/null | head -c 8)"
+    echo "  Remote:  $(git -C "${AGENT_DIR}" rev-parse origin/${CONFIG_REF} 2>/dev/null | head -c 8)"
+
+    if [[ "${FORCE:-}" != "1" ]]; then
+        echo -n "  Continue? [y/N]: "
+        read -r answer
+        if [[ "$answer" != "y" && "$answer" != "Y" ]]; then
+            info "Aborted."
+            exit 0
+        fi
+    fi
+
+    rm -rf "${AGENT_DIR}"
+    git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
+    info "Reset complete. Re-run Pi to apply the new config."
+}
+
+# ─── merge ──────────────────────────────────────────────────────────────────
+cmd_merge() {
+    if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+        err "No config repo at ${AGENT_DIR}. Run 'lpb-config update' first."
+    fi
+
+    info "Fetching latest from ${CONFIG_REMOTE}..."
+    git -C "${AGENT_DIR}" fetch origin "${CONFIG_REF}"
+
+    remote_head=$(git -C "${AGENT_DIR}" rev-parse "origin/${CONFIG_REF}" 2>/dev/null)
+    cur_head=$(git -C "${AGENT_DIR}" rev-parse HEAD 2>/dev/null)
+
+    if [[ "$remote_head" = "$cur_head" ]]; then
+        info "Already up to date."
+        exit 0
+    fi
+
+    info "Starting merge: ${cur_head:0:8} → ${remote_head:0:8}"
+    if git -C "${AGENT_DIR}" merge --no-edit "origin/${CONFIG_REF}"; then
+        info "Merge complete."
+    else
+        warn "Merge conflicts detected. Resolve them with git, then:"
+        echo ""
+        echo "  cd ${AGENT_DIR}"
+        echo "  git add <resolved-files>"
+        echo "  git commit"
+        echo "  lpb-config status"
+        exit 1
+    fi
+}
+
+# ─── Dispatcher ─────────────────────────────────────────────────────────────
+case "${1:-help}" in
+    status)  cmd_status  ;;
+    update)  cmd_update  ;;
+    reset)   cmd_reset   ;;
+    merge)   cmd_merge   ;;
+    help|--help|-h)
+        echo "Usage: lpb-config [command]"
+        echo ""
+        echo "Commands:"
+        echo "  status   — Show current commit, remote HEAD, local changes"
+        echo "  update   — Fetch + fast-forward (safe: refuses on local changes)"
+        echo "  reset    — Re-clone, destroy local changes (with confirmation)"
+        echo "  merge    — Open git merge flow for advanced users"
+        echo ""
+        echo "Environment:"
+        echo "  AGENT_DIR         — Config repo path (default: /home/lpb/.pi)"
+        echo "  CONFIG_REMOTE     — Git remote URL (default: https://github.com/localpibox/config.git)"
+        echo "  CONFIG_REF        — Branch to track (default: main)"
+        ;;
+    *)
+        err "Unknown command: $1. Use 'lpb-config help' for usage."
+        ;;
+esac

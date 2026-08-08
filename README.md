@@ -290,7 +290,7 @@ cd ~/.local/pi-config
 git remote set-url origin https://github.com/<you>/config.git
 git pull --ff-only origin <your-branch>
 # re-seed the runtime copy from your preset
-cp settings.json mcp.json pi-defaults.json subagents.json ~/.pi/agent/ 2>/dev/null || true
+# Config repo IS ~/.pi/ — managed by start.sh at container startup
 ```
 
 ### Repointing extensions at runtime (no rebuild)

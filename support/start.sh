@@ -223,9 +223,7 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" "${HOME_DIR}/.config" 2>/dev/null || true
     chmod -R u+rwX "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" 2>/dev/null || true
 
-    mkdir -p "${HOME_DIR}/.pi/agent/mcp" \
-             "${HOME_DIR}/.pi/agent/skills" \
-             "${HOME_DIR}/.pi/agent/git" \
+    mkdir -p "${HOME_DIR}/.pi/agent/git" \
              "${HOME_DIR}/.venvs"
 
     npm config set prefix '/home/lpb/.npm-global' 2>/dev/null || true
@@ -238,7 +236,6 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     npm config set allow-git all 2>/dev/null || true
     npm config set allow-scripts 'better-sqlite3 agent-browser esbuild protobufjs @google/genai' 2>/dev/null || true
 
-    mkdir -p "${HOME_DIR}/.pi/agent/git"
     # Pre-create .npmrc so npm reads allow-scripts from parent dir
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.pi/agent/git/.npmrc" 2>/dev/null || true
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.npmrc" 2>/dev/null || true
@@ -263,20 +260,25 @@ with open(sys.argv[1], 'w') as f: json.dump(pkg, f, indent=2)
         info "Patched pi-coding-agent package.json with allowScripts."
     fi
 
-    if [[ -d /home/lpb/.local/pi-config ]]; then
-        info "Syncing config from /home/lpb/.local/pi-config/..."
-        [[ -f /home/lpb/.local/pi-config/settings.json ]] && cp /home/lpb/.local/pi-config/settings.json /home/lpb/.pi/agent/ 2>/dev/null
-        [[ -f /home/lpb/.local/pi-config/mcp.json ]] && cp /home/lpb/.local/pi-config/mcp.json /home/lpb/.pi/agent/mcp.json 2>/dev/null && sed -i 's/"directTools": true/"directTools": false/' /home/lpb/.pi/agent/mcp.json 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/lpb-memory-config.json ]] && cp /home/lpb/.local/pi-config/lpb-memory-config.json /home/lpb/.pi/agent/ 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/pi-defaults.json ]] && cp /home/lpb/.local/pi-config/pi-defaults.json /home/lpb/.pi/agent/ 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/subagents.json ]] && cp /home/lpb/.local/pi-config/subagents.json /home/lpb/.pi/agent/ 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/AGENTS.md ]] && cp /home/lpb/.local/pi-config/AGENTS.md /home/lpb/.pi/agent/ 2>/dev/null
-        [[ -f /home/lpb/.local/pi-config/SYSTEM.md ]] && cp /home/lpb/.local/pi-config/SYSTEM.md /home/lpb/.pi/agent/ 2>/dev/null || true
-        [[ -f /home/lpb/.local/pi-config/APPEND_SYSTEM.md ]] && cp /home/lpb/.local/pi-config/APPEND_SYSTEM.md /home/lpb/.pi/agent/ 2>/dev/null || true
-        [[ -d /home/lpb/.local/pi-config/skills ]] && cp -r /home/lpb/.local/pi-config/skills/* /home/lpb/.pi/agent/skills/ 2>/dev/null || true
-        [[ -d /home/lpb/.local/pi-config/agents ]] && mkdir -p /home/lpb/.pi/agent/agents && (rsync -a --delete /home/lpb/.local/pi-config/agents/ /home/lpb/.pi/agent/agents/ 2>/dev/null || cp -a /home/lpb/.local/pi-config/agents/. /home/lpb/.pi/agent/agents/ 2>/dev/null) || true
-        info "Config synced."
+    # ── Config repo: clone/fetch into ~/.pi/ directly ──────────────────────
+    # The config repo IS the runtime directory (~/.pi/). No copy step needed.
+    # start.sh ensures the repo is cloned on first run and fetched on every boot.
+    AGENT_DIR="${HOME_DIR}/.pi"
+    CONFIG_REMOTE="${LPB_CONFIG_REMOTE:-https://github.com/localpibox/config.git}"
+    CONFIG_REF="${LPB_CONFIG_REF:-main}"
+
+    if [[ ! -d "${AGENT_DIR}/.git" ]]; then
+        info "Cloning config repo from ${CONFIG_REMOTE} (first run)..."
+        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
+    else
+        info "Fetching config repo updates..."
+        git -C "${AGENT_DIR}" fetch origin "${CONFIG_REF}" 2>/dev/null || true
     fi
+
+    # ── Tell Pi to read config from ~/.pi/ (config repo root) ────────────
+    # Pi defaults to ~/.pi/agent/, but our config repo IS ~/.pi/.
+    # This env var is picked up by Pi at startup.
+    export PI_CODING_AGENT_DIR="${AGENT_DIR}"
 
     touch "${HOME_DIR}/.pi/.initialized"
 

@@ -6,11 +6,10 @@ container).
 
 ## Scope & operating model
 
-- The utility's **only domain is the runtime config copy** `~/.pi/agent/`
-  (`settings.json`, `mcp.json`, `pi-defaults.json`, `subagents.json`,
-  `lpb-memory-config.json`, `skills/`, `agents/`).
-- `localpibox/config` is a **preset** — a bootstrap seed copied to
-  `~/.pi/agent/` at first run. The utility **never commits back to it**. Drift
+- The utility **manages the config repo** (git-cloned to `~/.pi/` by start.sh).
+  Key files: `mcp.json`, `settings.json`, `AGENTS.md`, `lpb-memory-config.json`, `agents/`, `skills/`.
+  
+- `localpibox/config` is **git-cloned at startup** to `~/.pi/` — Pi reads directly from the repo root. The utility **never commits back to it**. Drift
   from the preset is expected (runtime is the authoritative, user-specific
   copy).
 - The utility lives **inside the container** (baked at
