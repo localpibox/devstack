@@ -152,7 +152,7 @@ COPY lpb.conf.env /opt/devstack/lpb.conf.env
 COPY --chmod=755 support/entrypoint-cli.sh /opt/devstack/entrypoint-cli.sh
 
 # Copy lpb-config to PATH (user-owned dir — no chmod issues)
-mkdir -p /home/lpb/.local/bin
+RUN mkdir -p /home/lpb/.local/bin
 COPY --chmod=755 support/lpb-config /home/lpb/.local/bin/lpb-config
 
 RUN mkdir -p /home/lpb/.agent-browser/sessions && chown -R 1000:1000 /home/lpb/.agent-browser
