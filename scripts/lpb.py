@@ -63,12 +63,12 @@ TOKEN_FILE = CONFIG_DIR / "token"
 # ─── Load stack configuration ────────────────────────────────────────────
 # lpb.stack.env defines build/image identity (fork URL, images, container)
 # Loaded as fallback defaults; shell env / .env override takes priority.
-def _load_stack_env():
+def _load_stack_env() -> dict[str, str]:
     """Load lpb.stack.env from devstack scripts directory."""
-    stack_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lpb.stack.env")
-    if not os.path.isfile(stack_env):
+    stack_env = Path(__file__).parent / "lpb.stack.env"
+    if not stack_env.is_file():
         return {}
-    env = {}
+    env: dict[str, str] = {}
     try:
         with open(stack_env) as f:
             for line in f:
@@ -91,12 +91,12 @@ WEB_IMAGE = _stack_cfg.get("LPB_IMAGE_WEB", "ghcr.io/localpibox/devstack:web")
 # ─── Load runtime configuration ──────────────────────────────────────────
 # lpb.conf.env defines runtime defaults (editor, browser, LLM, persistence)
 # Loaded after stack env — workspace .env overrides both.
-def _load_conf_env():
+def _load_conf_env() -> dict[str, str]:
     """Load lpb.conf.env from devstack scripts directory."""
-    conf_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lpb.conf.env")
-    if not os.path.isfile(conf_env):
+    conf_env = Path(__file__).parent / "lpb.conf.env"
+    if not conf_env.is_file():
         return {}
-    env = {}
+    env: dict[str, str] = {}
     try:
         with open(conf_env) as f:
             for line in f:
@@ -433,9 +433,9 @@ _ENV_MAP = {
 }
 
 
-def load_config_file():
+def load_config_file() -> None:
     """Load persistent user config (CONFIG_FILE) into the environment, if present."""
-    if not os.path.isfile(CONFIG_FILE):
+    if not CONFIG_FILE.is_file():
         return
     try:
         with open(CONFIG_FILE) as f:
@@ -459,9 +459,9 @@ def _apply_env(cli_overrides=None):
             setattr(cfg, attr, int(val) if attr == "port" else val)
 
 
-def load_project_env(project_dir):
-    env_file = os.path.join(project_dir, ".env")
-    if not os.path.isfile(env_file):
+def load_project_env(project_dir: str) -> None:
+    env_file = Path(project_dir) / ".env"
+    if not env_file.is_file():
         return
     try:
         with open(env_file) as f:
@@ -478,9 +478,9 @@ def load_project_env(project_dir):
         pass
 
 
-def load_project_override(name):
-    p = os.path.join(PROJECTS_DIR, name)
-    if not os.path.isfile(p):
+def load_project_override(name: str) -> None:
+    p = PROJECTS_DIR / name
+    if not p.is_file():
         return
     try:
         with open(p) as f:
@@ -587,7 +587,7 @@ def parse_cli(args):
             cfg.ssh_mode = True; cfg.shell_mode = True; i += 1
             if i < len(args) and not args[i].startswith("-"):
                 val = args[i]
-                if os.path.isfile(val):
+                if Path(val).is_file():
                     with open(val, encoding="utf-8") as f:
                         cfg.ssh_pubkey = f.read().strip()
                 else:
