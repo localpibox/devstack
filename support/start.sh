@@ -222,11 +222,31 @@ CONFIG_REF="${LPB_CONFIG_REF:-main}"
 export PI_CODING_AGENT_DIR="${AGENT_DIR}"
 
 if [[ ! -d "${AGENT_DIR}/.git" ]]; then
-    info "Cloning config repo from ${CONFIG_REMOTE}..."
-    if git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"; then
-        info "Config repo cloned."
+    if [[ -d "${AGENT_DIR}" && -n "$(ls -A "${AGENT_DIR}" 2>/dev/null)" ]]; then
+        # ~/.pi already exists and is non-empty but not a git repo — e.g. stale
+        # pre-refactor state, or a fresh container booting over a persisted
+        # ~/.pi volume. `git clone` refuses a non-empty target, so initialize
+        # the repo in place instead. Existing files are left untouched
+        # (gitignored by the config repo) so nothing is lost.
+        info "Config area not empty — initializing config repo in place..."
+        if git -C "${AGENT_DIR}" init -q \
+            && git -C "${AGENT_DIR}" remote add origin "${CONFIG_REMOTE}" 2>/dev/null \
+            && git -C "${AGENT_DIR}" fetch --depth=1 origin "${CONFIG_REF}"; then
+            # Reset to the fetched ref: tracked files land at the repo root,
+            # untracked runtime state stays as-is. No force (won't clobber a
+            # conflicting local i.e. settings file).
+            git -C "${AGENT_DIR}" reset -q --hard "origin/${CONFIG_REF}" 2>/dev/null || true
+            info "Config repo initialized."
+        else
+            warn "Config repo initialization failed — Pi will use defaults."
+        fi
     else
-        warn "Config clone failed — Pi will use defaults."
+        info "Cloning config repo from ${CONFIG_REMOTE}..."
+        if git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"; then
+            info "Config repo cloned."
+        else
+            warn "Config clone failed — Pi will use defaults."
+        fi
     fi
 else
     # Non-destructive fetch only — local customizations are never wiped.
@@ -248,7 +268,8 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" "${HOME_DIR}/.config" 2>/dev/null || true
     chmod -R u+rwX "${HOME_DIR}/.pi" "${HOME_DIR}/.npm" 2>/dev/null || true
 
-    mkdir -p "${HOME_DIR}/.pi/agent/git" \
+    mkdir -p "${HOME_DIR}/.pi/git" \
+             "${HOME_DIR}/.pi/npm" \
              "${HOME_DIR}/.venvs"
 
     npm config set prefix '/home/lpb/.npm-global' 2>/dev/null || true
@@ -262,7 +283,7 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     npm config set allow-scripts 'better-sqlite3 agent-browser esbuild protobufjs @google/genai' 2>/dev/null || true
 
     # Pre-create .npmrc so npm reads allow-scripts from parent dir
-    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.pi/agent/git/.npmrc" 2>/dev/null || true
+    printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.pi/git/.npmrc" 2>/dev/null || true
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.npmrc" 2>/dev/null || true
 
     # Fix pi-coding-agent package.json to include allowScripts
@@ -373,7 +394,7 @@ persist_devstack_env
 
 debug "Checking native modules..."
 NEED_REBUILD=false
-EXT_BASE="${HOME_DIR}/.pi/agent/git"
+EXT_BASE="${HOME_DIR}/.pi/git"
 
 # Look for any better-sqlite3 that's missing its bindings
 while IFS= read -r pkg_json; do
@@ -421,7 +442,7 @@ if [[ "$NEED_REBUILD" = "true" ]]; then
                 [[ -f "$path" ]] && binding_found=true && break
             done
             if [[ "$binding_found" = "false" ]]; then
-                local_name=$(echo "$ext_dir" | sed "s|.*/agent/git/||")
+                local_name=$(echo "$ext_dir" | sed "s|.*/\.pi/git/||")
                 info "  Rebuilding: ${local_name}..."
                 (cd "$ext_dir" && PATH="/home/lpb/.npm-global/bin:${PATH}" npm rebuild better-sqlite3 --loglevel=error 2>&1 | tail -3) || \
                     warn "  npm rebuild failed for ${local_name}, trying node-gyp..."

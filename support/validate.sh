@@ -60,7 +60,7 @@ echo ""
 
 # ── 3. Native modules (better-sqlite3) ──────────────────────────────────────
 echo -e "${CYAN}── Native modules ────────────────────────────────────────${NC}"
-EXT_BASE="/home/lpb/.pi/agent/git"
+EXT_BASE="/home/lpb/.pi/git"
 for ext_dir in "${EXT_BASE}"/*/*/node_modules/better-sqlite3; do
     [ -d "$ext_dir" ] || continue
     ext_name=$(basename "$(dirname "$ext_dir")")

@@ -21,6 +21,24 @@ info()  { echo "[lpb-config] $*"; }
 warn()  { echo "[lpb-config] $*" >&2; }
 err()   { echo "[lpb-config] ERROR: $*" >&2; exit 1; }
 
+# Clone the config repo, or initialize it in place when the target exists
+# and is non-empty (stale runtime state from previous boots). Mirrors the
+# logic in start.sh — `git clone` refuses a non-empty target directory.
+clone_or_init() {
+    if [[ -d "${AGENT_DIR}" && -n "$(ls -A "${AGENT_DIR}" 2>/dev/null)" ]]; then
+        warn "Config area not empty — initializing config repo in place..."
+        git -C "${AGENT_DIR}" init -q
+        git -C "${AGENT_DIR}" remote add origin "${CONFIG_REMOTE}" 2>/dev/null || true
+        if git -C "${AGENT_DIR}" fetch --depth=1 origin "${CONFIG_REF}"; then
+            git -C "${AGENT_DIR}" reset -q --hard "origin/${CONFIG_REF}" 2>/dev/null || true
+        else
+            err "Failed to fetch config repo"
+        fi
+    else
+        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
+    fi
+}
+
 # ─── status ─────────────────────────────────────────────────────────────────
 cmd_status() {
     if [[ ! -d "${AGENT_DIR}/.git" ]]; then
@@ -69,8 +87,8 @@ cmd_status() {
 cmd_update() {
     if [[ ! -d "${AGENT_DIR}/.git" ]]; then
         info "Cloning config repo from ${CONFIG_REMOTE}..."
-        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
-        info "Cloned. Run 'lpb-config status' to verify."
+        clone_or_init
+        info "Done. Run 'lpb-config status' to verify."
         exit 0
     fi
 
@@ -118,8 +136,8 @@ cmd_update() {
 cmd_reset() {
     if [[ ! -d "${AGENT_DIR}/.git" ]]; then
         info "Cloning config repo from ${CONFIG_REMOTE}..."
-        git clone --depth=1 --branch "${CONFIG_REF}" "${CONFIG_REMOTE}" "${AGENT_DIR}"
-        info "Cloned."
+        clone_or_init
+        info "Done."
         exit 0
     fi
 

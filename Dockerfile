@@ -14,9 +14,9 @@
 #   LPB_PI_FORK, LPB_PI_REF, LPB_NODE_VERSION, LPB_VSCODIUM_VERSION
 #
 # NOTE: Runtime extensions (lemonade-pi-plugin, lpb-memory) are NOT
-#       built into the image. They are cloned at container startup by
-#       `pi update --extensions`, which reads their branches from
-#       .pi/agent/settings.json → "packages" array.
+#       built into the image. They are installed at container startup by
+#       `pi update --extensions`, which reads their branches from the
+#       config repo served at ~/.pi/settings.json → "packages" array.
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Source fork configuration — ARG defaults come from lpb.stack.env
