@@ -23,7 +23,7 @@ name: Build & Publish Devstack
 
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
     paths:
       - 'Dockerfile'
       - 'support/**'
@@ -139,10 +139,12 @@ jobs:
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:cli
+            ${{ env.IMAGE_NAME }}:dev-cli
             ${{ env.IMAGE_NAME }}:main-cli
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
             ${{ env.IMAGE_NAME }}:${{ steps.config.outputs.stack_version }}-cli
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && format('{0}:dev', env.IMAGE_NAME) || '' }}
             ${{ github.event.inputs.publish_latest && format('{0}:latest', env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
           provenance: false
@@ -214,9 +216,11 @@ jobs:
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:web
+            ${{ env.IMAGE_NAME }}:dev-web
             ${{ env.IMAGE_NAME }}:main-web
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
             ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && format('{0}:dev-web', env.IMAGE_NAME) || '' }}
             ${{ github.event.inputs.publish_latest && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'schedule' && format('{0}:weekly-web', env.IMAGE_NAME) || '' }}
           provenance: false

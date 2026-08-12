@@ -5,13 +5,22 @@ Usage:
     lpb [/path/to/project]              Start Pi CLI session at project (foreground)
     lpb /path -- <pi-args...>           Pass args through to pi (e.g. -p, --session)
     lpb --shell [/path/to/project]      Start interactive bash shell in container
-    lpb --ssh [pubkey|path] [/path]     Start sshd server (background) for remote login    lpb --web [/path/to/project]        Start VSCodium at project (background)
+    lpb --ssh [pubkey|path] [/path]     Start sshd server (background) for remote login
+    lpb --web [/path/to/project]        Start VSCodium at project (background)
     lpb --stop                          Stop the container
     lpb --remove                        Stop + remove container + state dirs
     lpb --logs                          Stream container logs
     lpb --update                        Pull latest image(s)
     lpb --config                        Show config file location
     lpb --help                          Show usage
+    lpb --tag dev|main|latest           Select image pipeline (dev/main/latest/<custom>)
+
+Image tag selection:
+    lpb --tag dev                      Use :dev / :dev-web (from dev branch builds)
+    lpb --tag main                     Use :main-cli / :main-web (from main branch builds)
+    lpb --tag latest                   Use :latest / :latest-web
+    lpb --tag mybranch                 Use :mybranch-cli / :mybranch-web
+    LPB_IMAGE_TAG=dev                  Or set env var for persistent override
 
 Pi passthrough (after "--"):
     lpb /myproject -- -p "summarize this repo"
@@ -126,6 +135,32 @@ CLI_IMAGE = _stack_cfg.get("LPB_IMAGE_CLI", "ghcr.io/localpibox/devstack:cli")
 WEB_IMAGE = _stack_cfg.get("LPB_IMAGE_WEB", "ghcr.io/localpibox/devstack:web")
 
 
+# ─── Image tag selection (dev vs main) ───────────────────────────────────
+# Users can override which pipeline's images to use:
+#   LPB_IMAGE_TAG=dev    → uses :dev / :dev-web (from dev branch builds)
+#   LPB_IMAGE_TAG=main   → uses :main-cli / :main-web (from main branch builds)
+#   LPB_IMAGE_TAG=<tag>  → uses :<tag>-cli / :<tag>-web (custom)
+#   LPB_IMAGE_TAG=latest → uses :latest / :latest-web
+# Shell env takes priority over lpb.stack.env defaults.
+def _resolve_image_tag() -> str:
+    """Return the image tag suffix (default: cli for CLI mode, web for web mode)."""
+    return os.environ.get("LPB_IMAGE_TAG", "")
+
+
+def resolve_cli_image(tag: str) -> str:
+    """Resolve the final CLI image name from stack config + tag override."""
+    if tag:
+        return f"ghcr.io/localpibox/devstack:{tag}-cli"
+    return CLI_IMAGE
+
+
+def resolve_web_image(tag: str) -> str:
+    """Resolve the final WEB image name from stack config + tag override."""
+    if tag:
+        return f"ghcr.io/localpibox/devstack:{tag}-web"
+    return WEB_IMAGE
+
+
 # ─── Load runtime configuration ──────────────────────────────────────────
 # lpb.conf.env defines runtime defaults (editor, browser, LLM, persistence)
 # Loaded after stack env — workspace .env overrides both.
@@ -139,6 +174,7 @@ _conf_cfg = _load_conf_env()
 
 class Config:
     image_name = CLI_IMAGE
+    image_tag = ""  # dev, main, latest, or custom tag suffix
     container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "localpibox")
     container_cmd = ""
     port = int(os.environ.get("ED_PORT", os.environ.get("LPB_ED_PORT", _conf_cfg.get("LPB_ED_PORT", "8000"))))
@@ -593,6 +629,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--shell", action="store_true")
     parser.add_argument("--ssh", nargs="?", const="", metavar="PUBKEY")
     parser.add_argument("--web", action="store_true")
+    parser.add_argument("--tag", default=None,
+                        help="Image tag to use (dev|main|latest|<custom>)")
     parser.add_argument("--stop", "-s", action="store_true")
     parser.add_argument("--remove", "-r", action="store_true")
     parser.add_argument("--logs", "-l", action="store_true")
@@ -639,6 +677,8 @@ def parse_cli(args: list[str]) -> None:
         cfg.shell_mode = True
     if known.web:
         cfg.web_mode = True
+    if known.tag is not None:
+        cfg.image_tag = known.tag
     if known.stop:
         cfg.command = "stop"
     if known.remove:
@@ -747,13 +787,23 @@ def cmd_update():
     # Self-update
     self_update()
 
+    # Resolve current tag
+    tag = cfg.image_tag or _resolve_image_tag()
+    cli_img = resolve_cli_image(tag)
+    web_img = resolve_web_image(tag)
+
     # Determine which image(s) to update based on what's locally available
     last_img = load_last_image()
     images_to_update = []
-    if c.images_exists(CLI_IMAGE):
-        images_to_update.append(CLI_IMAGE)
-    if c.images_exists(WEB_IMAGE):
-        images_to_update.append(WEB_IMAGE)
+    if c.images_exists(cli_img):
+        images_to_update.append(cli_img)
+    if c.images_exists(web_img):
+        images_to_update.append(web_img)
+    if not images_to_update:
+        # Fall back to default images (no tag)
+        for img in [CLI_IMAGE, WEB_IMAGE]:
+            if c.images_exists(img):
+                images_to_update.append(img)
     if not images_to_update:
         # Fall back to the last used image
         if c.images_exists(last_img):
@@ -876,14 +926,15 @@ def cmd_run():
         mount_path = f"/home/lpb/workspace/{cfg.project_name}"
 
     # ── 4. Determine image and mode ──────────────────────────────────────
+    tag = cfg.image_tag or _resolve_image_tag()
     if cfg.web_mode:
-        cfg.image_name = WEB_IMAGE
+        cfg.image_name = resolve_web_image(tag)
         mode_label = "web (VSCodium)"
     elif cfg.shell_mode:
-        cfg.image_name = CLI_IMAGE
+        cfg.image_name = resolve_cli_image(tag)
         mode_label = "cli (ssh server)" if cfg.ssh_pubkey else "cli (shell)"
     else:
-        cfg.image_name = CLI_IMAGE
+        cfg.image_name = resolve_cli_image(tag)
         mode_label = "cli (Pi CLI)"
 
     # ── 5. Show summary ─────────────────────────────────────────────────
