@@ -1,0 +1,36 @@
+#!/bin/bash
+# Auto-increment patch version on every commit (unless [skip-version])
+# Only updates VERSION files + lpb.stack.env LPB_PI_REF
+# Does NOT touch package.json versions (kept at original fork versions)
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+if echo "$COMMIT_MSG" | grep -q '\[skip-version\]'; then exit 0; fi
+
+DEVSTACK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+[ ! -f "$DEVSTACK_DIR/VERSION" ] && exit 0
+
+VERSION=$(cat "$DEVSTACK_DIR/VERSION" 2>/dev/null || echo "0.0.0-lpb")
+BASE=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')
+PATCH=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
+NEW_PATCH=$((PATCH + 1))
+NEW_VERSION="0.0.${NEW_PATCH}${BASE}"
+
+echo "$NEW_VERSION" > "$DEVSTACK_DIR/VERSION"
+
+# Update VERSION in all stack repos
+declare -a REPOS=(
+    "$DEVSTACK_DIR/workspace/pi"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"
+    "/home/lpb/workspace/localpibox/config"
+    "/home/lpb/workspace/localpibox/lpb-memory"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents"
+)
+for repo in "${REPOS[@]}"; do
+    [ -f "$repo/VERSION" ] && echo "$NEW_VERSION" > "$repo/VERSION"
+done
+
+# Update lpb.stack.env
+[ -f "$DEVSTACK_DIR/lpb.stack.env" ] && sed -i "s/^LPB_PI_REF=.*/LPB_PI_REF=$NEW_VERSION/" "$DEVSTACK_DIR/lpb.stack.env"
+
+exit 0
