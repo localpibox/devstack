@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BrowserValidationReport",
+  "description": "Structured validation report produced by the vision model for a web application",
+  "type": "object",
+  "required": ["url", "status", "metrics", "checks"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "The URL that was validated"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "WARN", "FAIL"],
+      "description": "Overall validation status"
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "lcp_ms",
+        "cls",
+        "ttfb_ms",
+        "a11y_violations",
+        "a11y_passes"
+      ],
+      "properties": {
+        "lcp_ms": {
+          "type": "number",
+          "description": "Largest Contentful Paint in milliseconds"
+        },
+        "cls": {
+          "type": "number",
+          "description": "Cumulative Layout Shift score"
+        },
+        "ttfb_ms": {
+          "type": "number",
+          "description": "Time to First Byte in milliseconds"
+        },
+        "inp_ms": {
+          "type": "number",
+          "description": "Interaction to Next Paint in milliseconds (optional)"
+        },
+        "a11y_violations": {
+          "type": "number",
+          "description": "Number of accessibility violations found"
+        },
+        "a11y_passes": {
+          "type": "number",
+          "description": "Number of accessibility checks passed"
+        }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check", "description", "pass"],
+        "properties": {
+          "check": {
+            "type": "string",
+            "description": "Name of the check (e.g., 'structure', 'visual', 'performance', 'accessibility')"
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what was checked"
+          },
+          "pass": {
+            "type": "boolean",
+            "description": "Whether the check passed"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Supporting evidence or details for the check result"
+          }
+        }
+      }
+    },
+    "screenshot_path": {
+      "type": "string",
+      "description": "Path to the annotated screenshot used for validation"
+    }
+  },
+  "additionalProperties": false
+}

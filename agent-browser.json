@@ -1,0 +1,10 @@
+{
+  "allowedDomains": [
+    "localhost",
+    "127.0.0.1",
+    "*.example.com",
+    "*.github.com",
+    "*.wikipedia.org",
+    "developer.chrome.com"
+  ]
+}

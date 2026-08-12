@@ -1,0 +1,18 @@
+#!/bin/bash
+# Source browser automation environment variables and run agent-browser
+# Usage: source /usr/local/bin/browser
+#        agent-browser open https://example.com
+#
+# Environment: LPB_DEVCONTAINER_WORKSPACE_DIR (defaults to /home/dev/workspace)
+# Loads LPB_* vars from .env in workspace directory.
+
+WORKSPACE="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/dev/workspace}"
+set -a
+# .env lives at workspace root (merged from .env + .env.browser)
+source "${WORKSPACE}/myproject/.env" 2>/dev/null || true
+set +a
+
+# If the first argument is not 'source', execute the rest as a command
+if [ "${1:-}" != "source" ]; then
+    exec agent-browser "$@"
+fi

@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SubagentBrowserResult",
+  "description": "Structured result from a subagent browser test",
+  "type": "object",
+  "required": ["status", "checks", "url"],
+  "properties": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "The URL that was tested"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "WARN", "FAIL"],
+      "description": "Overall test result"
+    },
+    "testName": {
+      "type": "string",
+      "description": "Name of the test that was run"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check", "pass"],
+        "properties": {
+          "check": {
+            "type": "string",
+            "description": "Name of the check"
+          },
+          "description": {
+            "type": "string",
+            "description": "What was checked"
+          },
+          "pass": {
+            "type": "boolean",
+            "description": "Whether the check passed"
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Supporting evidence or details"
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Performance or accessibility metrics collected during the test",
+      "properties": {
+        "lcp_ms": { "type": "number" },
+        "cls": { "type": "number" },
+        "ttfb_ms": { "type": "number" },
+        "inp_ms": { "type": "number" },
+        "a11y_violations": { "type": "number" },
+        "a11y_passes": { "type": "number" }
+      }
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if the test failed"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "The browser session ID used for this test"
+    }
+  },
+  "additionalProperties": false
+}

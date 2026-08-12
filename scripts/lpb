@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# lpb — LocalPibox Devstack launcher (wrapper)
+# Delegates to the Python implementation for robustness.
+# Pi passthrough: lpb /path -- -p "message" forwards -p "message" to pi inside the container.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec python3 "${DIR}/lpb.py" "$@"

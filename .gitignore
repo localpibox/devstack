@@ -1,0 +1,7 @@
+# ── Devstack workspace/ ─────────────────────────────────────────────────
+# Stack repo clones/symlinks — managed by ./support/version.sh
+# NOT tracked in git. Recreated by:
+#   ./support/version.sh workspace sync
+/workspace
+# ── Documentation archive (moved, not regenerated yet) ─────────────────────
+doc/archive/
