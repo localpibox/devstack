@@ -7,7 +7,10 @@ COMMIT_MSG_FILE="$1"
 COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
 if echo "$COMMIT_MSG" | grep -q '\[skip-version\]'; then exit 0; fi
 
-DEVSTACK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Find devstack dir by searching upward from the git working tree
+DEVSTACK_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"
+[ -z "$DEVSTACK_DIR" ] && DEVSTACK_DIR="$PWD"
+
 [ ! -f "$DEVSTACK_DIR/VERSION" ] && exit 0
 
 VERSION=$(cat "$DEVSTACK_DIR/VERSION" 2>/dev/null || echo "0.0.0-lpb")
