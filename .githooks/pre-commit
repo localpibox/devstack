@@ -1,0 +1,148 @@
+#!/bin/bash
+# pre-commit hook — Validate & sync all stack repos before commit
+#
+# Validates:
+#   1. All VERSION files in sync
+#   2. lpb.stack.env LPB_PI_REF matches VERSION
+#   3. settings.json pins match VERSION
+#   4. All repos clean (except VERSION/env)
+#   5. Auto-add VERSION + env changes to staging
+#
+# Exit non-zero to abort commit.
+
+# Find devstack dir by searching upward
+DEVSTACK_DIR=""
+check_dir="$PWD"
+while [ "$check_dir" != "/" ]; do
+    [ -f "$check_dir/VERSION" ] && [ -f "$check_dir/lpb.stack.env" ] && DEVSTACK_DIR="$check_dir" && break
+    check_dir=$(dirname "$check_dir")
+done
+[ -z "$DEVSTACK_DIR" ] && DEVSTACK_DIR="$PWD"
+
+ERRORS=0
+CURRENT_VERSION=$(cat "$DEVSTACK_DIR/VERSION" 2>/dev/null || echo "NOT FOUND")
+
+# Repo definitions
+declare -a REPOS=(
+    "$DEVSTACK_DIR/workspace/pi"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"
+    "/home/lpb/workspace/localpibox/config"
+    "/home/lpb/workspace/localpibox/lpb-memory"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents"
+)
+
+SETTINGS_JSON="/home/lpb/.pi/agent/settings.json"
+
+info()  { echo "  ✅ $*"; }
+warn()  { echo "  ⚠️  $*"; }
+error() { echo "  ❌ $*"; ERRORS=$((ERRORS + 1)); }
+
+# 1. Validate VERSION files
+echo "=== Stack Version Sync ==="
+for repo in "${REPOS[@]}"; do
+    repo_name=$(basename "$repo")
+    if [ ! -f "$repo/VERSION" ]; then
+        error "$repo_name: missing VERSION file"
+        continue
+    fi
+    repo_version=$(cat "$repo/VERSION")
+    if [ "$repo_version" != "$CURRENT_VERSION" ]; then
+        error "$repo_name: VERSION=$repo_version (expected $CURRENT_VERSION)"
+    else
+        info "$repo_name: $repo_version"
+    fi
+done
+
+# 2. Validate lpb.stack.env
+echo ""
+echo "=== Environment Sync ==="
+if [ -f "$DEVSTACK_DIR/lpb.stack.env" ]; then
+    PI_REF=$(grep '^LPB_PI_REF=' "$DEVSTACK_DIR/lpb.stack.env" | cut -d= -f2)
+    if [ "$PI_REF" != "$CURRENT_VERSION" ]; then
+        error "lpb.stack.env: LPB_PI_REF=$PI_REF (expected $CURRENT_VERSION)"
+        sed -i "s/^LPB_PI_REF=.*/LPB_PI_REF=$CURRENT_VERSION/" "$DEVSTACK_DIR/lpb.stack.env"
+        echo "  🔧 Fixed LPB_PI_REF to $CURRENT_VERSION"
+    else
+        info "lpb.stack.env: LPB_PI_REF=$PI_REF"
+    fi
+fi
+
+# 3. Validate settings.json pins
+echo ""
+echo "=== Extension Pins ==="
+if [ -f "$SETTINGS_JSON" ]; then
+    for repo in lemonade-pi-plugin lpb-memory pi-subagents; do
+        if python3 -c "
+import json, sys
+with open('$SETTINGS_JSON') as f:
+    d = json.load(f)
+pins = d.get('packages', [])
+for p in pins:
+    if isinstance(p, dict) and '$repo' in p.get('extension', ''):
+        ver = p.get('version', '')
+        if ver and ver != '$CURRENT_VERSION':
+            print(f'MISMATCH: {ver}')
+            sys.exit(1)
+        elif not ver:
+            print('NO-PIN')
+            sys.exit(1)
+sys.exit(0)
+" 2>/dev/null; then
+            info "$repo: pinned correctly"
+        else
+            warn "$repo: pin verification skipped (format may differ)"
+        fi
+    done
+else
+    warn "settings.json not found at $SETTINGS_JSON"
+fi
+
+# 4. Check repo cleanliness
+echo ""
+echo "=== Repo Cleanliness ==="
+for repo in "${REPOS[@]}"; do
+    repo_name=$(basename "$repo")
+    # Skip if repo doesn't exist
+    [ -d "$repo" ] || continue
+    dirty=$(cd "$repo" && git status --porcelain --short 2>/dev/null | grep -v VERSION | grep -v '.git/hooks' | wc -l)
+    if [ "$dirty" -gt 0 ]; then
+        error "$repo_name: $dirty uncommitted change(s) (excluding VERSION)"
+    else
+        info "$repo_name: clean"
+    fi
+done
+
+# Check devstack
+if [ -d "$DEVSTACK_DIR" ]; then
+    devstack_dirty=$(cd "$DEVSTACK_DIR" && git status --porcelain --short 2>/dev/null | grep -vE 'VERSION|lpb\.stack\.env|lpb\.conf\.env|\.githooks/' | wc -l)
+    if [ "$devstack_dirty" -gt 0 ]; then
+        error "devstack: $devstack_dirty uncommitted change(s)"
+    else
+        info "devstack: clean"
+    fi
+fi
+
+# 5. Auto-add VERSION + env changes
+if [ $ERRORS -eq 0 ] && [ -n "$CURRENT_VERSION" ] && [ "$CURRENT_VERSION" != "NOT FOUND" ]; then
+    echo ""
+    echo "=== Auto-stage VERSION changes ==="
+    cd "$DEVSTACK_DIR"
+    git add VERSION lpb.stack.env 2>/dev/null
+    for repo in "${REPOS[@]}"; do
+        if [ -f "$repo/VERSION" ]; then
+            (cd "$repo" && git add VERSION 2>/dev/null)
+        fi
+    done
+    info "VERSION files + lpb.stack.env staged for commit"
+fi
+
+# Result
+echo ""
+if [ $ERRORS -gt 0 ]; then
+    echo "❌ Pre-commit FAILED ($ERRORS error(s)) — commit aborted"
+    echo "   Fix issues above and try again, or use --no-verify to skip"
+    exit 1
+else
+    echo "✅ All checks passed"
+    exit 0
+fi

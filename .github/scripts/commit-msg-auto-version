@@ -1,0 +1,82 @@
+#!/bin/bash
+# commit-msg hook — Auto-increment patch version on every commit
+#
+# Reads VERSION from devstack, bumps patch, updates all 6 repos.
+# Skip versioning with: --no-verify or [skip-version] in commit message.
+#
+# Usage:
+#   Hook installed automatically via `git config core.hooksPath hooks`
+#   Place scripts in .git/hooks/ or use git config core.hooksPath
+
+COMMIT_MSG_FILE="$1"
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Skip if commit message has [skip-version]
+if echo "$COMMIT_MSG" | grep -q '\[skip-version\]'; then
+    exit 0
+fi
+
+# Only run in devstack repo
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+DEVSTACK_DIR="$(dirname "$SCRIPT_DIR")"
+if [ ! -f "$DEVSTACK_DIR/VERSION" ]; then
+    exit 0
+fi
+
+# Parse version
+VERSION=$(cat "$DEVSTACK_DIR/VERSION" 2>/dev/null || echo "0.0.0-lpb")
+BASE=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.[0-9]*//')
+PATCH=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
+NEW_PATCH=$((PATCH + 1))
+NEW_VERSION="0.0.${NEW_PATCH}${BASE}"
+
+# Only bump if actually a patch version (0.0.x-lpb pattern)
+if ! echo "$NEW_VERSION" | grep -qE '^0\.0\.[0-9]+-lpb$'; then
+    exit 0
+fi
+
+# Skip if version hasn't changed
+if [ "$NEW_VERSION" = "$VERSION" ]; then
+    exit 0
+fi
+
+# Update VERSION in devstack
+echo "$NEW_VERSION" > "$DEVSTACK_DIR/VERSION"
+
+# Update VERSION in all stack repos
+declare -a REPOS=(
+    "$DEVSTACK_DIR/workspace/pi"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"
+    "/home/lpb/workspace/localpibox/config"
+    "/home/lpb/workspace/localpibox/lpb-memory"
+    "/home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents"
+)
+
+for repo in "${REPOS[@]}"; do
+    if [ -f "$repo/VERSION" ]; then
+        echo "$NEW_VERSION" > "$repo/VERSION"
+    fi
+done
+
+# Update lpb.stack.env LPB_PI_REF
+if [ -f "$DEVSTACK_DIR/lpb.stack.env" ]; then
+    sed -i "s/^LPB_PI_REF=.*/LPB_PI_REF=$NEW_VERSION/" "$DEVSTACK_DIR/lpb.stack.env"
+fi
+
+# Update package.json in repos that have it
+for repo in "${REPOS[@]}"; do
+    if [ -f "$repo/package.json" ]; then
+        python3 -c "
+import json, sys
+path = '$repo/package.json'
+with open(path) as f:
+    d = json.load(f)
+d['version'] = '$NEW_VERSION'
+with open(path, 'w') as f:
+    json.dump(d, f, indent=2)
+    f.write('\n')
+" 2>/dev/null || true
+    fi
+done
+
+exit 0
