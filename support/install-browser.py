@@ -122,6 +122,15 @@ def install_agent_browser(cons: Console) -> int:
         cons.warn("Some system dependencies may be missing; Chrome may fail at runtime")
 
     cons.info("agent-browser installed successfully")
+
+    # Container-safe defaults: Chrome needs --no-sandbox in Docker/container
+    config_path = Path.home() / ".agent-browser" / "config.json"
+    if not config_path.is_file():
+        config_path.write_text(
+            json.dumps({"args": "--no-sandbox"}, indent=2)
+        )
+        cons.info(f"Created container-safe config: {config_path}")
+
     return 0
 
 

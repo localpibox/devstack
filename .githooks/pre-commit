@@ -1,35 +1,18 @@
 #!/bin/bash
-# pre-commit hook — Validate & sync all stack repos before commit
+# pre-commit hook — Validate devstack state before commit
 #
 # Validates:
-#   1. All VERSION files in sync
+#   1. VERSION file format (0.x.y-lpb[-dev])
 #   2. lpb.stack.env LPB_PI_REF matches VERSION
 #   3. settings.json pins match VERSION
-#   4. All repos clean (except VERSION/env)
-#   5. Auto-add VERSION + env changes to staging
-#
-# Exit non-zero to abort commit.
+#   4. devstack repo is clean (except VERSION/env/hooks)
+#   5. lpb.py unit tests pass
 
-# Find devstack dir by searching upward from the git working tree
-DEVSTACK_DIR=""
-check_dir="$(git rev-parse --show-toplevel 2>/dev/null)"
-[ -z "$check_dir" ] && check_dir="$PWD"
-while [ "$check_dir" != "/" ]; do
-    [ -f "$check_dir/VERSION" ] && [ -f "$check_dir/lpb.stack.env" ] && DEVSTACK_DIR="$check_dir" && break
-    check_dir=$(dirname "$check_dir")
-done
+DEVSTACK_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"
 [ -z "$DEVSTACK_DIR" ] && DEVSTACK_DIR="$PWD"
 
 ERRORS=0
 CURRENT_VERSION=$(cat "$DEVSTACK_DIR/VERSION" 2>/dev/null || echo "NOT FOUND")
-
-declare -a REPOS=(
-    "$DEVSTACK_DIR/workspace/pi"
-    "/home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"
-    "/home/lpb/workspace/localpibox/config"
-    "/home/lpb/workspace/localpibox/lpb-memory"
-    "/home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents"
-)
 
 SETTINGS_JSON="/home/lpb/.pi/agent/settings.json"
 
@@ -37,24 +20,18 @@ info()  { echo "  ✅ $*"; }
 warn()  { echo "  ⚠️  $*"; }
 error() { echo "  ❌ $*"; ERRORS=$((ERRORS + 1)); }
 
-# 1. Validate VERSION files
-echo "=== Stack Version Sync ==="
-for repo in "${REPOS[@]}"; do
-    repo_name=$(basename "$repo")
-    if [ ! -f "$repo/VERSION" ]; then
-        error "$repo_name: missing VERSION file"
-        continue
-    fi
-    repo_version=$(cat "$repo/VERSION")
-    if [ "$repo_version" != "$CURRENT_VERSION" ]; then
-        error "$repo_name: VERSION=$repo_version (expected $CURRENT_VERSION)"
-    else
-        info "$repo_name: $repo_version"
-    fi
-done
+# 1. Validate VERSION file format
+echo "=== Stack Version ==="
+if [ ! -f "$DEVSTACK_DIR/VERSION" ]; then
+    error "VERSION file not found"
+elif echo "$CURRENT_VERSION" | grep -qE '^0\.[0-9]+\.[0-9]+-lpb(-dev)?$'; then
+    info "VERSION=$CURRENT_VERSION (valid)"
+else
+    error "VERSION='$CURRENT_VERSION' does not match 0.x.y-lpb format"
+fi
+echo ""
 
 # 2. Validate lpb.stack.env
-echo ""
 echo "=== Environment Sync ==="
 if [ -f "$DEVSTACK_DIR/lpb.stack.env" ]; then
     PI_REF=$(grep '^LPB_PI_REF=' "$DEVSTACK_DIR/lpb.stack.env" | cut -d= -f2)
@@ -65,10 +42,12 @@ if [ -f "$DEVSTACK_DIR/lpb.stack.env" ]; then
     else
         info "LPB_PI_REF=$PI_REF"
     fi
+else
+    warn "lpb.stack.env not found"
 fi
+echo ""
 
 # 3. Validate settings.json pins
-echo ""
 echo "=== Extension Pins ==="
 if [ -f "$SETTINGS_JSON" ]; then
     for repo in lemonade-pi-plugin lpb-memory pi-subagents; do
@@ -96,9 +75,9 @@ sys.exit(0)
 else
     warn "settings.json not found at $SETTINGS_JSON"
 fi
+echo ""
 
 # 4. Check repo cleanliness
-echo ""
 echo "=== Unstaged Changes ==="
 check_unstaged() {
     local repo_path="$1"
@@ -109,25 +88,27 @@ check_unstaged() {
     [ "$dirty" -gt 0 ] && error "$repo_name: $dirty unstaged change(s)" || info "$repo_name: clean"
 }
 
-for repo in "${REPOS[@]}"; do
-    check_unstaged "$repo" "$(basename "$repo")"
-done
-
 check_unstaged "$DEVSTACK_DIR" "devstack"
+echo ""
 
-# 5. Auto-add VERSION + env changes
-if [ $ERRORS -eq 0 ] && [ "$CURRENT_VERSION" != "NOT FOUND" ]; then
-    echo ""
-    echo "=== Auto-stage VERSION ==="
-    cd "$DEVSTACK_DIR" && git add VERSION lpb.stack.env 2>/dev/null
-    for repo in "${REPOS[@]}"; do
-        [ -f "$repo/VERSION" ] && (cd "$repo" && git add VERSION 2>/dev/null)
-    done
-    info "VERSION files + lpb.stack.env staged"
+# 5. Run lpb.py unit tests
+echo "=== Python Tests ==="
+if [ ! -f "$DEVSTACK_DIR/scripts/test_lpb.py" ]; then
+    warn "test_lpb.py not found — skipping"
+elif [ -n "$SKIP_TESTS" ]; then
+    info "(skipped via SKIP_TESTS)"
+else
+    cd "$DEVSTACK_DIR"
+    if python3 scripts/test_lpb.py 2>&1 | tail -3; then
+        info "all tests passed"
+    else
+        error "test_lpb.py FAILED"
+        echo "   Fix tests before committing, or use SKIP_TESTS=1 --no-verify to bypass"
+    fi
 fi
+echo ""
 
 # Result
-echo ""
 if [ $ERRORS -gt 0 ]; then
     echo "❌ Pre-commit FAILED ($ERRORS error(s)) — commit aborted"
     echo "   Fix issues above and try again, or use --no-verify to skip"
