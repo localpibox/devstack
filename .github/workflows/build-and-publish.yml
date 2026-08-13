@@ -5,13 +5,17 @@
 # Extensions update at runtime via pi update --extensions
 #
 # Triggers:
+#   - Push to dev (code changes, NOT VERSION bumps)
 #   - Push to main (Dockerfile, support/, lpb.stack.env, lpb.conf.env)
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
 #   - Manual dispatch
 #
-# Images built:
-#   ghcr.io/localpibox/devstack:cli   — Base dev environment + Pi CLI
-#   ghcr.io/localpibox/devstack:web   — Extends cli + VSCodium server
+# Version model (Option C):
+#   - Single source: devstack/VERSION
+#   - CI bumps version after tests pass, sets bumped value as CI output
+#   - All 6 repos tagged together on each CI run (not pushed as a commit)
+#   - Docker images tagged: :{version}-cli, :{version}-web
+#   - Dev branch images: :dev-cli, :dev-web (always latest)
 #
 # Actions: all latest major versions (Node.js 24 native)
 #   actions/checkout@v6 · docker/build-push-action@v7
@@ -27,19 +31,17 @@ on:
     paths:
       - 'Dockerfile'
       - 'support/**'
-      - 'lpb.stack.env'
-      - 'lpb.conf.env'
-      - '.github/workflows/*.yml'
       - 'scripts/**'
+      - '.github/workflows/*.yml'
+      # NOTE: VERSION + lpb.stack.env changes intentionally excluded
+      # to avoid re-triggering on auto-bump commits
   pull_request:
     branches: [main]
     paths:
       - 'Dockerfile'
       - 'support/**'
-      - 'lpb.stack.env'
-      - 'lpb.conf.env'
-      - '.github/workflows/*.yml'
       - 'scripts/**'
+      - '.github/workflows/*.yml'
   schedule:
     - cron: '0 3 * * 1'
   workflow_dispatch:
@@ -54,13 +56,16 @@ on:
         default: false
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
   IMAGE_NAME: ghcr.io/localpibox/devstack
 
 jobs:
+  # ──────────────────────────────────────────────────────
+  # Phase 1: Test
+  # ──────────────────────────────────────────────────────
   test-lpb:
     name: Run lpb.py unit tests
     runs-on: ubuntu-latest
@@ -73,14 +78,108 @@ jobs:
           python3 scripts/test_lpb.py
           python3 scripts/test_localpibox.py
 
+  # ──────────────────────────────────────────────────────
+  # Phase 2: Bump version + create tags
+  # ──────────────────────────────────────────────────────
+  bump-version:
+    name: Bump version & create tags
+    runs-on: ubuntu-latest
+    needs: [test-lpb]
+    if: ${{ github.event_name != 'pull_request' }}
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set version for build jobs
+        id: set-version
+        run: |
+          VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0-lpb")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          set -e
+          # Read current VERSION from repo (set by previous CI bump)
+          VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0-lpb")
+          PATCH=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
+          NEW_PATCH=$((PATCH + 1))
+          
+          # Add -dev suffix for dev branch, no suffix for main
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            SUFFIX=""
+          else
+            SUFFIX="-dev"
+          fi
+          NEW_VERSION="0.0.${NEW_PATCH}-lpb${SUFFIX}"
+          
+          echo "Bumping $VERSION → $NEW_VERSION"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Persist bumped version back to repo (VERSION/lpb.stack.env excluded
+          # from CI paths filter, so this won't trigger a new CI run)
+          echo "$NEW_VERSION" > VERSION
+          sed -i "s/^LPB_PI_REF=.*/LPB_PI_REF=$NEW_VERSION/" lpb.stack.env
+          git config user.name "ci-localpibox"
+          git config user.email "ci@localpibox.dev"
+          git add VERSION lpb.stack.env
+          git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
+          git push origin dev --force-with-lease || echo "Push failed (already up-to-date)"
+
+      - name: Create tags on all repos
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.version }}
+          GH_TOKEN: ${{ secrets.LOCALPIBOX_PAT }}
+        run: |
+          set -e
+          # repo -> default branch mapping
+          declare -A REPO_BRANCHS=(
+            ["localpibox/pi"]="lpb-dev"
+            ["localpibox/pi-subagents"]="lpb-dev"
+            ["localpibox/lemonade-pi-plugin"]="lpb-dev"
+            ["localpibox/config"]="dev"
+            ["localpibox/lpb-memory"]="dev"
+          )
+          for repo in "${!REPO_BRANCHS[@]}"; do
+            branch="${REPO_BRANCHS[$repo]}"
+            echo "Tagging $repo@$VERSION (from $branch)"
+            sha=$(git ls-remote "https://github.com/$repo.git" "refs/heads/$branch" | awk '{print $1}')
+            if [ -n "$sha" ]; then
+              # POST to /git/refs with {ref, sha} body (NOT /git/refs/tags/{tagname})
+              status=$(curl -s -o /dev/null -w '%{http_code}' \
+                -X POST "https://api.github.com/repos/$repo/git/refs" \
+                -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github+json" \
+                -d "{\"ref\": \"refs/tags/$VERSION\", \"sha\": \"$sha\"}")
+              if [ "$status" = "201" ] || [ "$status" = "422" ]; then
+                echo "  ✅ $repo@$VERSION"
+              else
+                echo "  ⚠️  $repo tag creation failed (HTTP $status)"
+              fi
+            else
+              echo "  ⚠️  $repo:$branch not found, skipping tag"
+            fi
+          done
+
+  # ──────────────────────────────────────────────────────
+  # Phase 3: Build & publish images
+  # ──────────────────────────────────────────────────────
   build-cli:
     name: Build & publish cli image
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [test-lpb]
+    needs: [bump-version]
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: true
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -102,7 +201,8 @@ jobs:
           source lpb.stack.env
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
-          echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          # Use bumped version from bump-version step (workspace has old value)
+          echo "PI_REF=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
           echo "CONFIG_FORK=$LPB_CONFIG_FORK" >> "$GITHUB_OUTPUT"
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
@@ -111,11 +211,8 @@ jobs:
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
-          # Read stack version from config repo
-          cfg_repo=$(echo "$LPB_CONFIG_FORK" | sed -E 's#https://github.com/([^/]+)/([^./]+)\.git#\1/\2#')
-          stack_ver=$(curl -sf "https://raw.githubusercontent.com/$cfg_repo/$LPB_CONFIG_REF/VERSION" 2>/dev/null || echo "unknown")
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push cli
         uses: docker/build-push-action@v7
@@ -136,16 +233,14 @@ jobs:
             PI_HEAD_SHA=${{ steps.config.outputs.sha }}
             LPB_VERSION=${{ steps.config.outputs.LPB_VERSION }}
             LPB_MAX_TOKENS_CONTEXT_RATIO=${{ steps.config.outputs.MAX_TOKENS }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.LOCALPIBOX_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
-            ${{ env.IMAGE_NAME }}:cli
+            ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-cli
             ${{ env.IMAGE_NAME }}:dev-cli
             ${{ env.IMAGE_NAME }}:main-cli
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
-            ${{ env.IMAGE_NAME }}:${{ steps.config.outputs.stack_version }}-cli
-            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE_NAME) || '' }}
-            ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && format('{0}:dev', env.IMAGE_NAME) || '' }}
-            ${{ github.event.inputs.publish_latest && format('{0}:latest', env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64
@@ -154,10 +249,13 @@ jobs:
     name: Build & publish web image
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [build-cli]
+    needs: [build-cli, bump-version]
+    if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          persist-credentials: true
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -188,11 +286,8 @@ jobs:
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
-          # Read stack version from config repo
-          cfg_repo=$(echo "$LPB_CONFIG_FORK" | sed -E 's#https://github.com/([^/]+)/([^./]+)\.git#\1/\2#')
-          stack_ver=$(curl -sf "https://raw.githubusercontent.com/$cfg_repo/$LPB_CONFIG_REF/VERSION" 2>/dev/null || echo "unknown")
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "stack_version=${stack_ver}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push web
         uses: docker/build-push-action@v7
@@ -213,15 +308,14 @@ jobs:
             PI_HEAD_SHA=${{ steps.config.outputs.sha }}
             LPB_VERSION=${{ steps.config.outputs.LPB_VERSION }}
             LPB_MAX_TOKENS_CONTEXT_RATIO=${{ steps.config.outputs.MAX_TOKENS }}
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.LOCALPIBOX_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
-            ${{ env.IMAGE_NAME }}:web
+            ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-web
             ${{ env.IMAGE_NAME }}:dev-web
             ${{ env.IMAGE_NAME }}:main-web
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
-            ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
-            ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && format('{0}:dev-web', env.IMAGE_NAME) || '' }}
-            ${{ github.event.inputs.publish_latest && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
             ${{ github.event_name == 'schedule' && format('{0}:weekly-web', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64

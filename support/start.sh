@@ -73,10 +73,16 @@ fi
 
 # Stack identity (image names, forks, versions) — baked at build time.
 # Provides LPB_CONFIG_FORK / LPB_CONFIG_REF defaults for the clone below.
+# NOTE: Runtime env vars (-e from lpb.py) take precedence over baked values.
 _stack_env="/opt/devstack/lpb.stack.env"
 if [[ -f "${_stack_env}" ]]; then
     debug "Loading build identity from ${_stack_env}"
     while IFS= read -r _line; do
+        # Skip lines where the env var is already set (runtime override)
+        _key="${_line%%=*}"
+        if [[ -n "${!_key+x}" ]]; then
+            continue
+        fi
         export "$_line"
     done < <(parse_env_file "${_stack_env}")
 fi

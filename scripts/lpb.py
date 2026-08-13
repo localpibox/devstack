@@ -16,11 +16,11 @@ Usage:
     lpb --tag dev|main|latest           Select image pipeline (dev/main/latest/<custom>)
 
 Image tag selection:
-    lpb --tag dev                      Use :dev / :dev-web (from dev branch builds)
-    lpb --tag main                     Use :main-cli / :main-web (from main branch builds)
-    lpb --tag latest                   Use :latest / :latest-web
-    lpb --tag mybranch                 Use :mybranch-cli / :mybranch-web
-    LPB_IMAGE_TAG=dev                  Or set env var for persistent override
+    lpb --tag dev                      Use latest dev image (0.0.x-lpb-dev-cli)
+    lpb --tag main                     Use latest stable image (0.0.x-lpb-cli)
+    lpb --tag latest                   Same as main
+    lpb --tag 0.0.9-lpb-dev            Pin to specific version image
+    LPB_IMAGE_TAG=0.0.9-lpb-dev        Or set env var for persistent override
 
 Pi passthrough (after "--"):
     lpb /myproject -- -p "summarize this repo"
@@ -82,7 +82,7 @@ CONFIG_DIR = Path(HOME) / ".localpibox" / "devstack"
 CONFIG_FILE = CONFIG_DIR / "config"
 PROJECTS_DIR = CONFIG_DIR / "projects"
 LAST_PROJECT_FILE = CONFIG_DIR / "last-project"
-LAST_IMAGE_FILE = CONFIG_DIR / "last-image"
+LAST_VERSION_FILE = CONFIG_DIR / "last-version"
 TOKEN_FILE = CONFIG_DIR / "token"
 
 # ─── Load stack configuration ────────────────────────────────────────────
@@ -134,31 +134,114 @@ _stack_cfg = _load_stack_env()
 CLI_IMAGE = _stack_cfg.get("LPB_IMAGE_CLI", "ghcr.io/localpibox/devstack:cli")
 WEB_IMAGE = _stack_cfg.get("LPB_IMAGE_WEB", "ghcr.io/localpibox/devstack:web")
 
+# ─── Default image tag from env var ──────────────────────────────────
+# Users can set LPB_IMAGE_TAG=dev in their environment for persistent override.
+cfg_image_tag = os.environ.get("LPB_IMAGE_TAG", "")
 
-# ─── Image tag selection (dev vs main) ───────────────────────────────────
-# Users can override which pipeline's images to use:
-#   LPB_IMAGE_TAG=dev    → uses :dev / :dev-web (from dev branch builds)
-#   LPB_IMAGE_TAG=main   → uses :main-cli / :main-web (from main branch builds)
-#   LPB_IMAGE_TAG=<tag>  → uses :<tag>-cli / :<tag>-web (custom)
-#   LPB_IMAGE_TAG=latest → uses :latest / :latest-web
-# Shell env takes priority over lpb.stack.env defaults.
-def _resolve_image_tag() -> str:
-    """Return the image tag suffix (default: cli for CLI mode, web for web mode)."""
-    return os.environ.get("LPB_IMAGE_TAG", "")
+
+# ─── Version resolution (dev/main pipeline) ───────────────────────────
+# The image is built with version tags (e.g. 0.0.9-lpb-dev-cli).
+# --tag dev/main resolves to the latest versioned image for that pipeline.
+def _load_last_version() -> str:
+    """Load the last-used version tag."""
+    if LAST_VERSION_FILE.is_file():
+        with open(LAST_VERSION_FILE) as f:
+            return f.read().strip()
+    return ""
+
+
+def _get_remote_version(branch: str = "dev") -> str:
+    """Fetch the latest VERSION from the remote branch."""
+    try:
+        url = f"https://raw.githubusercontent.com/localpibox/devstack/{branch}/VERSION"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return resp.read().decode().strip()
+    except Exception:
+        return ""
+
+
+def _save_version(version: str) -> None:
+    """Persist the version tag for reconnection/update (only valid versioned tags)."""
+    # Only persist tags that match the version pattern (0.0.x-lpb[-dev]), not legacy :cli/:web
+    if not re.match(r'^0\.0\.\d+-lpb(-dev)?$', version):
+        return
+    LAST_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LAST_VERSION_FILE, "w") as f:
+        f.write(version)
+
+
+# ── Backwards-compat aliases (mutation tests expect these names) ─────
+save_last_version = _save_version
+load_last_version = _load_last_version
+
+
+def _resolve_version_image(version: str, mode: str) -> str:
+    """Resolve the full image name from a version tag.
+    
+    Args:
+        version: Version tag (e.g. 0.0.9-lpb-dev, 0.0.9-lpb)
+        mode: 'cli' or 'web'
+    
+    Returns:
+        Full image name (e.g. ghcr.io/localpibox/devstack:0.0.9-lpb-dev-cli)
+    """
+    return f"ghcr.io/localpibox/devstack:{version}-{mode}"
 
 
 def resolve_cli_image(tag: str) -> str:
-    """Resolve the final CLI image name from stack config + tag override."""
-    if tag:
-        return f"ghcr.io/localpibox/devstack:{tag}-cli"
-    return CLI_IMAGE
+    """Resolve the final CLI image name from stack config + tag override.
+    
+    --tag dev/main → latest versioned image (0.0.x-lpb[-dev]-cli)
+    --tag <custom> → :<custom>-cli (explicit version)
+    """
+    if not tag:
+        last = _load_last_version()
+        if last:
+            return _resolve_version_image(last, "cli")
+        return CLI_IMAGE  # fallback
+    
+    if tag == "dev":
+        version = _load_last_version()
+        if not version:
+            version = _get_remote_version("dev")
+        if not version:
+            version = "0.0.0-lpb"  # last resort
+        return _resolve_version_image(version if "-dev" in version else version + "-dev", "cli")
+    
+    if tag == "main" or tag == "latest":
+        version = _load_last_version() or "0.0.0-lpb"
+        return _resolve_version_image(version.replace("-dev", ""), "cli")
+    
+    # Custom/explicit version tag
+    return _resolve_version_image(tag, "cli")
 
 
 def resolve_web_image(tag: str) -> str:
     """Resolve the final WEB image name from stack config + tag override."""
-    if tag:
-        return f"ghcr.io/localpibox/devstack:{tag}-web"
-    return WEB_IMAGE
+    if not tag:
+        last = _load_last_version()
+        if last:
+            return _resolve_version_image(last, "web")
+        return WEB_IMAGE
+    
+    if tag == "dev":
+        version = _load_last_version()
+        if not version:
+            version = _get_remote_version("dev")
+        if not version:
+            version = "0.0.0-lpb"
+        return _resolve_version_image(version if "-dev" in version else version + "-dev", "web")
+    
+    if tag == "main" or tag == "latest":
+        version = _load_last_version()
+        if not version:
+            version = _get_remote_version("main")
+        if not version:
+            version = "0.0.0-lpb"
+        return _resolve_version_image(version.replace("-dev", ""), "web")
+    
+    # Custom/explicit version tag
+    return _resolve_version_image(tag, "web")
 
 
 # ─── Load runtime configuration ──────────────────────────────────────────
@@ -174,7 +257,7 @@ _conf_cfg = _load_conf_env()
 
 class Config:
     image_name = CLI_IMAGE
-    image_tag = ""  # dev, main, latest, or custom tag suffix
+    image_tag = cfg_image_tag  # dev, main, latest, or custom tag suffix
     container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "localpibox")
     container_cmd = ""
     port = int(os.environ.get("ED_PORT", os.environ.get("LPB_ED_PORT", _conf_cfg.get("LPB_ED_PORT", "8000"))))
@@ -226,7 +309,9 @@ def self_update() -> None:
     new_path = lpb_dir / "lpb.new"
     if not lpb_path.is_file():
         return
-    script_url = "https://raw.githubusercontent.com/localpibox/devstack/main/scripts/lpb"
+    # Select branch based on cfg.image_tag (set by --tag)
+    branch = "dev" if cfg.image_tag == "dev" else "main"
+    script_url = f"https://raw.githubusercontent.com/localpibox/devstack/{branch}/scripts/lpb"
     py_url = script_url.replace("/lpb", "/lpb.py")
     try:
         with urllib.request.urlopen(script_url, timeout=10) as resp:
@@ -297,19 +382,14 @@ def is_podman() -> bool:
     return "podman" in cfg.container_cmd
 
 
-def save_last_image(mode: str) -> None:
-    """Persist the last-used image mode (cli/web) to support reconnect/update."""
-    LAST_IMAGE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LAST_IMAGE_FILE, "w") as f:
-        f.write(mode)
+def save_last_version(version: str) -> None:
+    """Persist the last-used version tag for reconnect/update."""
+    _save_version(version)
 
 
-def load_last_image() -> str:
-    """Read the persisted last-used image mode; defaults to 'cli'."""
-    if LAST_IMAGE_FILE.is_file():
-        with open(LAST_IMAGE_FILE) as f:
-            return f.read().strip()
-    return "cli"
+def load_last_version() -> str:
+    """Read the persisted last-used version tag; defaults to empty."""
+    return _load_last_version()
 
 
 def ensure_token() -> str:
@@ -630,7 +710,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ssh", nargs="?", const="", metavar="PUBKEY")
     parser.add_argument("--web", action="store_true")
     parser.add_argument("--tag", default=None,
-                        help="Image tag to use (dev|main|latest|<custom>)")
+                        help="Select image pipeline (dev|main|latest|<custom>)")
+    parser.add_argument("--version", nargs="?", const="_show",
+                        help="Pin to version tag (e.g. 0.0.9-lpb) or show stack version")
     parser.add_argument("--stop", "-s", action="store_true")
     parser.add_argument("--remove", "-r", action="store_true")
     parser.add_argument("--logs", "-l", action="store_true")
@@ -679,6 +761,13 @@ def parse_cli(args: list[str]) -> None:
         cfg.web_mode = True
     if known.tag is not None:
         cfg.image_tag = known.tag
+    if known.version:
+        if known.version == "_show" or known.version == "":
+            # --version without value → show version and exit
+            cfg.command = "version"
+        else:
+            # --version 0.0.9-lpb → pin to specific version tag
+            cfg.image_tag = known.version  # uses :0.0.9-lpb-cli
     if known.stop:
         cfg.command = "stop"
     if known.remove:
@@ -779,6 +868,39 @@ def cmd_config():
     info(f"State dir:   {resolve_path(cfg.state_dir)}")
 
 
+def cmd_version():
+    """Show the stack version from the VERSION file and exit."""
+    # Search for devstack dir (has both VERSION and lpb.stack.env)
+    for candidate in (Path(__file__).parent.parent, Path.cwd()):
+        vf = candidate / "VERSION"
+        if vf.is_file():
+            version = vf.read_text().strip()
+            print(f"LocalPibox stack {version}")
+            return
+        # Check parent dirs
+        p = candidate
+        for _ in range(10):
+            p = p.parent
+            vf = p / "VERSION"
+            if vf.is_file():
+                version = vf.read_text().strip()
+                print(f"LocalPibox stack {version}")
+                return
+            if str(p) == "/":
+                break
+
+    # Fallback: read from lpb.stack.env
+    stack_env = _find_env_file("lpb.stack.env")
+    if stack_env and stack_env.is_file():
+        cfg_env = _parse_env_file(stack_env)
+        version = cfg_env.get("LPB_PI_REF", "unknown")
+        print(f"LocalPibox stack {version}")
+        return
+
+    print("unknown")
+    sys.exit(0)
+
+
 def cmd_update():
     """Self-update the launcher and pull the latest devstack image(s)."""
     ensure_container_cmd()
@@ -787,36 +909,49 @@ def cmd_update():
     # Self-update
     self_update()
 
-    # Resolve current tag
-    tag = cfg.image_tag or _resolve_image_tag()
-    cli_img = resolve_cli_image(tag)
-    web_img = resolve_web_image(tag)
-
-    # Determine which image(s) to update based on what's locally available
-    last_img = load_last_image()
+    # Determine which image(s) to pull
     images_to_update = []
-    if c.images_exists(cli_img):
-        images_to_update.append(cli_img)
-    if c.images_exists(web_img):
-        images_to_update.append(web_img)
+    
+    if cfg.image_tag:
+        # Resolve versioned image from tag (dev/main/latest/custom)
+        cli_img = resolve_cli_image(cfg.image_tag)
+        web_img = resolve_web_image(cfg.image_tag)
+        # For versioned tags (dev/main), always pull even if not local
+        if cfg.image_tag in ("dev", "main"):
+            images_to_update = [cli_img, web_img]
+        elif c.images_exists(cli_img):
+            images_to_update.append(cli_img)
+            if c.images_exists(web_img):
+                images_to_update.append(web_img)
+        else:
+            # Custom version not local — fall through to defaults
+            pass
+    
     if not images_to_update:
-        # Fall back to default images (no tag)
+        # Fall back to default images
         for img in [CLI_IMAGE, WEB_IMAGE]:
             if c.images_exists(img):
                 images_to_update.append(img)
+
     if not images_to_update:
-        # Fall back to the last used image
-        if c.images_exists(last_img):
-            images_to_update.append(last_img)
-        else:
-            err("No devstack images found locally", "Run 'lpb' or 'lpb --web' first to pull an image.")
-            raise DevstackError
+        err("No devstack images found locally",
+            "Run 'lpb' or 'lpb --web' first to pull an image.")
+        raise DevstackError
 
     for img in images_to_update:
         info(f"Pulling {img}...")
         rc = c.images_pull(img)
         if rc != 0:
             err(f"Failed to pull {img}")
+
+    # Save last version for next run
+    for img in images_to_update:
+        last = img.rsplit(":", 1)[-1]
+        if not re.match(r'^0\.0\.\d+-lpb(-dev)?$', last):
+            continue
+        _save_version(last.replace("-cli", "").replace("-web", ""))
+        break
+
     done("Images up to date.")
 
 
@@ -926,7 +1061,7 @@ def cmd_run():
         mount_path = f"/home/lpb/workspace/{cfg.project_name}"
 
     # ── 4. Determine image and mode ──────────────────────────────────────
-    tag = cfg.image_tag or _resolve_image_tag()
+    tag = cfg.image_tag
     if cfg.web_mode:
         cfg.image_name = resolve_web_image(tag)
         mode_label = "web (VSCodium)"
@@ -1050,19 +1185,23 @@ def cmd_run():
     # Resolve a stable connection token (generate+persist if unset) so the URL
     # lpb prints matches the token the VSCodium server actually enforces.
     ensure_token()
+    
     env_vars = [
         f"LPB_ED_PORT={cfg.port}",
         f"LPB_EDITOR_HOST={cfg.host}",
         f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
         f"LPB_CONNECTION_TOKEN={cfg.token}",
         f"CONNECTION_TOKEN={cfg.token}",
+        # NOTE: LPB_PI_REF and LPB_CONFIG_REF are NOT passed as env vars.
+        # The image is built with these baked in (LPB_PI_REF is the version
+        # tag or branch ref). The image IS the configuration reference —
+        # lpb.py just selects which pre-built image to use.
         # Note: LPB_STATE_DIR is NOT passed to the container. It's a launcher-time
         # config (lpb.py reads it to resolve the host mount source). The container
         # has no need for it — start.sh uses its own defaults. Passing it here
         # would pollute .devstack-env and break future host runs.
         f"LPB_EXA_API_KEY={os.environ.get('LPB_EXA_API_KEY', os.environ.get('EXA_API_KEY', ''))}",
         f"LPB_MAX_TOKENS_CONTEXT_RATIO={os.environ.get('LPB_MAX_TOKENS_CONTEXT_RATIO', _conf_cfg.get('LPB_MAX_TOKENS_CONTEXT_RATIO', '0.06'))}",
-        f"LPB_VERSION={os.environ.get('LPB_VERSION', _conf_cfg.get('LPB_VERSION', ''))}",
     ]
     for k in ("PI_WORKTREE_ID", "LPB_AGENT_BROWSER_ARGS", "LPB_AGENT_BROWSER_MAX_OUTPUT",
               "LPB_AGENT_BROWSER_CONTENT_BOUNDARIES", "LPB_AGENT_BROWSER_CONFIRM_ACTIONS",
@@ -1122,7 +1261,8 @@ def cmd_run():
         LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
-        save_last_image("web")
+        # Save version from image name (e.g. :0.0.9-lpb-dev-web → 0.0.9-lpb-dev)
+        _save_version(cfg.image_name.split(":")[-1].replace("-web", ""))
 
         # Health check
         health_url = _build_url()
@@ -1173,7 +1313,8 @@ def cmd_run():
         LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
-        save_last_image("cli")
+        # Save version from image name
+        _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
 
         host = _get_host_for_url()
         port = cfg.ssh_port
@@ -1194,7 +1335,8 @@ def cmd_run():
         LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(LAST_PROJECT_FILE, "w") as f:
             f.write(project_dir)
-        save_last_image("cli")
+        # Save version from image name
+        _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
         # Run foreground, then stop container after exit
         args = [cfg.container_cmd, "run", "--rm", "--network", "host"]
         if is_podman():
@@ -1220,6 +1362,7 @@ def main() -> None:
 
     handlers = {
         "help": cmd_help,
+        "version": cmd_version,
         "stop": cmd_stop,
         "remove": cmd_remove,
         "logs": cmd_logs,

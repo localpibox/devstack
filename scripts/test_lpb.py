@@ -474,7 +474,7 @@ REQUIRED_CALLABLES = [
     "cmd_update", "cmd_config", "cmd_run",
     # helpers referenced by handlers
     "self_update", "ensure_container_cmd", "client", "ensure_token",
-    "save_last_image", "load_last_image", "resolve_path",
+    "_save_version", "_load_last_version", "resolve_path",
     "detect_mount_flags", "is_podman", "run_cmd", "load_config_file",
     "apply_overrides", "parse_cli", "load_project_env", "load_project_override",
     "_build_urls", "_build_url", "_get_host_for_url", "_get_lan_ips",

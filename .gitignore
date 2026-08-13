@@ -3,5 +3,11 @@
 # NOT tracked in git. Recreated by:
 #   ./support/version.sh workspace sync
 /workspace
+
 # ── Documentation archive (moved, not regenerated yet) ─────────────────────
 doc/archive/
+
+# ── Python bytecode (generated, not tracked) ──────────────────────────────
+__pycache__/
+*.pyc
+*.pyo

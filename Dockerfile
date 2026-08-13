@@ -124,7 +124,9 @@ RUN --mount=type=cache,target=/home/lpb/.npm \
 RUN set -eux; \
     export PATH="/home/lpb/.npm-global/bin:${PATH}"; \
     mkdir -p /opt/pi-src && cd /opt/pi-src; \
-    git clone --depth=1 --single-branch --branch ${PI_REF} ${PI_FORK} .; \
+    git clone --branch ${PI_REF} ${PI_FORK} .; \
+    git fetch origin ${PI_REF}; \
+    git checkout ${PI_REF}; \
     git config user.email "build@localpibox.dev"; \
     git config user.name "LocalPibox Build"; \
     npm install; \
