@@ -272,7 +272,7 @@ class Config:
     image_tag = cfg_image_tag  # dev, main, latest, or custom tag suffix
     container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "localpibox")
     container_cmd = ""
-    port = int(os.environ.get("ED_PORT", os.environ.get("LPB_ED_PORT", _conf_cfg.get("LPB_ED_PORT", "3000"))))
+    port = int(os.environ.get("LPB_ED_PORT", os.environ.get("ED_PORT", _conf_cfg.get("LPB_ED_PORT", "3000"))))
     host = os.environ.get("LPB_EDITOR_HOST", os.environ.get("HOST", _conf_cfg.get("LPB_EDITOR_HOST", "localhost")))
     token = os.environ.get("LPB_CONNECTION_TOKEN", os.environ.get("CONNECTION_TOKEN", ""))
     # codium-server always requires auth — always generate/use a token
@@ -604,7 +604,8 @@ def detect_mount_flags(project_dir: str) -> str:
 
 _ENV_MAP = {
     "LPB_IMAGE_NAME": "image_name", "LPB_CONTAINER_NAME": "container_name",
-    "LPB_PORT": "port", "LPB_EDITOR_HOST": "host", "LPB_CONNECTION_TOKEN": "token",
+    "LPB_PORT": "port", "LPB_ED_PORT": "port", "LPB_EDITOR_HOST": "host",
+    "LPB_CONNECTION_TOKEN": "token",
     "LPB_STATE_DIR": "state_dir", "LPB_BROWSER_DIR": "browser_dir",
 }
 
@@ -626,9 +627,15 @@ def load_config_file() -> None:
         pass
 
 
-def _apply_env(cli_overrides=None):
+def _apply_env(cli_overrides=None, env_source=None):
+    """Update cfg from env_source dict via _ENV_MAP.
+    
+    env_source: dict of env vars to read from (os.environ or a saved snapshot).
+                If None, reads from os.environ.
+    """
+    source = env_source or os.environ
     for ek, attr in _ENV_MAP.items():
-        val = os.environ.get(ek)
+        val = source.get(ek)
         if val:
             if cli_overrides and attr in cli_overrides:
                 continue
@@ -672,18 +679,25 @@ def load_project_override(name: str) -> None:
 
 
 def apply_overrides(project_dir: str | None = None, project_name: str | None = None, cli_overrides: dict[str, bool] | None = None) -> None:
+    # Capture shell env BEFORE loading config/.env files
+    shell_env = {k: v for k, v in os.environ.items() if k in _ENV_MAP}
+
+    # 1. Load config file (~/.localpibox/devstack/config)
     load_config_file()
-    _apply_env(cli_overrides)
+    # 2. Load project .env
+    project_env = {}
     if project_dir and (Path(project_dir) / ".env").is_file():
         load_project_env(project_dir)
-        _apply_env(cli_overrides)
-    if project_name:
-        load_project_override(project_name)
-        for ek, attr in [("LPB_PROJECT_PORT", "port"), ("LPB_PROJECT_TOKEN", "token"),
-                         ("LPB_PROJECT_HOST", "host")]:
-            val = os.environ.get(ek)
-            if val and (not cli_overrides or attr not in cli_overrides):
-                setattr(cfg, attr, int(val) if attr == "port" else val)
+        project_env = {k: v for k, v in os.environ.items() if k in _ENV_MAP}
+
+    # Merge: shell (highest) > config file > .env (lowest)
+    # Config file vars that weren't in shell env get overwritten by .env vars
+    merged = dict(shell_env)
+    for ek in _ENV_MAP:
+        if ek not in shell_env and ek in os.environ:
+            merged[ek] = os.environ[ek]
+
+    _apply_env(cli_overrides, env_source=merged)
 
 
 # ─── CLI parsing ─────────────────────────────────────────────────────────────

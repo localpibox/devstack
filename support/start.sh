@@ -124,7 +124,7 @@ export LPB_MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO:-0.06}"
 export MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO}"
 
 
-# ── Browser config ──
+# -- Browser config (preserve lpb.py defaults, allow shell override) --
 export LPB_AGENT_BROWSER_ARGS="${LPB_AGENT_BROWSER_ARGS:-}"
 export LPB_AGENT_BROWSER_MAX_OUTPUT="${LPB_AGENT_BROWSER_MAX_OUTPUT:-4000}"
 export LPB_AGENT_BROWSER_CONTENT_BOUNDARIES="${LPB_AGENT_BROWSER_CONTENT_BOUNDARIES:-true}"
@@ -132,8 +132,45 @@ export LPB_AGENT_BROWSER_CONFIRM_ACTIONS="${LPB_AGENT_BROWSER_CONFIRM_ACTIONS:-d
 export LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS="${LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS:-300000}"
 export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:-}}"
 
-# ── Exa API key ──
-export LPB_EXA_API_KEY="${LPB_EXA_API_KEY:-${EXA_API_KEY:-}}"
+# ── API keys & other LPB_ → bare-name bridges ────────────────────────────────
+# Define bare-name aliases here. The _bridge() loop applies the generic logic:
+#   LPB_FOO → FOO (only if FOO not already set by shell env).
+# Fallback chain: shell env > LPB_ (from .env/conf) > hardcoded.
+#
+# NOTE: GITHUB_TOKEN is excluded — it has a special fallback chain:
+#   shell env > LPB_ > `gh auth token` (CLI auth) > empty.
+# That special case runs below, after _bridge.
+_bridge() {
+    local _name lpb_name
+    # Build LPB_ prefix with fallback to bare name (shell env wins)
+    for _name in "${BARE_NAMES[@]}"; do
+        lpb_name="LPB_${_name}"
+        export "$lpb_name="${!lpb_name:-${!_name:-}}""
+    done
+    # Promote LPB_ → bare (only if bare not already in shell env)
+    for _name in "${BARE_NAMES[@]}"; do
+        lpb_name="LPB_${_name}"
+        if [[ -z "${!_name+x}" ]]; then
+            export "$_name="${!lpb_name:-}""
+        fi
+    done
+}
+
+# Define the full list of LPB_ → bare-name pairs.
+BARE_NAMES=(
+    EXA_API_KEY
+    CONTEXT7_API_KEY
+    LEMONADE_BASE_URL
+    OPENROUTER_BASE_URL
+    ED_PORT
+    HOST
+    CONNECTION_TOKEN
+    DEVCONTAINER_WORKSPACE_DIR
+    MAX_TOKENS_CONTEXT_RATIO
+)
+
+# Apply bridge after lpb.conf.env defaults (step 0).
+_bridge
 
 # ── GitHub Token (from gh auth token or shell env) ──
 # lpb.conf.env may set LPB_GITHUB_TOKEN to a literal string; start.sh
@@ -198,12 +235,8 @@ if [[ -n "$ENV_FILE" ]]; then
     WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-$WORKSPACE_DIR}"
     export WORKSPACE_DIR
 
-    # Re-sync bare-name aliases after .env load.
-    # Only sets alias if the bare name wasn't already in the shell env
-    # (shell env always takes priority over .env LPB_ values).
-    if [[ -z "${EXA_API_KEY+x}" ]]; then
-        export EXA_API_KEY="${LPB_EXA_API_KEY}"
-    fi
+    # Re-apply LPB_ → bare-name bridge now that .env may have added new LPB_* values.
+    _bridge
 fi
 
 # ─── 3. WORKSPACE INFO ──────────────────────────────────────────────────────
@@ -347,8 +380,6 @@ fi
 # preconfigured env vars (e.g. EXA_API_KEY).
 persist_devstack_env() {
     local env_file="${HOME_DIR}/.devstack-env"
-    local bare_names="EXA_API_KEY LEMONADE_BASE_URL OPENROUTER_BASE_URL ED_PORT HOST CONNECTION_TOKEN DEVCONTAINER_WORKSPACE_DIR MAX_TOKENS_CONTEXT_RATIO"
-    local name q
     : > "${env_file}"
     # Dump all LPB_*/PI_* vars plus the aliased bare names (non-empty only).
     while IFS= read -r name; do
@@ -357,7 +388,12 @@ persist_devstack_env() {
         [[ -n "$val" ]] || continue
         printf -v q '%q' "$val"
         printf 'export %s=%s\n' "$name" "$q" >> "${env_file}"
-    done < <(env | cut -d= -f1 | grep -E '^(LPB_|PI_)'; for n in $bare_names; do [[ -n "${!n:-}" ]] && echo "$n"; done)
+    done < <({
+        env | cut -d= -f1 | grep -E '^(LPB_|PI_)'
+        for n in "${BARE_NAMES[@]}"; do [[ -n "${!n:-}" ]] && echo "$n"; done
+        # GitHub token is resolved by special case (gh auth token) — must persist for interactive shells
+        [[ -n "${GITHUB_TOKEN:-}" ]] && echo "GITHUB_TOKEN"
+    })
     chmod 600 "${env_file}" 2>/dev/null || true
     # Source it from .bashrc and .profile, idempotently.
     local src_marker='# LocalPibox devstack environment (managed)'
