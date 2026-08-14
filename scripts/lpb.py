@@ -15,6 +15,15 @@ Usage:
     lpb --help                          Show usage
     lpb --tag dev|main|latest           Select image pipeline (dev/main/latest/<custom>)
 
+Positional command aliases (no -- needed):
+    lpb logs     → lpb --logs
+    lpb stop     → lpb --stop
+    lpb update   → lpb --update
+    lpb remove   → lpb --remove
+    lpb config   → lpb --config
+    lpb version  → lpb --version
+    lpb help     → lpb --help
+
 Image tag selection:
     lpb --tag dev                      Use latest dev image (0.0.x-lpb-dev-cli)
     lpb --tag main                     Use latest stable image (0.0.x-lpb-cli)
@@ -31,8 +40,9 @@ Pi passthrough (after "--"):
 
 VSCodium options (before project path, --web mode only):
     --host <HOST>          Host to listen on (default: from .env or localhost)
-    --port <PORT>          Port to listen on (default: from .env or 8000)
+    --port <PORT>          Port to listen on (default: from .env or 3000)
     --token <TOKEN>        Connection token (default: auto-generated)
+    --new-token            Generate a fresh token (ignore persisted one)
     --without-token        Disable auth in URL display (server still requires auth)
     --data-dir <PATH>      Server data directory
     --user-data-dir <PATH> User data directory (multiple instances)
@@ -59,7 +69,9 @@ import subprocess
 import sys
 import time
 import urllib.request
+import urllib.error
 import uuid
+import socket
 from pathlib import Path
 
 # ── Structured logging ────────────────────────────────────────────────────────
@@ -260,12 +272,14 @@ class Config:
     image_tag = cfg_image_tag  # dev, main, latest, or custom tag suffix
     container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "localpibox")
     container_cmd = ""
-    port = int(os.environ.get("ED_PORT", os.environ.get("LPB_ED_PORT", _conf_cfg.get("LPB_ED_PORT", "8000"))))
+    port = int(os.environ.get("ED_PORT", os.environ.get("LPB_ED_PORT", _conf_cfg.get("LPB_ED_PORT", "3000"))))
     host = os.environ.get("LPB_EDITOR_HOST", os.environ.get("HOST", _conf_cfg.get("LPB_EDITOR_HOST", "localhost")))
     token = os.environ.get("LPB_CONNECTION_TOKEN", os.environ.get("CONNECTION_TOKEN", ""))
     # codium-server always requires auth — always generate/use a token
     # (--without-token flag only affects URL display, not server behavior)
+    # (--new-token flag forces a fresh token instead of reusing persisted one)
     without_token = False
+    new_token = False
     state_dir = os.environ.get("LPB_STATE_DIR", _conf_cfg.get("LPB_STATE_DIR", str(Path(HOME) / ".localpibox" / "state")))
     browser_dir = os.environ.get("LPB_BROWSER_DIR", _conf_cfg.get("LPB_BROWSER_DIR", str(Path(HOME) / ".localpibox" / "agent-browser")))
     project_dir = ""
@@ -368,6 +382,11 @@ def run_cmd(args: list[str], timeout: int = 120) -> tuple[str, str, int]:
         return "", f"not found: {args[0]}", 127
 
 
+def ensure_cmd(name: str) -> str | None:
+    """Check that a binary exists; return its path or None."""
+    return shutil.which(name)
+
+
 def ensure_container_cmd() -> None:
     """Locate podman or docker; fail with a helpful message if neither exists."""
     if cfg.container_cmd:
@@ -398,9 +417,23 @@ def ensure_token() -> str:
     If the user configured one (env/cli), use it unchanged. Otherwise generate a
     random UUID once and persist it under the config dir, so the token lpb prints
     in the URL always matches the token the VSCodium server actually uses.
+
+    If cfg.new_token is set, ignore any persisted token and always generate fresh.
     """
     if cfg.token:
         return cfg.token
+    # --new-token flag: always generate fresh, ignore persisted token
+    if cfg.new_token:
+        fresh = str(uuid.uuid4())
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            with open(TOKEN_FILE, "w") as f:
+                f.write(fresh)
+        except OSError:
+            pass
+        cfg.token = fresh
+        info(f"Generated fresh token: {cfg.token}")
+        return fresh
     if TOKEN_FILE.is_file():
         with open(TOKEN_FILE) as f:
             persisted = f.read().strip()
@@ -677,8 +710,9 @@ HELP = (
     '  lpb /myproject -- --mode json -p "analyze"  # JSON mode\n\n'
     "VSCodium options (--web mode only):\n"
     "  --host <HOST>          Host to listen on (default: localhost)\n"
-    "  --port <PORT>          Port (default: from .env or 8000)\n"
+    "  --port <PORT>          Port (default: from .env or 3000)\n"
     "  --token <TOKEN>        Connection token (default: auto-generated)\n"
+    "  --new-token            Generate a fresh token (ignore persisted one)\n"
     "  --without-token        Hide token in URL display (server still requires auth)\n\n"
     "Examples:\n"
     "  lpb /path/to/project                    Start Pi CLI at project\n"
@@ -701,6 +735,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--token", default=None)
     parser.add_argument("--without-token", action="store_true")
+    parser.add_argument("--new-token", action="store_true")
     parser.add_argument("--data-dir", default=None)
     parser.add_argument("--user-data-dir", default=None)
     parser.add_argument("--ext-dir", default=None)
@@ -727,6 +762,15 @@ def parse_cli(args: list[str]) -> None:
     """Parse CLI args using argparse for known flags; manual handling for -- and positionals."""
     parser = _build_parser()
 
+    # ── Positional command aliases ──────────────────────────────────────
+    # Support shorthand: lpb logs / lpb stop / lpb update / lpb remove / lpb config
+    # without requiring the -- prefix. Order matters: check commands before paths.
+    POSITIONAL_COMMANDS = {"logs": "--logs", "stop": "--stop", "remove": "--remove",
+                           "update": "--update", "config": "--config", "help": "--help",
+                           "version": "--version"}
+    if args and args[0] in POSITIONAL_COMMANDS:
+        args[0] = POSITIONAL_COMMANDS[args[0]]
+
     # Split at -- boundary
     try:
         dash_idx = args.index("--")
@@ -745,6 +789,8 @@ def parse_cli(args: list[str]) -> None:
         cfg.token, _cli_overrides["token"] = known.token, True
     if known.without_token:
         cfg.without_token = True
+    if known.new_token:
+        cfg.new_token = True
     if known.data_dir is not None:
         cfg.data_dir = known.data_dir
     if known.user_data_dir is not None:
@@ -856,10 +902,15 @@ def cmd_logs():
     ensure_container_cmd()
     c = client()
     if not c.container_exists(cfg.container_name):
-        err("Container not found", "Run 'lpb --remove' then 'lpb' to start fresh.")
+        err("Container not found", "Run 'lpb' or 'lpb --web' to start a new devstack session.")
+        sys.exit(0)
+    # Check if container is actually running (not just existed previously)
+    if not c.container_running(cfg.container_name):
+        err(f"Container '{cfg.container_name}' is stopped", "Start it with: lpb or lpb --web")
         sys.exit(0)
     if not c.containers_logs(cfg.container_name, follow=False):
-        err("Failed to get logs"); raise DevstackError
+        err("Failed to get logs", "Try 'lpb --remove' then 'lpb' to start fresh.")
+        sys.exit(1)
 
 def cmd_config():
     """Print resolved config, projects, and state paths for the current stack."""
@@ -1045,7 +1096,13 @@ def cmd_run():
         project_dir = HOME
     project_dir = resolve_path(project_dir)
     if not Path(project_dir).is_dir():
-        err(f"directory not found: {project_dir}"); raise DevstackError
+        hint = (
+            f"Make sure the path is correct and exists: {project_dir}\n"
+            "  Create it:  mkdir -p {project_dir}\n"
+            "  List projects:  lpb --config"
+        )
+        err(f"directory not found: {project_dir}", hint)
+        raise DevstackError
 
     # ── 2. Project name ──────────────────────────────────────────────────
     cfg.project_name = Path(project_dir).name
@@ -1264,18 +1321,84 @@ def cmd_run():
         # Save version from image name (e.g. :0.0.9-lpb-dev-web → 0.0.9-lpb-dev)
         _save_version(cfg.image_name.split(":")[-1].replace("-web", ""))
 
-        # Health check
+        # Health check — retry with increasing tolerance.
+        # VSCodium server needs time to bind, load extensions, and serve.
+        # Three-tier approach: TCP connect → HTTP root → /api/version.
         health_url = _build_url()
+        # Build base URL without token for version check
+        check_host = cfg.host
+        if check_host in ("0.0.0.0", "localhost", "127.0.0.1"):
+            check_host = "127.0.0.1"
+        base_url = f"http://{check_host}:{cfg.port}"
         ready = False
+        tcp_ok = False
         try:
-            for _ in range(30):
-                try:
-                    r = subprocess.run(["curl", "-s", "--max-time", "2", health_url],
-                                       capture_output=True, timeout=5)
-                    if r.returncode == 0:
-                        ready = True; break
-                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                    pass
+            for i in range(120):
+                # TCP connect check (always try, lightweight)
+                if not tcp_ok:
+                    try:
+                        s = socket.create_connection((check_host, cfg.port), timeout=2)
+                        s.close()
+                        tcp_ok = True
+                    except (socket.timeout, socket.error, OSError):
+                        pass
+
+                # Phase 1 (0-15s): HTTP root check (fast)
+                if i < 15 and tcp_ok:
+                    try:
+                        r = subprocess.run(
+                            ["curl", "-s", "--max-time", "2",
+                             "--connect-timeout", "2",
+                             health_url],
+                            capture_output=True, timeout=4
+                        )
+                        if r.returncode == 0:
+                            ready = True; break
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+
+                # Phase 2 (15-45s): HTTP root with longer timeout
+                elif i < 45 and tcp_ok:
+                    try:
+                        r = subprocess.run(
+                            ["curl", "-s", "--max-time", "5",
+                             "--connect-timeout", "3",
+                             health_url],
+                            capture_output=True, timeout=8
+                        )
+                        if r.returncode == 0:
+                            ready = True; break
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+
+                # Phase 3 (45-75s): /api/version endpoint (bypasses auth)
+                elif i < 75 and tcp_ok:
+                    try:
+                        r = subprocess.run(
+                            ["curl", "-s", "--max-time", "5",
+                             "--connect-timeout", "3",
+                             f"{base_url}/api/version"],
+                            capture_output=True, timeout=8
+                        )
+                        if r.returncode == 0 and r.stdout.strip():
+                            ready = True; break
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+
+                # Phase 4 (75-120s): try HTTP root without token
+                elif i < 120 and tcp_ok:
+                    try:
+                        r = subprocess.run(
+                            ["curl", "-s", "--max-time", "5",
+                             "--connect-timeout", "3",
+                             base_url],
+                            capture_output=True, timeout=8
+                        )
+                        if r.returncode == 0:
+                            ready = True; break
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
+
                 sys.stdout.write("."); sys.stdout.flush()
                 time.sleep(1)
         except KeyboardInterrupt:
