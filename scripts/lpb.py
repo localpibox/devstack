@@ -1245,6 +1245,7 @@ def cmd_run():
     
     env_vars = [
         f"LPB_ED_PORT={cfg.port}",
+        f"ED_PORT={cfg.port}",
         f"LPB_EDITOR_HOST={cfg.host}",
         f"LPB_DEVCONTAINER_WORKSPACE_DIR={mount_path}",
         f"LPB_CONNECTION_TOKEN={cfg.token}",
