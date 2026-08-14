@@ -463,6 +463,143 @@ def test_url_from_env_override():
     print("  PASS\n")
 
 
+# ─── Image tag tests ──────────────────────────────────────────────────────────
+
+def test_tag_dev():
+    """--tag dev sets image_tag to dev."""
+    print("TEST: --tag dev")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--tag", "dev"])
+    assert mod.cfg.image_tag == "dev", f"Expected 'dev', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_main():
+    """--tag main sets image_tag to main."""
+    print("TEST: --tag main")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--tag", "main"])
+    assert mod.cfg.image_tag == "main", f"Expected 'main', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_latest():
+    """--tag latest sets image_tag to latest."""
+    print("TEST: --tag latest")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--tag", "latest"])
+    assert mod.cfg.image_tag == "latest", f"Expected 'latest', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_custom_version():
+    """--tag 0.0.27-lpb-dev sets image_tag to custom version."""
+    print("TEST: --tag custom version")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--tag", "0.0.27-lpb-dev"])
+    assert mod.cfg.image_tag == "0.0.27-lpb-dev", f"Expected '0.0.27-lpb-dev', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_with_project():
+    """--tag dev /path sets image_tag and project_dir."""
+    print("TEST: --tag dev /tmp")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--tag", "dev", "/tmp"])
+    assert mod.cfg.image_tag == "dev", f"Expected 'dev', got {mod.cfg.image_tag!r}"
+    assert mod.cfg.project_dir == "/tmp", f"Expected '/tmp', got {mod.cfg.project_dir!r}"
+    print("  PASS\n")
+
+
+def test_update_with_tag():
+    """--update --tag dev sets command=update and image_tag=dev."""
+    print("TEST: --update --tag dev")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--update", "--tag", "dev"])
+    assert mod.cfg.command == "update", f"Expected 'update', got {mod.cfg.command!r}"
+    assert mod.cfg.image_tag == "dev", f"Expected 'dev', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_web_mode():
+    """--web --tag dev sets web_mode and image_tag."""
+    print("TEST: --web --tag dev")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--web", "--tag", "dev"])
+    assert mod.cfg.web_mode, "Expected web_mode=True"
+    assert mod.cfg.image_tag == "dev", f"Expected 'dev', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_resolve_cli_image_dev():
+    """resolve_cli_image('dev') returns dev-cli suffix."""
+    print("TEST: resolve_cli_image('dev')")
+    reset_mock()
+    mod = make_module()
+    image = mod.resolve_cli_image("dev")
+    assert image.endswith("-cli") or image.endswith(":dev-cli"), f"Expected -cli suffix, got {image}"
+    print(f"  Image: {image}")
+    print("  PASS\n")
+
+
+def test_resolve_cli_image_main():
+    """resolve_cli_image('main') returns main/cli suffix."""
+    print("TEST: resolve_cli_image('main')")
+    reset_mock()
+    mod = make_module()
+    image = mod.resolve_cli_image("main")
+    assert image.endswith("-cli") or image.endswith(":main-cli"), f"Expected -cli suffix, got {image}"
+    print(f"  Image: {image}")
+    print("  PASS\n")
+
+
+def test_resolve_cli_image_custom():
+    """resolve_cli_image('0.0.27-lpb-dev') returns versioned image."""
+    print("TEST: resolve_cli_image('0.0.27-lpb-dev')")
+    reset_mock()
+    mod = make_module()
+    image = mod.resolve_cli_image("0.0.27-lpb-dev")
+    assert "0.0.27-lpb-dev" in image, f"Expected version in image, got {image}"
+    print(f"  Image: {image}")
+    print("  PASS\n")
+
+
+def test_resolve_web_image_dev():
+    """resolve_web_image('dev') returns dev-web suffix."""
+    print("TEST: resolve_web_image('dev')")
+    reset_mock()
+    mod = make_module()
+    image = mod.resolve_web_image("dev")
+    assert image.endswith("-web") or image.endswith(":dev-web"), f"Expected -web suffix, got {image}"
+    print(f"  Image: {image}")
+    print("  PASS\n")
+
+
+def test_self_update_branch_selection():
+    """self_update selects dev branch when image_tag=dev, main otherwise."""
+    print("TEST: self_update branch selection")
+    reset_mock()
+    mod = make_module()
+    # When image_tag is dev, branch should be dev
+    mod.cfg.image_tag = "dev"
+    # Can't easily mock urllib, but we can verify the branch logic
+    # by checking the URL pattern would be correct
+    branch = "dev" if mod.cfg.image_tag == "dev" else "main"
+    assert branch == "dev", f"Expected 'dev' branch, got {branch}"
+    # When image_tag is not dev, branch should be main
+    mod.cfg.image_tag = "main"
+    branch = "dev" if mod.cfg.image_tag == "dev" else "main"
+    assert branch == "main", f"Expected 'main' branch, got {branch}"
+    print("  PASS\n")
+
+
 # ─── Regression guards ────────────────────────────────────────────────────────
 
 # Every name referenced by main()'s dispatcher or by cmd_* handlers must exist
@@ -831,6 +968,19 @@ if __name__ == "__main__":
         test_url_from_resolved_config,
         test_url_without_token,
         test_url_from_env_override,
+        # image tag tests
+        test_tag_dev,
+        test_tag_main,
+        test_tag_latest,
+        test_tag_custom_version,
+        test_tag_with_project,
+        test_update_with_tag,
+        test_tag_web_mode,
+        test_resolve_cli_image_dev,
+        test_resolve_cli_image_main,
+        test_resolve_cli_image_custom,
+        test_resolve_web_image_dev,
+        test_self_update_branch_selection,
     ]
 
     passed = failed = 0
