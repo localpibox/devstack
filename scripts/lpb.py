@@ -213,15 +213,21 @@ def resolve_cli_image(tag: str) -> str:
         return CLI_IMAGE  # fallback
     
     if tag == "dev":
-        version = _load_last_version()
+        # Always try remote first for dev/main tags (get latest)
+        version = _get_remote_version("dev")
         if not version:
-            version = _get_remote_version("dev")
+            version = _load_last_version()  # fallback to cached
         if not version:
             version = "0.0.0-lpb"  # last resort
         return _resolve_version_image(version if "-dev" in version else version + "-dev", "cli")
     
     if tag == "main" or tag == "latest":
-        version = _load_last_version() or "0.0.0-lpb"
+        # Always try remote first for dev/main tags (get latest)
+        version = _get_remote_version("main")
+        if not version:
+            version = _load_last_version()  # fallback to cached
+        if not version:
+            version = "0.0.0-lpb"  # last resort
         return _resolve_version_image(version.replace("-dev", ""), "cli")
     
     # Custom/explicit version tag
@@ -237,19 +243,21 @@ def resolve_web_image(tag: str) -> str:
         return WEB_IMAGE
     
     if tag == "dev":
-        version = _load_last_version()
+        # Always try remote first for dev/main tags (get latest)
+        version = _get_remote_version("dev")
         if not version:
-            version = _get_remote_version("dev")
+            version = _load_last_version()  # fallback to cached
         if not version:
-            version = "0.0.0-lpb"
+            version = "0.0.0-lpb"  # last resort
         return _resolve_version_image(version if "-dev" in version else version + "-dev", "web")
     
     if tag == "main" or tag == "latest":
-        version = _load_last_version()
+        # Always try remote first for dev/main tags (get latest)
+        version = _get_remote_version("main")
         if not version:
-            version = _get_remote_version("main")
+            version = _load_last_version()  # fallback to cached
         if not version:
-            version = "0.0.0-lpb"
+            version = "0.0.0-lpb"  # last resort
         return _resolve_version_image(version.replace("-dev", ""), "web")
     
     # Custom/explicit version tag
