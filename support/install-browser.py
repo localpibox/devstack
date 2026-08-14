@@ -126,6 +126,7 @@ def install_agent_browser(cons: Console) -> int:
     # Container-safe defaults: Chrome needs --no-sandbox in Docker/container
     config_path = Path.home() / ".agent-browser" / "config.json"
     if not config_path.is_file():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text(
             json.dumps({"args": "--no-sandbox"}, indent=2)
         )
