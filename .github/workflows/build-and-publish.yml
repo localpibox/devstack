@@ -113,12 +113,11 @@ jobs:
           echo "Bumping $VERSION → $NEW_VERSION"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Persist bumped version (excluded from CI paths, won't re-trigger)
+          # Persist bumped version (VERSION excluded from CI paths, won't re-trigger)
           echo "$NEW_VERSION" > VERSION
-          sed -i "s/^LPB_PI_REF=.*/LPB_PI_REF=$NEW_VERSION/" lpb.stack.env
           git config user.name "ci-localpibox"
           git config user.email "ci@localpibox.dev"
-          git add VERSION lpb.stack.env
+          git add VERSION
           git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
           git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
           git push origin dev --force-with-lease || echo "Push failed (already up-to-date)"
