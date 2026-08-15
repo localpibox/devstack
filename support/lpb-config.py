@@ -1,26 +1,39 @@
 #!/usr/bin/env python3
-"""lpb-config — Manage the LocalPibox Pi config repo inside the container.
-
-Python port of support/lpb-config.
+"""lpb-config — Manage the LocalPibox stack config, workspace, and validation.
 
 Usage:
-  lpb-config status    — Show current commit, remote HEAD, local changes
-  lpb-config update    — Fetch + fast-forward (safe: refuses on local changes)
-  lpb-config reset     — Re-clone, destroy local changes (with confirmation)
+  lpb-config status    — Show config repo commit, remote HEAD, local changes
+  lpb-config update    — Fetch + fast-forward config repo (safe: refuses on local changes)
+  lpb-config reset     — Re-clone config repo, destroy local changes (with confirmation)
   lpb-config merge     — Open git merge flow for advanced users
+  lpb-config align     — Align settings.json extension pins to latest tags
+
+  lpb-config workspace status   — Show workspace repo branches + alignment
+  lpb-config workspace sync     — Create symlinks + git pull current branches
+  lpb-config workspace ensure   — Switch repos to correct branches for pipeline
+
+  lpb-config validate           — Validate entire stack alignment to current pipeline
+
+Pipeline detection:
+  Reads VERSION file to determine pipeline (dev vs main). Override with --tag.
 
 Environment:
   AGENT_DIR         — Config repo path (default: /home/lpb/.pi/agent)
   CONFIG_REMOTE     — Git remote URL (default: https://github.com/localpibox/config.git)
   CONFIG_REF        — Branch to track (default: main)
+  LPB_GITHUB_TOKEN  — GitHub token for authenticated operations
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import shutil
+import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
@@ -30,27 +43,157 @@ for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
         break
 
 from localpibox.cli import confirm, install_sigpipe_handler  # noqa: E402
+from localpibox.env import parse_env_file  # noqa: E402
 from localpibox.log import Console  # noqa: E402
 from localpibox.run import run_cmd  # noqa: E402
+
+# ─── Constants ──────────────────────────────────────────────────────────────
 
 DEFAULT_AGENT_DIR = "/home/lpb/.pi/agent"
 DEFAULT_REMOTE = "https://github.com/localpibox/config.git"
 DEFAULT_REF = "main"
 
+WORKSPACE_ROOT = Path("/home/lpb/workspace")
+AGENT_GIT = Path("/home/lpb/.pi/agent/git/github.com/localpibox")
+
 MIGRATE_KEEP = {".initialized", "ssh-host-keys", "gh-config", "agent"}
+
+# ─── Workspace repo definitions ───────────────────────────────────────────
+# Each repo: (name, is_symlink, is_extension, dev_branch, main_branch, fork_remote)
+#   is_symlink: workspace repo is a symlink → .pi/agent/git/...
+#   is_extension: repo is installed as a Pi extension
+#   dev_branch / main_branch: expected branch for each pipeline
+#   fork_remote: GitHub fork URL (for cloning)
+
+WORKSPACE_REPOS = [
+    # (name, is_symlink, is_extension, dev_branch, main_branch)
+    ("devstack",          False, False, "dev",    "main"),
+    ("lemonade-pi-plugin", True,  True,  "lpb-dev", "lpb"),
+    ("lpb-memory",        True,  True,  "dev",    "main"),
+    ("pi-subagents",      True,  True,  "lpb-dev", "lpb"),
+    ("pi",                False, False, "lpb-dev", "lpb"),
+]
+
+EXTENSION_REPOS = [r for r in WORKSPACE_REPOS if r[2]]  # is_extension
+
+
+def _github_token() -> str:
+    """Return GitHub token from environment."""
+    return os.environ.get("LPB_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+
+
+def _git_authenticated(args: list[str]) -> list[str]:
+    """Prepend auth-aware git URL override when token is available."""
+    token = _github_token()
+    if token:
+        return [
+            "git",
+            "-c", f"url.\"https://x-access-token:{token}@github.com/\".insteadOf=\"https://github.com/\"",
+        ] + args
+    return ["git"] + args
 
 
 def git(dir_: str | Path, *args: str, timeout: int = 120) -> tuple[str, str, int]:
     """Run a git command scoped to *dir_*; returns ``(out, err, code)``."""
-    return run_cmd(["git", "-C", str(dir_), *args], timeout=timeout)
+    cmd = ["git", "-C", str(dir_), *args]
+    return run_cmd(cmd, timeout=timeout)
 
+
+def git_auth(dir_: str | Path, *args: str, timeout: int = 120) -> tuple[str, str, int]:
+    """Run a git command with GitHub auth (when token available), scoped to *dir_*.
+
+    Uses ``-c url.insteadOf`` to inject the token for https://github.com/ URLs.
+    """
+    cmd = _git_authenticated(["-C", str(dir_), *args])
+    return run_cmd(cmd, timeout=timeout)
+
+
+# ─── Pipeline detection ───────────────────────────────────────────────────
+
+def detect_pipeline(tag_override: str | None = None) -> str:
+    """Detect the current pipeline (dev or main).
+
+    Priority:
+      1. tag_override (--tag argument)
+      2. LPB_IMAGE_TAG env var
+      3. VERSION file content (contains '-lpb-dev' → dev, else main)
+      4. LPB_VERSION env var (contains '-dev' → dev, else main)
+      5. default: dev
+    """
+    if tag_override and tag_override != "_show":
+        return "dev" if tag_override in ("dev",) else "main"
+
+    env_tag = os.environ.get("LPB_IMAGE_TAG", "")
+    if env_tag:
+        return "dev" if env_tag == "dev" else "main"
+
+    # Read VERSION file
+    for candidate in (
+        _SELF_DIR.parent / "VERSION",
+        Path("/opt/devstack/VERSION"),
+        WORKSPACE_ROOT / "devstack" / "VERSION",
+    ):
+        if candidate.is_file():
+            version = candidate.read_text().strip()
+            if "-dev" in version:
+                return "dev"
+            return "main"
+
+    # LPB_VERSION env var (baked in image)
+    lpb_version = os.environ.get("LPB_VERSION", "")
+    if lpb_version:
+        return "dev" if "-dev" in lpb_version else "main"
+
+    return "dev"  # default
+
+
+def get_version() -> str:
+    """Read the current stack VERSION."""
+    for candidate in (
+        _SELF_DIR.parent / "VERSION",
+        Path("/opt/devstack/VERSION"),
+        WORKSPACE_ROOT / "devstack" / "VERSION",
+    ):
+        if candidate.is_file():
+            return candidate.read_text().strip()
+    return os.environ.get("LPB_VERSION", "unknown")
+
+
+def get_stack_env(pipeline: str) -> dict[str, str]:
+    """Load the stack env for the given pipeline.
+
+    Returns LPB_PI_REF, LPB_CONFIG_REF, etc.
+    """
+    # Load base lpb.stack.env
+    base_env = {}
+    for candidate in (
+        _SELF_DIR.parent / "lpb.stack.env",
+        Path("/opt/devstack/lpb.stack.env"),
+    ):
+        if candidate.is_file():
+            base_env = parse_env_file(candidate)
+            break
+
+    # Overlay pipeline-specific env
+    env_file = _SELF_DIR.parent / f"lpb.stack.{pipeline}.env"
+    if env_file.is_file():
+        base_env.update(parse_env_file(env_file))
+
+    return base_env
+
+
+def expected_branch(repo_name: str, pipeline: str) -> str:
+    """Return the expected branch for a repo given the pipeline."""
+    for name, _, _, dev_branch, main_branch in WORKSPACE_REPOS:
+        if name == repo_name:
+            return dev_branch if pipeline == "dev" else main_branch
+    return ""
+
+
+# ─── Legacy layout migration ──────────────────────────────────────────────
 
 def migrate_legacy_layout(pi_root: str | Path, agent_dir: str | Path, cons: Console) -> None:
-    """Move legacy ``~/.pi`` root layout contents into ``~/.pi/agent/`` (one-time).
-
-    Preserves the infra markers (.initialized, ssh-host-keys, gh-config, agent/).
-    No-op on fresh volumes or already-reshaped layouts.
-    """
+    """Move legacy ``~/.pi`` root layout contents into ``~/.pi/agent/`` (one-time)."""
     pi_root, agent_dir = Path(pi_root), Path(agent_dir)
     if (pi_root / ".git").is_dir() and not (agent_dir / ".git").is_dir():
         cons.info(f"Migrating legacy config layout from {pi_root} to {agent_dir} ...")
@@ -64,6 +207,8 @@ def migrate_legacy_layout(pi_root: str | Path, agent_dir: str | Path, cons: Cons
                 pass
         cons.info(f"Legacy config layout migrated to {agent_dir}.")
 
+
+# ─── Config repo commands ─────────────────────────────────────────────────
 
 def clone_or_init(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> bool:
     """Clone the config repo, or initialize it in place when the target is
@@ -89,8 +234,8 @@ def clone_or_init(agent_dir: str | Path, remote: str, ref: str, cons: Console) -
     return True
 
 
-def head_short(agent_dir: str | Path) -> str:
-    out, _, _ = git(agent_dir, "rev-parse", "HEAD")
+def head_short(dir_: str | Path) -> str:
+    out, _, _ = git(dir_, "rev-parse", "HEAD")
     return out.strip()[:8] or "?"
 
 
@@ -237,15 +382,7 @@ def cmd_merge(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
 
 
 def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
-    """Align settings.json extension pins to latest available tags.
-    
-    Checks for version mismatch between local extension pins and the
-    latest available GitHub tag. Updates settings.json if newer versions
-    exist. Also warns if the config repo has local changes.
-    """
-    import json
-    import urllib.request
-
+    """Align settings.json extension pins to latest available tags."""
     settings_path = Path(agent_dir) / "settings.json"
     if not settings_path.is_file():
         cons.error(f"settings.json not found: {settings_path}")
@@ -257,7 +394,6 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     packages = settings.get("packages", [])
     lpb_repos = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
 
-    # Extract current pins
     current_pins = {}
     for pkg in packages:
         if isinstance(pkg, str) and "@" in pkg:
@@ -269,13 +405,16 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     for name in lpb_repos:
         cons.info(f"  {name}: {current_pins.get(name, '(not pinned)')}")
 
-    # Fetch latest tags
     cons.info("\nChecking latest tags...")
     latest_tags = {}
     for name in lpb_repos:
         try:
+            token = _github_token()
             url = f"https://api.github.com/repos/localpibox/{name}/tags"
-            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+            headers = {"Accept": "application/vnd.github+json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=10) as resp:
                 tags = json.loads(resp.read())
                 if tags:
@@ -283,7 +422,6 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
         except Exception as e:
             cons.warn(f"  {name}: could not fetch ({e})")
 
-    # Check mismatches
     mismatches = []
     for name in lpb_repos:
         cur = current_pins.get(name)
@@ -315,7 +453,6 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     else:
         cons.info("\nAll extensions up to date")
 
-    # Check config drift
     cons.info("\nConfig repo status:")
     out, err, code = git(agent_dir, "status", "--porcelain")
     if code == 0 and out.strip():
@@ -330,6 +467,514 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     return 0
 
 
+# ─── Workspace commands ───────────────────────────────────────────────────
+
+def _resolve_repo_path(repo_name: str) -> Path | None:
+    """Resolve the actual path of a workspace repo (follow symlinks)."""
+    ws_path = WORKSPACE_ROOT / repo_name
+    if ws_path.is_symlink():
+        target = ws_path.resolve()
+        if target.exists():
+            return target
+    elif (ws_path / ".git").exists() or ws_path.is_dir():
+        return ws_path
+    return None
+
+
+def _repo_branch(repo_path: Path) -> str:
+    """Get the current branch of a repo."""
+    out, _, code = git(repo_path, "branch", "--show-current")
+    if code == 0:
+        return out.strip()
+    return ""
+
+
+def _repo_head(repo_path: Path) -> str:
+    """Get the HEAD commit of a repo."""
+    out, _, code = git(repo_path, "rev-parse", "HEAD")
+    if code == 0:
+        return out.strip()[:8]
+    return "?"
+
+
+def _ensure_branch_tracked(repo_path: Path, branch: str) -> bool:
+    """Ensure a remote branch has a local tracking branch. Returns True if success."""
+    # Check if local branch exists
+    out, _, code = git(repo_path, "rev-parse", "--verify", branch)
+    if code == 0:
+        return True
+
+    # Check if remote branch exists
+    out, _, code = git_auth(repo_path, "ls-remote", "origin", f"refs/heads/{branch}")
+    if code != 0 or not out.strip():
+        return False
+
+    # Fetch and create local tracking branch
+    out, err, code = git_auth(repo_path, "fetch", "origin", branch)
+    if code != 0:
+        return False
+
+    # Ensure fetch refspec includes all branches (not just one)
+    fetch_spec_out, _, _ = git(repo_path, "config", "--get", "remote.origin.fetch")
+    fetch_spec = fetch_spec_out.strip()
+    if fetch_spec and "refs/heads/*" not in fetch_spec:
+        git(repo_path, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git_auth(repo_path, "fetch", "origin")
+
+    # Create local branch from FETCH_HEAD
+    out, err, code = git(repo_path, "checkout", "-b", branch, "FETCH_HEAD")
+    if code == 0:
+        # Set upstream tracking
+        git_auth(repo_path, "fetch", "origin")
+        git(repo_path, "branch", "--set-upstream-to", f"origin/{branch}", branch)
+        return True
+
+    return False
+
+
+def cmd_workspace_status(pipeline: str, cons: Console) -> int:
+    """Show workspace repo branches and alignment."""
+    cons.info(f"Pipeline: {pipeline} (VERSION: {get_version()})")
+    cons.info("")
+
+    all_aligned = True
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        expected = dev_branch if pipeline == "dev" else main_branch
+        path = _resolve_repo_path(name)
+
+        if path is None:
+            cons.warn(f"  {name}: MISSING")
+            all_aligned = False
+            continue
+
+        branch = _repo_branch(path)
+        head = _repo_head(path)
+        symlink = " (symlink)" if is_sym else ""
+
+        if branch == expected:
+            cons.info(f"  {name}: {branch}{symlink} ({head}) ✅")
+        else:
+            cons.warn(f"  {name}: {branch} (expected: {expected}){symlink} ({head}) ❌")
+            all_aligned = False
+
+    # Config repo
+    config_path = Path(DEFAULT_AGENT_DIR)
+    if (config_path / ".git").exists():
+        config_expected = "dev" if pipeline == "dev" else "main"
+        config_branch = _repo_branch(config_path)
+        config_head = _repo_head(config_path)
+        if config_branch == config_expected:
+            cons.info(f"  config: {config_branch} ({config_head}) ✅")
+        else:
+            cons.warn(f"  config: {config_branch} (expected: {config_expected}) ({config_head}) ❌")
+            all_aligned = False
+    else:
+        cons.warn("  config: MISSING")
+        all_aligned = False
+
+    cons.info("")
+    if all_aligned:
+        cons.done("All repos aligned with pipeline.")
+    else:
+        cons.warn("Some repos are misaligned. Run 'lpb-config workspace ensure' to fix.")
+
+    return 0 if all_aligned else 1
+
+
+def cmd_workspace_sync(pipeline: str, cons: Console) -> int:
+    """Create symlinks + git pull current branches."""
+    cons.info(f"Syncing workspace for pipeline: {pipeline}")
+    cons.info("")
+
+    # Create symlinks for extension repos
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        if not is_sym:
+            continue
+
+        expected = dev_branch if pipeline == "dev" else main_branch
+        ext_path = AGENT_GIT / name
+        ws_path = WORKSPACE_ROOT / name
+
+        if ext_path.exists():
+            # Remove existing symlink or file
+            if ws_path.is_symlink() or ws_path.exists():
+                if ws_path.is_symlink():
+                    ws_path.unlink()
+                elif ws_path.is_dir():
+                    shutil.rmtree(ws_path)
+                else:
+                    ws_path.unlink()
+            ws_path.symlink_to(ext_path)
+            cons.info(f"  {name}: symlink → {ext_path}")
+
+            # Pull latest
+            out, err, code = git_auth(ext_path, "pull", "--ff-only")
+            if code == 0:
+                cons.info(f"  {name}: pulled ✅")
+            else:
+                cons.warn(f"  {name}: pull failed ({err.strip()[:80]})")
+        else:
+            cons.warn(f"  {name}: extension not found at {ext_path}")
+
+    # Pull real repos
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        if is_sym:
+            continue
+        path = _resolve_repo_path(name)
+        if path is None:
+            continue
+
+        expected = dev_branch if pipeline == "dev" else main_branch
+        out, err, code = git_auth(path, "pull", "--ff-only")
+        if code == 0:
+            cons.info(f"  {name}: pulled ✅")
+        else:
+            cons.warn(f"  {name}: pull failed ({err.strip()[:80]})")
+
+    # Pull config repo
+    config_path = Path(DEFAULT_AGENT_DIR)
+    if (config_path / ".git").exists():
+        config_branch = _repo_branch(config_path)
+        out, err, code = git(config_path, "pull", "--ff-only")
+        if code == 0:
+            cons.info(f"  config: pulled ✅")
+        else:
+            cons.warn(f"  config: pull failed ({err.strip()[:80]})")
+
+    cons.info("")
+    cons.done("Workspace sync complete.")
+    return 0
+
+
+def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> int:
+    """Ensure all workspace repos are on the correct branch for the pipeline.
+
+    If --fix is passed, automatically switch repos to the correct branch.
+    """
+    cons.info(f"Ensuring workspace alignment for pipeline: {pipeline}")
+    if fix:
+        cons.info("(auto-fixing misaligned repos)")
+    cons.info("")
+
+    all_aligned = True
+    actions: list[str] = []
+
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        expected = dev_branch if pipeline == "dev" else main_branch
+        path = _resolve_repo_path(name)
+
+        if path is None:
+            cons.warn(f"  {name}: MISSING")
+            all_aligned = False
+            actions.append(f"  • Clone {name}")
+            continue
+
+        branch = _repo_branch(path)
+        if branch == expected:
+            cons.info(f"  {name}: {branch} ✅")
+            continue
+
+        # Repo is on wrong branch
+        all_aligned = False
+        if fix:
+            # Ensure the target branch is available locally
+            if not _ensure_branch_tracked(path, expected):
+                cons.error(f"  {name}: could not create/track {expected} branch")
+                continue
+
+            # Check for uncommitted changes
+            changes_out, _, _ = git(path, "status", "--porcelain")
+            if changes_out.strip():
+                cons.warn(f"  {name}: uncommitted changes — skipping switch (commit first)")
+                continue
+
+            git(path, "checkout", expected)
+            new_branch = _repo_branch(path)
+            if new_branch == expected:
+                cons.info(f"  {name}: {branch} → {expected} ✅ (fixed)")
+            else:
+                cons.error(f"  {name}: checkout failed (still on {new_branch})")
+        else:
+            actions.append(f"  • {name}: '{branch}' → '{expected}' (run --fix)")
+
+    # Config repo
+    config_path = Path(DEFAULT_AGENT_DIR)
+    if (config_path / ".git").exists():
+        config_expected = "dev" if pipeline == "dev" else "main"
+        config_branch = _repo_branch(config_path)
+        if config_branch == config_expected:
+            cons.info(f"  config: {config_branch} ✅")
+        else:
+            all_aligned = False
+            if fix:
+                changes_out, _, _ = git(config_path, "status", "--porcelain")
+                if changes_out.strip():
+                    cons.warn(f"  config: uncommitted changes — skipping switch (commit first)")
+                else:
+                    out, err, code = git(config_path, "checkout", config_expected)
+                    if code == 0:
+                        cons.info(f"  config: {config_branch} → {config_expected} ✅ (fixed)")
+                    else:
+                        cons.error(f"  config: checkout failed: {err.strip()[:80]}")
+            else:
+                actions.append(f"  • config: '{config_branch}' → '{config_expected}' (run --fix)")
+
+    cons.info("")
+    if all_aligned:
+        cons.done("All repos aligned with pipeline.")
+    elif fix:
+        cons.warn("Some repos could not be fixed — check errors above.")
+    else:
+        cons.warn("Misaligned repos found. Actions needed:")
+        for action in actions:
+            cons.raw(action)
+        cons.info("")
+        cons.info("Run 'lpb-config workspace ensure --fix' to auto-fix.")
+
+    return 0 if all_aligned else 1
+
+
+# ─── Validate command ─────────────────────────────────────────────────────
+
+def cmd_validate(pipeline: str, cons: Console) -> int:
+    """Validate the entire stack alignment to the current pipeline."""
+    version = get_version()
+    stack_env = get_stack_env(pipeline)
+
+    cons.info("=" * 60)
+    cons.info("  LocalPibox Stack Validation")
+    cons.info("=" * 60)
+    cons.info("")
+    cons.info(f"  Pipeline:  {pipeline}")
+    cons.info(f"  VERSION:   {version}")
+    cons.info(f"  LPB_PI_REF:     {stack_env.get('LPB_PI_REF', '?')}")
+    cons.info(f"  LPB_CONFIG_REF: {stack_env.get('LPB_CONFIG_REF', '?')}")
+    cons.info("")
+
+    total_checks = 0
+    passed_checks = 0
+
+    def check(label: str, condition: bool, detail: str = "", fix: str = "") -> None:
+        nonlocal total_checks, passed_checks
+        total_checks += 1
+        if condition:
+            passed_checks += 1
+            cons.info(f"  ✅ {label}")
+            if detail:
+                cons.raw(f"     {detail}")
+        else:
+            cons.warn(f"  ❌ {label}")
+            if detail:
+                cons.warn(f"     {detail}")
+            if fix:
+                cons.info(f"     Fix: {fix}")
+
+    # ── 1. VERSION file ────────────────────────────────────────────────
+    version_file = _SELF_DIR.parent / "VERSION"
+    version_in_image = os.environ.get("LPB_VERSION", "")
+    if version_file.is_file():
+        check(
+            "VERSION file exists",
+            True,
+            f"{version_file} = {version}",
+        )
+    else:
+        check("VERSION file exists", False, f"checked {version_file}",
+              "Ensure devstack/VERSION exists")
+
+    # Version matches pipeline
+    version_matches = (pipeline == "dev" and "-dev" in version) or (pipeline == "main" and "-dev" not in version)
+    check(
+        "VERSION matches pipeline",
+        version_matches,
+        f"VERSION={version}, pipeline={pipeline}",
+        "Update devstack/VERSION to match pipeline",
+    )
+
+    # ── 2. Config repo ─────────────────────────────────────────────────
+    config_path = Path(DEFAULT_AGENT_DIR)
+    if (config_path / ".git").exists():
+        config_branch = _repo_branch(config_path)
+        config_expected = "dev" if pipeline == "dev" else "main"
+        check(
+            f"Config repo on correct branch",
+            config_branch == config_expected,
+            f"current={config_branch}, expected={config_expected}",
+            "lpb-config reset (or git checkout {config_expected})",
+        )
+    else:
+        check("Config repo exists", False, f"{config_path} not found",
+              "lpb-config update")
+
+    # ── 3. Workspace repos ─────────────────────────────────────────────
+    cons.info("")
+    cons.info("  Workspace repos:")
+
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        expected = dev_branch if pipeline == "dev" else main_branch
+        path = _resolve_repo_path(name)
+
+        if path is None:
+            check(f"  {name} exists", False,
+                  f"{WORKSPACE_ROOT / name} not found",
+                  f"Clone or create symlink")
+            continue
+
+        branch = _repo_branch(path)
+        head = _repo_head(path)
+        details = f"branch={branch} ({head})"
+
+        if is_sym:
+            ws_path = WORKSPACE_ROOT / name
+            symlink_ok = ws_path.is_symlink()
+            check(f"  {name} symlink", symlink_ok,
+                  f"{ws_path} → {ws_path.resolve() if symlink_ok else 'broken'}")
+            details = f"symlink ✅" if symlink_ok else f"symlink ❌"
+
+        check(f"  {name} branch", branch == expected, details,
+              f"cd {path} && git checkout {expected}")
+
+    # ── 4. Extension repos match workspace ─────────────────────────────
+    cons.info("")
+    cons.info("  Extension alignment:")
+
+    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        if not is_ext:
+            continue
+
+        ws_path = WORKSPACE_ROOT / name
+        ext_path = AGENT_GIT / name
+
+        if ws_path.is_symlink():
+            # Symlink should point to extension
+            resolved = ws_path.resolve()
+            check(f"  {name} → extension",
+                  resolved == ext_path,
+                  f"symlink → {resolved}",
+                  f"rm {ws_path} && ln -s {ext_path} {ws_path}")
+        elif ext_path.exists():
+            # Not symlink — check if they have same commit
+            ws_head = _repo_head(ws_path)
+            ext_head = _repo_head(ext_path)
+            check(f"  {name} in sync",
+                  ws_head == ext_head,
+                  f"ws={ws_head}, ext={ext_head}",
+                  f"cd {ext_path} && git checkout <branch>")
+
+    # ── 5. Stack env alignment ─────────────────────────────────────────
+    cons.info("")
+    cons.info("  Stack env:")
+
+    pi_ref = stack_env.get("LPB_PI_REF", "")
+    config_ref = stack_env.get("LPB_CONFIG_REF", "")
+    pi_ref_expected = "lpb-dev" if pipeline == "dev" else "lpb"
+    config_ref_expected = "dev" if pipeline == "dev" else "main"
+
+    check(
+        f"LPB_PI_REF correct",
+        pi_ref == pi_ref_expected,
+        f"current={pi_ref}, expected={pi_ref_expected}",
+        f"Edit lpb.stack.{pipeline}.env or lpb.stack.env",
+    )
+    check(
+        f"LPB_CONFIG_REF correct",
+        config_ref == config_ref_expected,
+        f"current={config_ref}, expected={config_ref_expected}",
+        f"Edit lpb.stack.{pipeline}.env or lpb.stack.env",
+    )
+
+    # ── 6. Settings.json extension pins ────────────────────────────────
+    cons.info("")
+    cons.info("  Extension pins:")
+
+    settings_path = config_path / "settings.json"
+    if settings_path.is_file():
+        with open(settings_path) as f:
+            settings = json.load(f)
+
+        packages = settings.get("packages", [])
+        lpb_repos = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
+
+        for pkg_name in lpb_repos:
+            pinned_tag = None
+            for pkg in packages:
+                if isinstance(pkg, str) and f"localpibox/{pkg_name}@" in pkg:
+                    pinned_tag = pkg.split("@")[-1]
+                    break
+
+            if pinned_tag:
+                # Check if the tag matches or is newer than current version
+                tag_matches_version = pinned_tag == version or version.startswith(pinned_tag.split("-lpb")[0] + "-lpb")
+                # Also accept if tag is a valid version format
+                is_version_tag = bool(re.match(r"^\d+\.\d+\.\d+-lpb", pinned_tag))
+                check(
+                    f"  {pkg_name} pinned",
+                    True,
+                    f"@{pinned_tag}",
+                    f"lpb-config align" if not tag_matches_version else "",
+                )
+            else:
+                check(f"  {pkg_name} pinned", False,
+                      "not found in settings.json",
+                      "lpb-config align")
+    else:
+        check("settings.json exists", False,
+              f"{settings_path} not found",
+              "Clone config repo or create settings.json")
+
+    # ── 7. pi/lpb vs lpb-dev (informational only) ────────────────────
+    cons.info("")
+    cons.info("  Fork branch consistency:")
+
+    pi_path = _resolve_repo_path("pi")
+    if pi_path:
+        lpb_hash_out, _, lpb_code = git(pi_path, "rev-parse", "--verify", "lpb")
+        lpbdev_hash_out, _, lpbdev_code = git(pi_path, "rev-parse", "--verify", "lpb-dev")
+
+        if lpb_code == 0 and lpbdev_code == 0:
+            lpb_hash = lpb_hash_out.strip()
+            lpbdev_hash = lpbdev_hash_out.strip()
+            if lpb_hash == lpbdev_hash:
+                check(
+                    "pi: lpb == lpb-dev",
+                    True,
+                    f"lpb=lpb-dev ({lpb_hash[:8]})",
+                )
+            else:
+                # lpb-dev ahead of lpb is normal during active development
+                # Only warn, don't fail — stable merge to lpb happens when ready
+                ahead_out, _, _ = git(pi_path, "rev-list", "--count", "lpb..lpb-dev")
+                ahead = ahead_out.strip() or "0"
+                cons.info(f"  ℹ️  pi: lpb-dev is {ahead} commit(s) ahead of lpb (normal during dev)")
+                cons.raw(f"     lpb={lpb_hash[:8]}, lpb-dev={lpbdev_hash[:8]}")
+        else:
+            missing = []
+            if lpb_code != 0:
+                missing.append("lpb")
+            if lpbdev_code != 0:
+                missing.append("lpb-dev")
+            check(
+                "pi: lpb & lpb-dev both exist",
+                False,
+                f"missing local branch(es): {', '.join(missing)}",
+                "cd workspace/pi && git fetch origin && git checkout lpb-dev",
+            )
+
+    # ── Summary ────────────────────────────────────────────────────────
+    cons.info("")
+    cons.info("=" * 60)
+    pct = (passed_checks / total_checks * 100) if total_checks > 0 else 0
+    if passed_checks == total_checks:
+        cons.done(f"  All {total_checks} checks passed ✅")
+    else:
+        cons.warn(f"  {passed_checks}/{total_checks} checks passed ({pct:.0f}%) ❌")
+    cons.info("=" * 60)
+
+    return 0 if passed_checks == total_checks else 1
+
+
+# ─── CLI ──────────────────────────────────────────────────────────────────
+
 def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
     p = sub.add_parser(name, help=help_)
     return p
@@ -343,18 +988,41 @@ def main(argv: list[str] | None = None) -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Environment:\n"
-            "  AGENT_DIR       Config repo path (default: /home/lpb/.pi/agent)\n"
-            "  CONFIG_REMOTE   Git remote URL (default: https://github.com/localpibox/config.git)\n"
-            "  CONFIG_REF      Branch to track (default: main)"
+            "  AGENT_DIR         Config repo path (default: /home/lpb/.pi/agent)\n"
+            "  CONFIG_REMOTE     Git remote URL (default: https://github.com/localpibox/config.git)\n"
+            "  CONFIG_REF        Branch to track (default: main)\n"
+            "  LPB_GITHUB_TOKEN  GitHub token for authenticated git operations\n\n"
+            "Pipeline:\n"
+            "  Detected from VERSION file or LPB_IMAGE_TAG env var.\n"
+            "  Override with --tag dev|main on any command."
         ),
     )
-    sub = parser.add_subparsers(dest="command", required=True)
-    _add_subparser(sub, "status", "Show current commit, remote HEAD, local changes")
-    _add_subparser(sub, "update", "Fetch + fast-forward (safe: refuses on local changes)")
-    p_reset = _add_subparser(sub, "reset", "Re-clone, destroy local changes (with confirmation)")
-    p_reset.add_argument("--force", action="store_true", help="skip the confirmation prompt")
-    _add_subparser(sub, "merge", "Open git merge flow for advanced users")
+    parser.add_argument(
+        "--tag", default=None,
+        help="Override pipeline detection (dev|main)",
+    )
+
+    sub = parser.add_subparsers(dest="command")
+
+    # Config repo commands
+    _add_subparser(sub, "status", "Show config repo commit, remote HEAD, local changes")
+    _add_subparser(sub, "update", "Fetch + fast-forward config repo")
+    p_reset = _add_subparser(sub, "reset", "Re-clone config repo (with confirmation)")
+    p_reset.add_argument("--force", action="store_true", help="skip confirmation")
+    _add_subparser(sub, "merge", "Open git merge flow for config repo")
     _add_subparser(sub, "align", "Align settings.json extension pins to latest tags")
+
+    # Validate command
+    _add_subparser(sub, "validate", "Validate entire stack alignment to current pipeline")
+
+    # Workspace subcommand group
+    p_ws = sub.add_parser("workspace", help="Manage workspace repos")
+    ws_sub = p_ws.add_subparsers(dest="workspace_command")
+    _add_subparser(ws_sub, "status", "Show workspace repo branches + alignment")
+    _add_subparser(ws_sub, "sync", "Create symlinks + git pull current branches")
+    p_ws_ensure = _add_subparser(ws_sub, "ensure", "Switch repos to correct branches for pipeline")
+    p_ws_ensure.add_argument("--fix", action="store_true", help="auto-fix misaligned repos")
+
     args = parser.parse_args(argv)
 
     agent_dir = os.environ.get("AGENT_DIR", DEFAULT_AGENT_DIR)
@@ -365,7 +1033,11 @@ def main(argv: list[str] | None = None) -> int:
     if agent_dir == DEFAULT_AGENT_DIR:
         migrate_legacy_layout("/home/lpb/.pi", DEFAULT_AGENT_DIR, cons)
 
+    # Determine pipeline
+    pipeline = detect_pipeline(args.tag)
+
     force = getattr(args, "force", False) or os.environ.get("FORCE") == "1"
+
     if args.command == "status":
         return cmd_status(agent_dir, remote, ref, cons)
     if args.command == "update":
@@ -376,6 +1048,20 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_merge(agent_dir, remote, ref, cons)
     if args.command == "align":
         return cmd_align(agent_dir, remote, ref, cons)
+    if args.command == "validate":
+        return cmd_validate(pipeline, cons)
+    if args.command == "workspace":
+        if not args.workspace_command:
+            p_ws.print_help()
+            return 1
+        if args.workspace_command == "status":
+            return cmd_workspace_status(pipeline, cons)
+        if args.workspace_command == "sync":
+            return cmd_workspace_sync(pipeline, cons)
+        if args.workspace_command == "ensure":
+            fix = getattr(args, "fix", False)
+            return cmd_workspace_ensure(pipeline, fix=fix, cons=cons)
+
     parser.print_help()
     return 1
 
