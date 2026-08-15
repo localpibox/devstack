@@ -5,3 +5,4 @@ doc/archive/
 __pycache__/
 *.pyc
 *.pyo
+.env
