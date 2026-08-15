@@ -236,6 +236,100 @@ def cmd_merge(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     return 1
 
 
+def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
+    """Align settings.json extension pins to latest available tags.
+    
+    Checks for version mismatch between local extension pins and the
+    latest available GitHub tag. Updates settings.json if newer versions
+    exist. Also warns if the config repo has local changes.
+    """
+    import json
+    import urllib.request
+
+    settings_path = Path(agent_dir) / "settings.json"
+    if not settings_path.is_file():
+        cons.error(f"settings.json not found: {settings_path}")
+        return 1
+
+    with open(settings_path) as f:
+        settings = json.load(f)
+
+    packages = settings.get("packages", [])
+    lpb_repos = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
+
+    # Extract current pins
+    current_pins = {}
+    for pkg in packages:
+        if isinstance(pkg, str) and "@" in pkg:
+            for name in lpb_repos:
+                if f"localpibox/{name}@" in pkg:
+                    current_pins[name] = pkg.split("@")[-1]
+
+    cons.info("Current extension pins:")
+    for name in lpb_repos:
+        cons.info(f"  {name}: {current_pins.get(name, '(not pinned)')}")
+
+    # Fetch latest tags
+    cons.info("\nChecking latest tags...")
+    latest_tags = {}
+    for name in lpb_repos:
+        try:
+            url = f"https://api.github.com/repos/localpibox/{name}/tags"
+            req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                tags = json.loads(resp.read())
+                if tags:
+                    latest_tags[name] = tags[0]["name"]
+        except Exception as e:
+            cons.warn(f"  {name}: could not fetch ({e})")
+
+    # Check mismatches
+    mismatches = []
+    for name in lpb_repos:
+        cur = current_pins.get(name)
+        lat = latest_tags.get(name)
+        if cur and lat and cur != lat:
+            mismatches.append((name, cur, lat))
+
+    if mismatches:
+        cons.warn(f"\nVersion mismatch ({len(mismatches)} extension(s)):")
+        for name, cur, lat in mismatches:
+            cons.warn(f"  {name}: {cur} → {lat}")
+
+        if confirm("\nUpdate settings.json to latest?"):
+            for name, cur, lat in mismatches:
+                old = f"git:github.com/localpibox/{name}@{cur}"
+                new = f"git:github.com/localpibox/{name}@{lat}"
+                idx = packages.index(old) if old in packages else -1
+                if idx >= 0:
+                    packages[idx] = new
+                    cons.info(f"  {name}: {cur} → {lat}")
+            settings["packages"] = packages
+            with open(settings_path, "w") as f:
+                json.dump(settings, f, indent=2)
+                f.write("\n")
+            cons.info(f"\nUpdated {settings_path}")
+            cons.info("Run 'pi update --extensions' to apply")
+        else:
+            cons.info("Skipped. Run 'lpb-config align' when ready.")
+    else:
+        cons.info("\nAll extensions up to date")
+
+    # Check config drift
+    cons.info("\nConfig repo status:")
+    out, err, code = git(agent_dir, "status", "--porcelain")
+    if code == 0 and out.strip():
+        cons.warn("Local changes detected:")
+        for line in out.strip().split("\n")[:5]:
+            cons.info(f"  {line}")
+        cons.info("Use 'lpb-config update' to sync (if safe)")
+        cons.info("Use 'lpb-config merge' for manual merge")
+    else:
+        cons.info("  Clean (no local changes)")
+
+    return 0
+
+
 def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
     p = sub.add_parser(name, help=help_)
     return p
@@ -260,6 +354,7 @@ def main(argv: list[str] | None = None) -> int:
     p_reset = _add_subparser(sub, "reset", "Re-clone, destroy local changes (with confirmation)")
     p_reset.add_argument("--force", action="store_true", help="skip the confirmation prompt")
     _add_subparser(sub, "merge", "Open git merge flow for advanced users")
+    _add_subparser(sub, "align", "Align settings.json extension pins to latest tags")
     args = parser.parse_args(argv)
 
     agent_dir = os.environ.get("AGENT_DIR", DEFAULT_AGENT_DIR)
@@ -279,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_reset(agent_dir, remote, ref, cons, force=force)
     if args.command == "merge":
         return cmd_merge(agent_dir, remote, ref, cons)
+    if args.command == "align":
+        return cmd_align(agent_dir, remote, ref, cons)
     parser.print_help()
     return 1
 
