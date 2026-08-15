@@ -165,7 +165,7 @@ jobs:
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "LPB_VERSION=$(cat VERSION 2>/dev/null || echo unknown)" >> "$GITHUB_OUTPUT"
+          echo "LPB_VERSION=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
@@ -240,7 +240,7 @@ jobs:
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "LPB_VERSION=$(cat VERSION 2>/dev/null || echo unknown)" >> "$GITHUB_OUTPUT"
+          echo "LPB_VERSION=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
