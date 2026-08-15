@@ -128,16 +128,12 @@ def detect_pipeline(tag_override: str | None = None) -> str:
         return "dev" if env_tag == "dev" else "main"
 
     # Read VERSION file
-    for candidate in (
-        _SELF_DIR.parent / "VERSION",
-        Path("/opt/devstack/VERSION"),
-        WORKSPACE_ROOT / "devstack" / "VERSION",
-    ):
-        if candidate.is_file():
-            version = candidate.read_text().strip()
-            if "-dev" in version:
-                return "dev"
-            return "main"
+    vf = _find_version_file()
+    if vf is not None:
+        version = vf.read_text().strip()
+        if "-dev" in version:
+            return "dev"
+        return "main"
 
     # LPB_VERSION env var (baked in image)
     lpb_version = os.environ.get("LPB_VERSION", "")
@@ -159,6 +155,24 @@ def get_version() -> str:
     return os.environ.get("LPB_VERSION", "unknown")
 
 
+_VERSION_FILE: Path | None = None  # cache
+
+def _find_version_file() -> Path | None:
+    """Find the VERSION file (cached)."""
+    global _VERSION_FILE
+    if _VERSION_FILE is not None:
+        return _VERSION_FILE
+    for candidate in (
+        _SELF_DIR.parent / "VERSION",
+        Path("/opt/devstack/VERSION"),
+        WORKSPACE_ROOT / "devstack" / "VERSION",
+    ):
+        if candidate.is_file():
+            _VERSION_FILE = candidate
+            return candidate
+    return None
+
+
 def get_stack_env(pipeline: str) -> dict[str, str]:
     """Load the stack env for the given pipeline.
 
@@ -169,15 +183,21 @@ def get_stack_env(pipeline: str) -> dict[str, str]:
     for candidate in (
         _SELF_DIR.parent / "lpb.stack.env",
         Path("/opt/devstack/lpb.stack.env"),
+        WORKSPACE_ROOT / "devstack" / "lpb.stack.env",
     ):
         if candidate.is_file():
             base_env = parse_env_file(candidate)
             break
 
     # Overlay pipeline-specific env
-    env_file = _SELF_DIR.parent / f"lpb.stack.{pipeline}.env"
-    if env_file.is_file():
-        base_env.update(parse_env_file(env_file))
+    for candidate in (
+        _SELF_DIR.parent / f"lpb.stack.{pipeline}.env",
+        Path("/opt/devstack/lpb.stack.") / f"{pipeline}.env",
+        WORKSPACE_ROOT / "devstack" / f"lpb.stack.{pipeline}.env",
+    ):
+        if candidate.is_file():
+            base_env.update(parse_env_file(candidate))
+            break
 
     return base_env
 
@@ -770,26 +790,28 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
                 cons.info(f"     Fix: {fix}")
 
     # ── 1. VERSION file ────────────────────────────────────────────────
-    version_file = _SELF_DIR.parent / "VERSION"
-    version_in_image = os.environ.get("LPB_VERSION", "")
-    if version_file.is_file():
+    vf = _find_version_file()
+    if vf is not None:
+        version_on_disk = vf.read_text().strip()
         check(
             "VERSION file exists",
             True,
-            f"{version_file} = {version}",
+            f"{vf} = {version_on_disk}",
+        )
+        version_matches = (pipeline == "dev" and "-dev" in version_on_disk) or \
+                          (pipeline == "main" and "-dev" not in version_on_disk)
+        check(
+            "VERSION matches pipeline",
+            version_matches,
+            f"VERSION={version_on_disk}, pipeline={pipeline}",
+            "Update devstack/VERSION to match pipeline",
         )
     else:
-        check("VERSION file exists", False, f"checked {version_file}",
+        check("VERSION file exists", False,
+              f"checked {_SELF_DIR.parent}, /opt/devstack, {WORKSPACE_ROOT / 'devstack'}",
               "Ensure devstack/VERSION exists")
-
-    # Version matches pipeline
-    version_matches = (pipeline == "dev" and "-dev" in version) or (pipeline == "main" and "-dev" not in version)
-    check(
-        "VERSION matches pipeline",
-        version_matches,
-        f"VERSION={version}, pipeline={pipeline}",
-        "Update devstack/VERSION to match pipeline",
-    )
+        check("VERSION matches pipeline", False,
+              "no VERSION file found", "Ensure devstack/VERSION exists")
 
     # ── 2. Config repo ─────────────────────────────────────────────────
     config_path = Path(DEFAULT_AGENT_DIR)
