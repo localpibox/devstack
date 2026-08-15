@@ -284,7 +284,7 @@ jobs:
   tag-repos:
     name: Tag all repos
     runs-on: ubuntu-latest
-    needs: [build-cli, build-web]
+    needs: [build-cli, build-web, bump-version]
     if: ${{ github.event_name != 'pull_request' && needs.build-cli.result == 'success' && needs.build-web.result == 'success' }}
     steps:
       - name: Create tags on all repos
