@@ -142,6 +142,13 @@ export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:
 # That special case runs below, after _bridge.
 _bridge() {
     local _name lpb_name
+    # Unset bare names that are set but empty — they block the promotion
+    # (e.g. EXA_API_KEY="" from host env still counts as "set")
+    for _name in "${BARE_NAMES[@]}"; do
+        if [[ -z "${!_name:-}" ]]; then
+            unset "$_name"
+        fi
+    done
     # Build LPB_ prefix with fallback to bare name (shell env wins)
     for _name in "${BARE_NAMES[@]}"; do
         lpb_name="LPB_${_name}"
@@ -381,7 +388,8 @@ fi
 persist_devstack_env() {
     local env_file="${HOME_DIR}/.devstack-env"
     : > "${env_file}"
-    # Dump all LPB_*/PI_* vars plus the aliased bare names (non-empty only).
+    # Dump LPB_*/PI_* vars (source of truth) — the bridge block below promotes them.
+    # Also dump bare names that are non-empty (redundancy for non-sourced processes).
     while IFS= read -r name; do
         [[ -n "$name" ]] || continue
         local val="${!name}"
@@ -391,9 +399,19 @@ persist_devstack_env() {
     done < <({
         env | cut -d= -f1 | grep -E '^(LPB_|PI_)'
         for n in "${BARE_NAMES[@]}"; do [[ -n "${!n:-}" ]] && echo "$n"; done
-        # GitHub token is resolved by special case (gh auth token) — must persist for interactive shells
         [[ -n "${GITHUB_TOKEN:-}" ]] && echo "GITHUB_TOKEN"
     })
+    # Append bridge block — promotes LPB_* → bare names when sourced by new shells.
+    # This ensures the file works standalone (host shell, SSH, orca.dev relay).
+    {
+        printf '\n# ── LPB_ → bare-name bridge (auto-generated) ──\n'
+        printf 'for __lpb_name in ${!LPB_@}; do\n'
+        printf '    __bare="${__lpb_name#LPB_}"\n'
+        printf '    if [[ -n "$__bare" && -z "${!__bare:-}" ]]; then\n'
+        printf '        export "$__bare"="${!__lpb_name}"\n'
+        printf '    fi\n'
+        printf 'done; unset __lpb_name __bare\n'
+    } >> "${env_file}"
     chmod 600 "${env_file}" 2>/dev/null || true
     # Source it from .bashrc and .profile, idempotently.
     local src_marker='# LocalPibox devstack environment (managed)'
