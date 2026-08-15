@@ -158,8 +158,10 @@ jobs:
           source lpb.stack.env
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
-          # Use bumped version from bump-version step (workspace has old value)
-          echo "PI_REF=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          # Use branch name for cloning (not version tag, which doesn't exist yet)
+          echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
+          # Use bumped version for image tagging
+          echo "PI_TAG=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
           echo "CONFIG_FORK=$LPB_CONFIG_FORK" >> "$GITHUB_OUTPUT"
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
