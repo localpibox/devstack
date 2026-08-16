@@ -366,6 +366,19 @@ if [[ "$FIRST_RUN" = "true" ]]; then
         warn "settings.json.template not found — Pi will use defaults"
     fi
 
+    # ── Generate lpb-memory config from template (first boot only) ──
+    # No llmModelOverride — uses main model until user configures provider.
+    _memory_template="${AGENT_DIR}/lpb-memory-config.json.template"
+    _memory_file="${AGENT_DIR}/lpb-memory-config.json"
+    if [[ -f "${_memory_template}" && ! -f "${_memory_file}" ]]; then
+        info "Generating lpb-memory-config.json from template..."
+        cp "${_memory_template}" "${_memory_file}"
+        info "  lpb-memory config generated (uses main model by default)"
+        info "  Run 'lpb-config memory setup' to configure after /login lemonade"
+    elif [[ ! -f "${_memory_template}" ]]; then
+        warn "lpb-memory-config.json.template not found — extension uses defaults"
+    fi
+
     # ── Config repo: clone/fetch into ~/.pi/agent/ (runs every boot — see §4a)
     touch "${HOME_DIR}/.pi/.initialized"
 

@@ -1120,6 +1120,112 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     return 0 if passed_checks == total_checks else 1
 
 
+# ─── Memory config commands ──────────────────────────────────────────────
+
+MEMORY_CONFIG_PATH = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json"
+MEMORY_CONFIG_TEMPLATE = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json.template"
+
+
+def cmd_memory_show(cons: Console) -> int:
+    """Show current lpb-memory config."""
+    if MEMORY_CONFIG_PATH.is_file():
+        data = json.loads(MEMORY_CONFIG_PATH.read_text())
+        cons.info("lpb-memory config:")
+        cons.info(f"  File: {MEMORY_CONFIG_PATH}")
+        cons.info("")
+        for key, val in data.items():
+            cons.info(f"  {key}: {val}")
+    else:
+        cons.warn(f"Config not found: {MEMORY_CONFIG_PATH}")
+        if MEMORY_CONFIG_TEMPLATE.is_file():
+            cons.info("")
+            cons.info("Template available, run to generate:")
+            cons.info("  lpb-config memory setup --non-interactive")
+        else:
+            cons.info("")
+            cons.info("Extension will use built-in defaults.")
+    return 0
+
+
+def cmd_memory_setup(*, non_interactive: bool = False, cons: Console) -> int:
+    """Interactive memory config wizard."""
+    if not MEMORY_CONFIG_TEMPLATE.is_file():
+        cons.error("Template not found:")
+        cons.error(f"  {MEMORY_CONFIG_TEMPLATE}")
+        cons.info("Run 'lpb-config update' to fetch latest config repo.")
+        return 1
+
+    base = json.loads(MEMORY_CONFIG_TEMPLATE.read_text())
+
+    if non_interactive:
+        MEMORY_CONFIG_PATH.write_text(json.dumps(base, indent=2) + "\n")
+        cons.info(f"Generated {MEMORY_CONFIG_PATH} from template.")
+        cons.info("Run 'lpb-config memory setup' to customize.")
+        cons.info("Restart Pi session (/new) to apply.")
+        return 0
+
+    cons.info("=" * 50)
+    cons.info("  lpb-memory Configuration")
+    cons.info("=" * 50)
+    cons.info("")
+
+    modes = [
+        ("legacy-inject", "Inject memory into every prompt (~4KB, recommended)"),
+        ("policy-only", "AI must search memory proactively (saves context)"),
+    ]
+    cons.info("[1] Memory mode:")
+    for i, (mode, desc) in enumerate(modes, 1):
+        marker = " ← current" if base.get("memoryMode") == mode else ""
+        cons.info(f"  {i}. {mode:<15} {desc}{marker}")
+    choice = input("\n  Choice [1]: ").strip() or "1"
+    if choice == "2":
+        base["memoryMode"] = "policy-only"
+        base["memoryPolicyStyle"] = "compact"
+    cons.info("")
+
+    transports = [
+        ("subprocess", "Offload to separate model (free main session, recommended)"),
+        ("direct", "Use main model (faster, blocks main session)"),
+    ]
+    cons.info("[2] Review transport:")
+    for i, (t, desc) in enumerate(transports, 1):
+        marker = " ← current" if base.get("reviewTransport") == t else ""
+        cons.info(f"  {i}. {t:<15} {desc}{marker}")
+    choice = input("\n  Choice [1]: ").strip() or "1"
+    if choice == "2":
+        base["reviewTransport"] = "direct"
+    cons.info("")
+
+    cons.info("[3] Model for background operations:")
+    cons.info("  (Leave empty to use main model)")
+    cons.info("  Example: qwen3.5-9b-FLM (NPU model)")
+    model = input("  Model: ").strip()
+    if model:
+        base["llmModelOverride"] = model
+        base["llmThinkingOverride"] = "low"
+    cons.info("")
+
+    cons.info("[4] Context limits (press Enter for defaults):")
+    val = input(f"  Memory entries [{base.get('memoryCharLimit', 3000)}]: ").strip()
+    if val:
+        base["memoryCharLimit"] = int(val)
+    val = input(f"  User preferences [{base.get('userCharLimit', 3000)}]: ").strip()
+    if val:
+        base["userCharLimit"] = int(val)
+    val = input(f"  Max failures [{base.get('failureInjectionMaxEntries', 3)}]: ").strip()
+    if val:
+        base["failureInjectionMaxEntries"] = int(val)
+    cons.info("")
+
+    MEMORY_CONFIG_PATH.write_text(json.dumps(base, indent=2) + "\n")
+    cons.done(f"Config written to {MEMORY_CONFIG_PATH}")
+    cons.info("")
+    cons.info("Apply: restart Pi session with /new")
+    cons.info("Review: lpb-config memory show")
+
+    return 0
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────
 
 def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
@@ -1158,6 +1264,14 @@ def main(argv: list[str] | None = None) -> int:
     p_reset.add_argument("--force", action="store_true", help="skip confirmation")
     _add_subparser(sub, "merge", "Open git merge flow for config repo")
     _add_subparser(sub, "align", "Align settings.json extension pins to latest tags")
+
+    # Memory config subcommand
+    p_mem = sub.add_parser("memory", help="Manage lpb-memory extension config")
+    mem_sub = p_mem.add_subparsers(dest="memory_command")
+    _add_subparser(mem_sub, "show", "Show current lpb-memory config")
+    p_mem_setup = _add_subparser(mem_sub, "setup", "Interactive memory config wizard")
+    p_mem_setup.add_argument("--non-interactive", action="store_true",
+                             help="generate from template without prompts")
 
     # Validate command
     _add_subparser(sub, "validate", "Validate entire stack alignment to current pipeline")
@@ -1199,6 +1313,15 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_align(agent_dir, remote, ref, cons)
     if args.command == "validate":
         return cmd_validate(pipeline, cons)
+    if args.command == "memory":
+        if not args.memory_command:
+            p_mem.print_help()
+            return 1
+        if args.memory_command == "show":
+            return cmd_memory_show(cons)
+        if args.memory_command == "setup":
+            non_int = getattr(args, "non_interactive", False)
+            return cmd_memory_setup(non_interactive=non_int, cons=cons)
     if args.command == "workspace":
         if not args.workspace_command:
             p_ws.print_help()
