@@ -114,6 +114,11 @@ lpb-config reset [--force]      # Re-clone (destructive)
 lpb-config merge                # Interactive merge
 lpb-config align                # Update extension pins to latest GitHub tags
 
+# Memory extension config
+lpb-config memory show          # Show current lpb-memory config
+lpb-config memory setup         # Interactive config wizard
+lpb-config memory setup --non-interactive  # Generate from template
+
 # Override pipeline detection
 lpb-config --tag main validate  # Force main pipeline check
 lpb-config --tag dev workspace ensure
@@ -133,6 +138,21 @@ lpb-config --tag dev workspace ensure
 3. **Version sync:** `lpb-config workspace sync --extensions` updates pins to LPB_VERSION
 4. **Validate:** `lpb-config validate` checks pins match current version
 5. **Persistent:** settings.json persists on host volume, survives container rebuilds
+
+## lpb-memory Config Lifecycle
+
+Same pattern — template in repo, user config on host:
+
+```bash
+# Config repo has: lpb-memory-config.json.template (stack defaults)
+# start.sh generates: lpb-memory-config.json (copies template)
+```
+
+1. **First boot:** start.sh copies template → config
+2. **No model override** — uses main model until user configures
+3. **Tune:** `lpb-config memory setup` interactive wizard
+4. **Review:** `lpb-config memory show` displays current config
+5. **Persistent:** config persists on host volume, survives rebuilds
 
 ## Commit Author Convention
 
