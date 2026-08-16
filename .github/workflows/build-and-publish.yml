@@ -60,7 +60,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/localpibox/devstack
+  IMAGE_NAME: ghcr.io/lpb-stack/devstack
 
 jobs:
   # ──────────────────────────────────────────────────────
