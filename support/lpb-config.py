@@ -42,10 +42,10 @@ for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
         sys.path.insert(0, str(_c))
         break
 
-from lpb-stack.cli import confirm, install_sigpipe_handler  # noqa: E402
-from lpb-stack.env import parse_env_file  # noqa: E402
-from lpb-stack.log import Console  # noqa: E402
-from lpb-stack.run import run_cmd  # noqa: E402
+from localpibox.cli import confirm, install_sigpipe_handler  # noqa: E402
+from localpibox.env import parse_env_file  # noqa: E402
+from localpibox.log import Console  # noqa: E402
+from localpibox.run import run_cmd  # noqa: E402
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 

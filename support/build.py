@@ -24,10 +24,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from lpb-stack import log  # noqa: E402
-from lpb-stack.cli import install_sigpipe_handler  # noqa: E402
-from lpb-stack.env import load_env_chain  # noqa: E402
-from lpb-stack.run import run_cmd, which  # noqa: E402
+from localpibox import log  # noqa: E402
+from localpibox.cli import install_sigpipe_handler  # noqa: E402
+from localpibox.env import load_env_chain  # noqa: E402
+from localpibox.run import run_cmd, which  # noqa: E402
 
 REQUIRED_STACK_VARS = [
     "LPB_IMAGE_CLI",

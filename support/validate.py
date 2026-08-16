@@ -27,9 +27,9 @@ for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
         sys.path.insert(0, str(_c))
         break
 
-from lpb-stack.cli import install_sigpipe_handler  # noqa: E402
-from lpb-stack.log import Console  # noqa: E402
-from lpb-stack.run import run_cmd, which  # noqa: E402
+from localpibox.cli import install_sigpipe_handler  # noqa: E402
+from localpibox.log import Console  # noqa: E402
+from localpibox.run import run_cmd, which  # noqa: E402
 
 EXT_BASE = Path("/home/lpb/.pi/agent/git")
 CHECK_REPOS = ("lpb-stack/lemonade-pi-plugin", "lpb-stack/lpb-memory")
