@@ -24,7 +24,7 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "lpb-stack").is_dir():
+    if (_c / "localpibox").is_dir():
         sys.path.insert(0, str(_c))
         break
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _candidate in (_SELF_DIR.parent / "scripts", _SELF_DIR):
-    if (_candidate / "lpb-stack").is_dir():
+    if (_candidate / "localpibox").is_dir():
         sys.path.insert(0, str(_candidate))
         break
 

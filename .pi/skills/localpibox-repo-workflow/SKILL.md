@@ -1,354 +1,266 @@
 ---
 name: lpb-stack-repo-workflow
-description: Manage the 6 LocalPibox repos — CI-only versioning, hooks, image builds, lpb.py.
+description: Manage the 6 LocalPibox repos — CI-only versioning, stable releases, image builds, lpb.py.
 ---
 # LocalPibox Repository Workflow
 
-Versioning model: **single-source** (devstack/VERSION). CI bumps version after tests pass, creates tags on all 6 repos, builds images. Git hooks validate only — no cross-repo version sync.
+Versioning model: **single-source** (devstack/VERSION). CI bumps the version
+after tests pass, commits it to the pushed branch, tags the other 5 repos,
+and builds images. Git hooks validate only — no cross-repo writes, no
+local version bumping.
 
 ## When to Use
 
 - Onboarding new developers to the LocalPibox stack
-- Setting up CI/CD pipelines (build-and-publish.yml)
-- Debugging version/tag alignment issues
+- Setting up or debugging CI/CD (build-and-publish.yml)
+- Creating the stable (main) release from dev
+- Debugging version/tag/pin alignment issues
 - Adding/removing repos from the stack
 - Validating Docker image builds for `dev` or `main` targets
-- Using `lpb --version`, `lpb --tag`, `lpb.py` scripts
+- Using `lpb --version`, `lpb --tag`, `lpb.py`, `lpb-config`
 
 ## Versioning Model (Option C)
 
 ```
 Single source: devstack/VERSION
-CI bump: tests → bump VERSION → commit+push → create tags on all repos → build images
+CI: tests pass → bump patch (branch-aware suffix) → commit to pushed branch
+    → tag other 5 repos → build + publish images
 ```
 
-- **devstack/VERSION** — only file that matters (e.g., `0.0.6-lpb`)
-- **lpb.stack.env** — LPB_PI_REF = VERSION, used by CI + lpb.py
-- **settings.json** — extension pins match VERSION string
-- **Docker images** — tagged with stack version (`:0.0.6-lpb-cli`)  
-- **GitHub tags** — same version tag on all 6 repos
-- **No VERSION files in other repos** — they are identified by tags only
-- **Git hooks** — validate only (no cross-repo writes)
-- **CI** — bumps version, creates tags, builds/pushes images
-
-Standardized workflow for managing the 6 LocalPibox repositories, with conventions for branches, commits, tags, versions, CI, and git hooks.
-
-## When to Use
-
-- Onboarding new developers to the LocalPibox stack
-- Creating or restructuring repositories in the 6-repo layout
-- Setting up CI/CD pipelines (build-and-publish.yml)
-- Managing version bumps, tagging, and branch strategy
-- Debugging extension symlink or workspace issues
-- Validating Docker image builds for `dev` or `main` targets
-- Using `lpb.py` to select image tags (`:dev`, `:main`, `:{version}`)
+- **devstack/VERSION** — the only VERSION file in the stack (e.g. `0.0.46-lpb-dev`)
+- **Format:** dev pipeline `0.0.x-lpb-dev`, main pipeline `0.0.x-lpb`
+- **CI bump** preserves major.minor, increments patch, appends `-dev` only on dev
+- **Tags** — created by CI on the **other 5 repos only** (devstack is tracked by
+  its VERSION file, never tagged), pointing at the pipeline's branch HEAD
+- **`lpb.stack.env`** — `LPB_PI_REF` / `LPB_CONFIG_REF` are **branch names**
+  (`lpb-dev`/`lpb`, `dev`/`main`), never versions
+- **Pipeline profiles** — `lpb.stack.dev.env` / `lpb.stack.main.env` override the
+  refs per pipeline (`lpb --tag dev|main`)
+- **Docker images** — `ghcr.io/lpb-stack/devstack` tagged per pipeline (see CI/CD)
+- **package.json** — keeps original fork versions, CI never touches it
 
 ## Repository Map
 
-| Repo | Type | --tag dev | --tag main |
+| Repo | Type | dev branch | stable branch |
 |---|---|---|---|
-| **config** | workspace | `dev` | `main` |
-| **devstack** | workspace | `dev` | `main` |
+| **devstack** | workspace (single source) | `dev` | `main` |
+| **config** | workspace (agent preset) | `dev` | `main` |
 | **lpb-memory** | workspace + extension | `dev` | `main` |
-| **pi** | workspace (CI cloned) | `lpb-dev` | `lpb` |
+| **pi** | workspace (CI clones to /opt/pi-src) | `lpb-dev` | `lpb` |
 | **pi-subagents** | extension | `lpb-dev` | `lpb` |
 | **lemonade-pi-plugin** | extension | `lpb-dev` | `lpb` |
+
+Org: all repos live under **`github.com/lpb-stack`** (migrated from
+`localpibox` in Aug 2026). Note: **`localpibox` remains the project name and
+the Python package name** (`scripts/localpibox/`, `import localpibox`); only
+the GitHub org and GHCR paths use `lpb-stack`.
 
 ## Repository Layout
 
 ```
-Workspace (single repo):
-  /home/lpb/workspace/devstack                  (devstack + lpb.py + Dockerfile)
+Workspace:
+  /home/lpb/workspace/devstack            (real clone, single source)
+  /home/lpb/workspace/pi                  (real clone, lpb-dev/lpb)
+  /home/lpb/workspace/pi-subagents        (symlink → agent git clone)
+  /home/lpb/workspace/lemonade-pi-plugin  (symlink → agent git clone)
+  /home/lpb/workspace/lpb-memory          (symlink → agent git clone)
 
-Agent config (cloned from lpb-stack/config):
-  /home/lpb/.pi/agent/                          (settings.json, AGENTS.md, skills/, agents/)
+Agent config (cloned from lpb-stack/config by start.sh at container start):
+  /home/lpb/.pi/agent/                    (settings.json, AGENTS.md, skills/, agents/)
 
-Extension clones:
+Extension clones (pi loads these per settings.json pins):
   /home/lpb/.pi/agent/git/github.com/lpb-stack/
-      lemonade-pi-plugin                        (lpb-dev)
-      lpb-memory                                (dev)
-      pi-subagents                              (lpb-dev)
+      lemonade-pi-plugin, lpb-memory, pi-subagents
 
 ⚠️ Extensions update at runtime via `pi update --extensions`.
    They are NOT baked into Docker images.
-   config repo is .gitignore'd in devstack.
+   CI clones pi into /opt/pi-src during the Docker build; workspace/pi is
+   for local development only.
 ```
 
 ## Branch Strategy
 
-- **`dev`** (config, devstack, lpb-memory): Primary development. Default on GitHub.
-- **`main`** (config, devstack, lpb-memory): Stable release branch.
-- **`lpb-dev`** (pi, pi-subagents, lemonade-pi-plugin): Active development from upstream + LPB patches. Default on GitHub.
-- **`lpb`** (pi, pi-subagents, lemonade-pi-plugin): Stable branch — receives clean merges from `lpb-dev` when ready for production. **Not required to equal `lpb-dev`** — divergence is normal during active development.
+- **`dev`** (devstack, config, lpb-memory): primary development. Default on GitHub.
+- **`main`** (devstack, config, lpb-memory): stable release branch.
+- **`lpb-dev`** (pi, pi-subagents, lemonade-pi-plugin): active development from
+  upstream + LPB patches. Default on GitHub.
+- **`lpb`** (pi, pi-subagents, lemonade-pi-plugin): stable branch — receives
+  clean merges from `lpb-dev` via the release procedure. Divergence from
+  `lpb-dev` is normal during active development.
 
-**Rule:** Always work on the default branch (`dev` or `lpb-dev`).
+**Rule:** always work on the default branch (`dev` or `lpb-dev`).
 
-### Fork branch workflow
+## Commit Author Convention
+
+The only available identity is:
+
 ```
-lpb-dev ──────────────────► active development
-    │
-    ├─ clean merge ──► lpb (stable, for --tag main pipeline)
+localpibox <localpibox@gmail.com>
 ```
 
-## Stack Validation & Sync
+CI commits use `ci-localpibox <ci@lpb-stack.dev>`.
+
+## Stable Release Procedure (dev → main)
+
+There is no local version script — **`lpb-config release` is the tool**
+(`support/version.sh` was removed as dead code).
+
+```bash
+# 1. Readiness check (all 6 repos, non-destructive, fetches first)
+lpb-config release status
+
+# 2. Inspect the exact plan without changing anything
+lpb-config release promote --dry-run
+
+# 3. Promote (interactive confirmation)
+lpb-config release promote
+```
+
+What promote does per repo:
+- **ff / clean 3-way:** resets local stable branch to `origin/<stable>`,
+  merges `origin/<dev>`, pushes
+- **unrelated histories** (re-initialized stable branch, first release):
+  requires explicit `--rebase` — replaces the stable branch with the dev
+  history and force-pushes (`git push --force-with-lease`)
+- **conflict:** leaves the repo untouched, reports it
+- **dirty local repo:** skipped, reported
+- **local stable branch ahead of origin** (unpushed commits): skipped with
+  guidance — delete the local branch (`git branch -D <stable>`, only with
+  explicit user confirmation) and re-run
+- **devstack only:** strips the `-dev` VERSION suffix on `main` and commits
+  it (e.g. `0.0.46-lpb-dev` → `0.0.46-lpb`)
+
+After promote, CI (main pipeline) finishes the release:
+1. Bumps VERSION to `0.0.(x+1)-lpb` on `main`
+2. Tags the 5 repos on their stable branches (`lpb`/`main`)
+3. Builds `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
+
+Then align the runtime to the stable pipeline:
+```bash
+lpb-config --tag main workspace sync --extensions   # pins → stable tag
+pi update --extensions
+lpb --tag main validate                            # or lpb-config --tag main validate
+```
+
+Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
+(first-release mode for unrelated histories). Re-runs are safe: promoted
+repos fast-forward or no-op.
+
+## Stack Validation & Sync (lpb-config)
 
 **`lpb-config`** — single tool for config repo, workspace, and validation:
 
 ```bash
-# Validate entire stack alignment
-lpb-config validate
+lpb-config validate                     # Validate entire stack alignment
+lpb-config workspace status             # Show branches + alignment
+lpb-config workspace sync               # Symlinks + git pull current branches
+lpb-config workspace sync --extensions  # Sync settings.json pins to stack version
+lpb-config workspace ensure [--fix]     # Check/fix branch alignment for pipeline
+lpb-config status | update | reset      # Config repo management
+lpb-config align                        # Update extension pins to latest GitHub tags
+lpb-config memory show | setup          # lpb-memory extension config wizard
+lpb-config release status | promote     # Stable release (see above)
 
-# Workspace management
-lpb-config workspace status     # Show branches + alignment
-lpb-config workspace sync       # Symlinks + git pull
-lpb-config workspace ensure     # Check branch alignment
-lpb-config workspace ensure --fix  # Auto-fix misaligned repos
-
-# Extension pin sync
-lpb-config workspace sync --extensions  # Sync settings.json pins to LPB_VERSION
-
-# Config repo management
-lpb-config status               # Show config repo state
-lpb-config update               # Fetch + fast-forward
-lpb-config reset [--force]      # Re-clone (destructive)
-lpb-config merge                # Interactive merge
-lpb-config align                # Update extension pins to latest GitHub tags
-
-# Memory extension config
-lpb-config memory show          # Show current lpb-memory config
-lpb-config memory setup         # Interactive config wizard
-lpb-config memory setup --non-interactive  # Generate from template
-
-# Override pipeline detection
-lpb-config --tag main validate  # Force main pipeline check
-lpb-config --tag dev workspace ensure
+# Pipeline override (dev vs main) on any command:
+lpb-config --tag main validate
 ```
 
 ## Settings.json Lifecycle
 
 **Template-driven generation**, not git-tracked:
 
-```bash
-# Config repo has: settings.json.template (__LPB_VERSION__ placeholders)
-# start.sh generates: settings.json (replaces placeholders with actual version)
-```
+1. Config repo ships `settings.json.template` with `__LPB_VERSION__` placeholders
+2. First boot: `start.sh` generates `settings.json` (replaces placeholders)
+3. No model/provider preconfigured — user runs `/login lemonade`
+4. Pin sync: `lpb-config workspace sync --extensions`
+   (main pipeline reads the stable version from devstack `origin/main`)
+5. `lpb-config validate` checks pins match the current stack version
+6. Persistent on the host volume — survives container rebuilds
 
-1. **First boot:** start.sh generates settings.json from template + LPB_VERSION
-2. **No model/provider** — user configures via `/login lemonade` after first boot
-3. **Version sync:** `lpb-config workspace sync --extensions` updates pins to LPB_VERSION
-4. **Validate:** `lpb-config validate` checks pins match current version
-5. **Persistent:** settings.json persists on host volume, survives container rebuilds
+Pins look like: `git:github.com/lpb-stack/pi-subagents@0.0.46-lpb-dev`
 
 ## lpb-memory Config Lifecycle
 
-Same pattern — template in repo, user config on host:
+Same pattern — template in config repo, user config on host volume:
 
-```bash
-# Config repo has: lpb-memory-config.json.template (stack defaults)
-# start.sh generates: lpb-memory-config.json (copies template)
-```
+1. First boot: `start.sh` copies `lpb-memory-config.json.template` → config
+2. No model override — uses the main model until the user configures
+3. Tune: `lpb-config memory setup` (interactive wizard)
+4. Review: `lpb-config memory show`
 
-1. **First boot:** start.sh copies template → config
-2. **No model override** — uses main model until user configures
-3. **Tune:** `lpb-config memory setup` interactive wizard
-4. **Review:** `lpb-config memory show` displays current config
-5. **Persistent:** config persists on host volume, survives rebuilds
+## Hooks (devstack only, `core.hooksPath=.githooks`)
 
-## Commit Author Convention
+**pre-commit** — validates BEFORE commit (exit non-zero aborts):
+1. VERSION format (`0.x.y-lpb[-dev]`)
+2. `lpb.stack.env` `LPB_PI_REF` is a branch name (`lpb` or `lpb-dev`)
+3. settings.json extension pins match VERSION (warn-level)
+4. Working tree clean (except VERSION/env/hooks changes)
+5. `scripts/test_lpb.py` passes (skip with `SKIP_TESTS=1 --no-verify`)
 
-ALL LocalPibox-specific commits MUST use:
-```
-Author: lpb-stack <lpb-stack@gmail.com>
-```
+**commit-msg** — **no-op.** Version bumping is CI's job (bump-version job
+after tests pass). Git hooks never write VERSION or cross-repo state.
+`.github/scripts/commit-msg-auto-version` was removed (dead code from the
+old cross-repo bump model).
 
-Never use `lpb`, `LocalPibox`, or other aliases.
+## CI/CD Workflow
 
-### Fixing wrong authors
-```bash
-# Single commit
-git commit --amend --author="lpb-stack <lpb-stack@gmail.com>" --no-edit
+`.github/workflows/build-and-publish.yml` (org: `lpb-stack`):
 
-# Entire repo history
-FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '
-export GIT_AUTHOR_NAME="lpb-stack"
-export GIT_AUTHOR_EMAIL="lpb-stack@gmail.com"
-export GIT_COMMITTER_NAME="lpb-stack"
-export GIT_COMMITTER_EMAIL="lpb-stack@gmail.com"
-' -- --all
-```
+Triggers (no tag triggers — push-to-branch only):
+- push to `dev` or `main` (paths: Dockerfile, support/**, scripts/**, workflow)
+  — VERSION/lpb.stack.env changes are excluded to avoid re-triggering on auto-bumps
+- pull_request to `main` (tests only, no builds/pushes)
+- weekly cron (Monday 03:00 UTC) → `:weekly-cli/web`
+- manual dispatch (`publish_latest`, `no_cache` inputs)
 
-## Pre-commit Hook
+Jobs:
+1. **test-lpb** — `scripts/test_lpb.py` + `scripts/test_localpibox.py`
+2. **bump-version** — bump patch (preserves major.minor, `-dev` suffix on dev),
+   commit + push to the **pushed branch** (`${GITHUB_REF_NAME}`)
+3. **build-cli / build-web** — publish per pipeline:
+   - dev push: `:{v}-cli/web`, `:dev-cli/web`, `:{sha}-cli/web`
+   - main push: `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
+   - manual with `publish_latest`: `:latest-cli/web`
+4. **tag-repos** — after successful builds: tags the 5 repos on the pipeline's
+   branches (dev: `lpb-dev`/`dev`, main: `lpb`/`main`) using `LPB_STACK_PAT`
 
-**Installed in all 6 repos.** Validates BEFORE commit:
+Images: `ghcr.io/lpb-stack/devstack:cli` (base dev env + Pi CLI),
+`:web` (extends cli + VSCodium server).
 
-1. All VERSION files in sync
-2. `lpb.stack.env` LPB_PI_REF matches VERSION
-3. `settings.json` extension pins match VERSION
-4. All repos clean (except VERSION/env changes)
-5. Auto-stages VERSION files + `lpb.stack.env`
+CI does NOT use `workspace/pi` — it clones pi from `LPB_PI_FORK`
+(`lpb-stack/pi`) into `/opt/pi-src` during the Docker build.
 
-**Exit non-zero to abort commit.** Use `--no-verify` to skip.
+## lpb Launcher
 
-## commit-msg Hook
+- `scripts/lpb` (wrapper) → `scripts/lpb.py` (engine, stdlib-only)
+- Shared helpers: `scripts/localpibox/` Python package (env/log/run/cli)
+- Installed via `scripts/install.sh` (fetches from the `main` branch —
+  so `main` must stay a working stable tree)
+- `lpb --tag dev|main|{version}` selects the image tag; `LPB_*` vars from
+  `~/.lpb-stack/devstack/` config + `lpb.stack.env`/`lpb.conf.env`
 
-**Installed in all 6 repos.** Runs AFTER pre-commit:
+## Creating lpb-dev with an upstream base
 
-1. Reads `0.0.x-lpb` pattern from devstack/VERSION
-2. Increments patch: `0.0.5-lpb` → `0.0.6-lpb`
-3. Updates VERSION in all 6 repos
-4. Updates `lpb.stack.env` LPB_PI_REF
-5. **Does NOT touch package.json** (kept at original fork versions)
-
-## Version Management
-
-### Version Policy
-```
-VERSION file  → LocalPibox stack version (0.0.x-lpb) — auto-incremented on every commit
-package.json  → Original fork version — NEVER changed
-Tags          → Point to commits with matching VERSION (e.g., 0.0.1-lpb)
-```
-
-### Package.json Versions (Fork Originals)
-| Repo | Version |
-|---|---|
-| lemonade-pi-plugin | `1.0.0` |
-| lpb-memory | `0.9.1` |
-| pi-subagents | `0.14.3` |
-| pi | `0.0.1-lpb` |
-
-### Manual version bump
-```bash
-cd /home/lpb/workspace/devstack
-./support/version.sh patch    # 0.0.x → 0.0.(x+1)
-./support/version.sh minor    # 0.0.x → 0.(x+1).0
-./support/version.sh major    # 0.0.x → 1.0.0
-```
-
-### Tagging
-```bash
-./support/version.sh tag 0.2.0-lpb     # Create tags on all repos
-./support/version.sh push-tags         # Push tags to remotes
-```
-
-## Update Workflow
-
-### Checking status (use lpb-config)
-```bash
-# Full validation
-lpb-config validate
-
-# Workspace alignment
-lpb-config workspace status
-
-# Pipeline override
-lpb-config --tag main workspace status
-```
-
-### Switching pipelines
-```bash
-# Switch to dev pipeline
-lpb-config --tag dev workspace ensure --fix
-
-# Switch to main pipeline
-lpb-config --tag main workspace ensure --fix
-```
-
-### Quick manual branch switch
-```bash
-cd /home/lpb/workspace/devstack && git checkout dev
-cd /home/lpb/.pi/agent/git/github.com/lpb-stack/pi-subagents && git checkout lpb-dev
-cd /home/lpb/.pi/agent/git/github.com/lpb-stack/lemonade-pi-plugin && git checkout lpb-dev
-```
-
-### Creating lpb-dev with upstream base
 ```bash
 cd /path/to/repo
-
-# 1. Add upstream remote (if not exists)
-git remote add upstream <upstream-url> 2>/dev/null
-git fetch upstream
-
-# 2. Create lpb-dev from latest upstream tag + LPB changes
-git checkout -b lpb-dev <upstream-tag>  # e.g., v0.84.1
-git cherry-pick <lpb-commit-1> <lpb-commit-2> ...
-
-# 3. Create lpb from lpb-dev
-git branch -f lpb lpb-dev
-
-# 4. Push
+git remote add upstream <upstream-url> 2>/dev/null; git fetch upstream
+git checkout -b lpb-dev <upstream-tag>      # e.g. v0.84.2
+git cherry-pick <lpb-commits>...            # or merge, keeping history clean
+git branch -f lpb lpb-dev                   # (or keep lpb behind until stable)
 git push origin lpb-dev
-git push origin lpb --force-with-lease
-
-# 5. Set default branch
-gh api repos/<owner>/<repo> --method PATCH -f default_branch=lpb-dev
-
-# 6. Delete old tags
-git tag -d <old-tag>
-git push origin --delete <old-tag>
+git push origin lpb --force-with-lease      # explicit user confirmation required
+gh api repos/lpb-stack/<repo> --method PATCH -f default_branch=lpb-dev
 ```
 
 ## Cleanup Checklist
 
 Before declaring a repo clean:
 - [ ] Default branch set correctly (`dev` or `lpb-dev`)
-- [ ] Working on default branch
-- [ ] All commits from `lpb-stack <lpb-stack@gmail.com>`
-- [ ] Stale branches deleted
-- [ ] Old LPB tags cleaned up
-- [ ] `lpb` branch exists (receives clean merges from `lpb-dev` when stable)
-- [ ] pre-commit hook installed (devstack only)
-- [ ] commit-msg hook installed (devstack only)
-- [ ] Version progressing via auto-increment
-- [ ] VERSION only in devstack (tags track version on other repos)
-- [ ] `lpb-config validate` passes all checks
-
-## CI/CD Workflow
-
-### GitHub Actions: `.github/workflows/build-and-publish.yml`
-- **Push to dev**: Builds → `:dev`, `:dev-cli`, `:dev-web`, `:{sha}-cli/web`
-- **Push to main from tag** (`0.*-lpb`, `1.*-lpb`): Builds → `:{version}-cli/web`
-- **Manual dispatch**: Publishes `:latest-cli`, `:latest-web`
-- **Weekly cron**: Publishes `:weekly-cli`, `:weekly-web`
-
-```yaml
-on:
-  push:
-    branches: [dev]
-    paths: ['Dockerfile', 'support/**', 'lpb.stack.env', ...]
-  push:
-    tags:
-      - '0.*-lpb'
-      - '1.*-lpb'
-    paths: ['VERSION', 'lpb.stack.env']
-  schedule:
-    - cron: '0 3 * * 1'
-  workflow_dispatch:
-    inputs:
-      publish_latest:
-        type: boolean
-        default: true
-```
-
-### Build images
-- `ghcr.io/lpb-stack/devstack:cli` — Base dev environment + Pi CLI
-- `ghcr.io/lpb-stack/devstack:web` — Extends cli + VSCodium server
-
-### CI does NOT use workspace/pi
-- CI clones pi to `/opt/pi-src` during Docker build
-- workspace/pi is only for local development convenience
-- workspace/ is `.gitignore`d
-
-## Extension Installation
-
-Extensions update at runtime via `pi update --extensions`. They are NOT baked into images.
-
-The devstack image contains:
-- Pi CLI (built from pi fork)
-- npm global packages
-- Support scripts
-
-Extensions loaded from:
-- `/home/lpb/.pi/agent/git/github.com/lpb-stack/`
-- Or symlinked via `workspace/` → extension repos
-
-Settings pinned in `~/.pi/agent/settings.json` under `"packages"` array.
+- [ ] Working on the default branch
+- [ ] All commits authored `localpibox <localpibox@gmail.com>` (CI: `ci-localpibox`)
+- [ ] Stale branches deleted (explicit user confirmation for main/dev)
+- [ ] Remote under `github.com/lpb-stack` (org migrated Aug 2026)
+- [ ] `lpb` stable branch exists (receives the release promote when stable)
+- [ ] pre-commit hook active (devstack: `core.hooksPath=.githooks`)
+- [ ] No stale org references (`github.com/localpibox`, `ghcr.io/localpibox`)
+- [ ] `lpb-config validate` passes

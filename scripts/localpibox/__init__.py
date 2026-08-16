@@ -1,4 +1,4 @@
-"""lpb-stack — shared helpers for lpbox Devstack tools.
+"""localpibox — shared helpers for LocalPibox Devstack tools.
 
 Small, stdlib-only package that consolidates the common parts that used to
 live in shell scripts (support/_lib.sh) and were copy-pasted across tools:

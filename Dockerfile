@@ -176,7 +176,7 @@ COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
 # Shared Python helpers used by the ported support tools (import via the
 # script directory, which Python adds to sys.path automatically).
-COPY scripts/localpibox/ /opt/pi-support/lpb-stack/
+COPY scripts/localpibox/ /opt/pi-support/localpibox/
 
 # ── Devstack deployment scripts ──
 COPY --chmod=755 support/install-browser.py /opt/devstack/install-browser.py

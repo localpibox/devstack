@@ -14,6 +14,9 @@ Usage:
 
   lpb-config validate           — Validate entire stack alignment to current pipeline
 
+  lpb-config release status     — Show stable-release readiness across all 6 repos
+  lpb-config release promote    — Promote dev → stable (--dry-run, --rebase, --yes)
+
 Pipeline detection:
   Reads VERSION file to determine pipeline (dev vs main). Override with --tag.
 
@@ -38,7 +41,7 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "lpb-stack").is_dir():
+    if (_c / "localpibox").is_dir():
         sys.path.insert(0, str(_c))
         break
 
@@ -837,11 +840,19 @@ def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
 
     # Determine target version
     version = get_version()
-    # For main pipeline, strip -dev from version
     if pipeline == "main":
-        target_version = version.replace("-dev", "")
-    else:
-        target_version = version
+        # Stable version is what CI last wrote on devstack origin/main
+        devstack_dir = WORKSPACE_ROOT / "devstack"
+        if devstack_dir.is_dir():
+            git_auth(devstack_dir, "fetch", "origin", "main", "--quiet", timeout=120)
+            out, _, code = git(devstack_dir, "show", "origin/main:VERSION")
+            if code == 0 and out.strip():
+                version = out.strip()
+            else:
+                version = version.replace("-dev", "")
+        else:
+            version = version.replace("-dev", "")
+    target_version = version
 
     current_pins = _get_pinned_versions(settings)
 
@@ -1226,6 +1237,318 @@ def cmd_memory_setup(*, non_interactive: bool = False, cons: Console) -> int:
     return 0
 
 
+# ─── Release (stable promotion) ────────────────────────────────────────────
+
+
+def _release_repos() -> list[tuple[str, Path, str, str, str]]:
+    """All 6 stack repos: (label, path, dev_branch, main_branch, github_repo)."""
+    repos: list[tuple[str, Path, str, str, str]] = []
+    for name, _is_sym, _is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
+        repos.append((name, WORKSPACE_ROOT / name, dev_branch, main_branch,
+                      f"lpb-stack/{name}"))
+    repos.append(("config", Path(DEFAULT_AGENT_DIR), "dev", "main",
+                  "lpb-stack/config"))
+    return repos
+
+
+def _repo_release_state(path: Path, dev_branch: str, main_branch: str) -> dict:
+    """Fetch and gather per-repo promotion state (non-destructive)."""
+    # Explicit refspecs: some clones (e.g. config) have restricted fetch
+    # configs that would not create refs/remotes/origin/<dev>.
+    git_auth(path, "fetch", "origin", "--quiet",
+             f"+refs/heads/{dev_branch}:refs/remotes/origin/{dev_branch}",
+             f"+refs/heads/{main_branch}:refs/remotes/origin/{main_branch}",
+             timeout=180)
+    dirty, _, _ = git(path, "status", "--porcelain")
+    state: dict = {
+        "dirty": bool(dirty.strip()),
+        "local_ahead": 0,        # local stable commits not on origin
+        "origin_dev": "?",
+        "origin_main": "?",
+        "main_behind_by": None,   # commits on dev not on main (None = unknown)
+        "diverged": False,        # main has commits not on dev
+        "feasibility": "unknown", # aligned|ahead|ff|merge|conflict|unrelated
+    }
+    out, _, code = git(path, "rev-parse", "--verify", f"origin/{dev_branch}")
+    if code == 0:
+        state["origin_dev"] = out.strip()[:8]
+    out, _, code = git(path, "rev-parse", "--verify", f"origin/{main_branch}")
+    if code == 0:
+        state["origin_main"] = out.strip()[:8]
+        out, _, code = git(path, "rev-list", "--count",
+                           f"origin/{main_branch}..{main_branch}")
+        if code == 0:
+            state["local_ahead"] = int(out.strip())
+    if state["origin_dev"] != "?" and state["origin_main"] != "?":
+        _, _, code = git(path, "merge-base",
+                         f"origin/{main_branch}", f"origin/{dev_branch}")
+        if code != 0:
+            state["feasibility"] = "unrelated"
+        else:
+            out, _, code = git(path, "rev-list", "--count",
+                               f"origin/{main_branch}..origin/{dev_branch}")
+            if code == 0:
+                state["main_behind_by"] = int(out.strip())
+            out, _, code = git(path, "rev-list", "--count",
+                               f"origin/{dev_branch}..origin/{main_branch}")
+            if code == 0 and int(out.strip()) > 0:
+                state["diverged"] = True
+            if state["main_behind_by"] == 0:
+                state["feasibility"] = "ahead" if state["diverged"] else "aligned"
+            elif state["diverged"]:
+                _, _, code = git(path, "merge-tree", "--write-tree",
+                                 f"origin/{main_branch}", f"origin/{dev_branch}")
+                state["feasibility"] = "merge" if code == 0 else "conflict"
+            else:
+                state["feasibility"] = "ff"
+    return state
+
+
+def _repo_action(st: dict, rebase: bool) -> tuple[str, str | None]:
+    """Decide the promotion action for a repo: (action, skip_reason)."""
+    if st["feasibility"] == "unknown":
+        return "unknown", "origin refs not found — check repo/remote"
+    if st["feasibility"] == "aligned":
+        return "no-op", None
+    if st["feasibility"] == "ahead":
+        return "no-op", ("stable is AHEAD of dev — verify stable's unique "
+                         "commits before promoting")
+    if st["local_ahead"] > 0:
+        return "skip", (f"local stable branch has {st['local_ahead']} unpushed "
+                       f"commit(s) — git branch -D <stable> first, then re-run")
+    if st["dirty"]:
+        return "skip", "local uncommitted changes (commit/stash first)"
+    if st["feasibility"] == "conflict":
+        return "conflict", "merge conflict — resolve manually"
+    if st["feasibility"] == "unrelated":
+        if rebase:
+            return "rebase", None
+        return "unrelated", ("unrelated histories — re-run with --rebase "
+                             "(replaces stable with dev history, force-push)")
+    return st["feasibility"], None  # ff | merge
+
+
+def _set_commit_author() -> None:
+    """Force LocalPibox author identity for git commits made by this process."""
+    os.environ["GIT_AUTHOR_NAME"] = "localpibox"
+    os.environ["GIT_AUTHOR_EMAIL"] = "localpibox@gmail.com"
+    os.environ["GIT_COMMITTER_NAME"] = "localpibox"
+    os.environ["GIT_COMMITTER_EMAIL"] = "localpibox@gmail.com"
+
+
+def cmd_release_status(cons: Console) -> int:
+    """Show stable-release readiness across all 6 stack repos."""
+    version = get_version()
+    cons.info(f"devstack VERSION: {version}  (pipeline: "
+              f"{'dev' if '-dev' in version else 'main'})")
+    cons.info("")
+    problems = 0
+    for label, path, dev_b, main_b, gh in _release_repos():
+        if not path.is_dir():
+            cons.error(f"{label:18s} repo missing at {path}")
+            problems += 1
+            continue
+        st = _repo_release_state(path, dev_b, main_b)
+        feas = st["feasibility"]
+        if feas == "unknown":
+            mark, note = "❌", "origin refs not found (fetch failed?)"
+            problems += 1
+        elif feas == "aligned":
+            mark, note = "✅", "aligned"
+        elif feas == "ahead":
+            mark, note = "⚠️", f"{main_b} is AHEAD of dev — check its unique commits"
+            problems += 1
+        elif feas == "ff":
+            mark, note = "✅", f"{main_b} {st['main_behind_by']} behind → fast-forward"
+        elif feas == "merge":
+            mark, note = "✅", f"{main_b} {st['main_behind_by']} behind → clean 3-way merge"
+        elif feas == "conflict":
+            mark, note = "⚠️", "merge conflict — resolve manually"
+            problems += 1
+        else:  # unrelated
+            mark, note = "⚠️", ("unrelated histories → promote --rebase "
+                                "(replaces history, force-push)")
+            problems += 1
+        if st["dirty"]:
+            note += "; LOCAL DIRTY (uncommitted changes will not be promoted)"
+            problems += 1
+        if st["local_ahead"] > 0:
+            note += (f"; LOCAL {main_b} AHEAD ({st['local_ahead']} unpushed "
+                     f"commit(s) — delete local branch to promote)")
+            problems += 1
+        cons.info(f"{mark} {label:18s} {gh}")
+        cons.info(f"     {dev_b}={st['origin_dev']}  {main_b}={st['origin_main']}  {note}")
+    cons.info("")
+    if problems:
+        cons.warn(f"{problems} issue(s) — see above before promoting.")
+    else:
+        cons.done("All repos ready for stable promotion.")
+    return 0
+
+
+def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
+                        cons: Console) -> int:
+    """Promote dev branches to stable branches across all 6 stack repos.
+
+    Per repo (merge ff or clean 3-way): reset local stable branch to origin,
+    merge origin/<dev>. Unrelated histories (re-initialized stable branch):
+    with --rebase, replace stable with the dev history (force-push) — the
+    first-release mode. On conflict: leave the repo untouched, report.
+    devstack only: strip the -dev VERSION suffix on the stable branch.
+    Then push all successfully promoted repos. CI (main pipeline) then bumps
+    VERSION, tags stable branches, builds :{v}-* / :main-* / :latest-*.
+    """
+    _set_commit_author()
+    version = get_version()
+    if "-dev" not in version:
+        cons.warn(f"local devstack VERSION={version} has no -dev suffix — "
+                  "run 'git pull --ff-only' on dev first if possible.")
+
+    # ── Pre-flight ──
+    entries: list[tuple[str, Path, str, str, str, dict]] = []
+    ok = True
+    for label, path, dev_b, main_b, gh in _release_repos():
+        if not path.is_dir():
+            cons.error(f"{label}: repo missing at {path}")
+            ok = False
+            continue
+        st = _repo_release_state(path, dev_b, main_b)
+        entries.append((label, path, dev_b, main_b, gh, st))
+        if st["origin_main"] == "?":
+            cons.error(f"{label}: origin/{main_b} does not exist")
+            ok = False
+    if not ok:
+        cons.error("Pre-flight failed — aborting, nothing was changed.")
+        return 1
+
+    cons.info("")
+    cons.info("Stable release plan:")
+    for label, _p, dev_b, main_b, gh, st in entries:
+        action, skip_reason = _repo_action(st, rebase)
+        if skip_reason:
+            cons.warn(f"  {gh}: SKIP — {skip_reason}")
+        else:
+            cons.info(f"  {gh}: {action} (origin/{dev_b} → {main_b})")
+    cons.info("  devstack: strip -dev from VERSION on main")
+    if dry_run:
+        cons.info("")
+        cons.info("Dry run — nothing was changed.")
+        return 0
+    cons.info("")
+    if rebase:
+        rebased_plan = [gh for _l, _p, _db, _mb, gh, st in entries
+                        if _repo_action(st, rebase)[0] == "rebase"]
+        msg = (f"Promote to stable branches and push? "
+               f"(FORCE-PUSH on: {', '.join(rebased_plan)})")
+    else:
+        msg = "Promote to stable branches and push?"
+    if not assume_yes and not confirm(msg):
+        cons.info("Aborted.")
+        return 1
+
+    # ── Merge ──
+    failures: list[str] = []
+    skipped: list[str] = []
+    rebased: list[str] = []
+    for label, path, dev_b, main_b, gh, st in entries:
+        cons.info(f"── {label} ──")
+        action, skip_reason = _repo_action(st, rebase)
+        if skip_reason:
+            cons.warn(f"  {label}: {skip_reason}")
+            skipped.append(label)
+            continue
+        if action == "no-op":
+            cons.info(f"  {label}: already aligned — nothing to do")
+            continue
+        if action == "rebase":
+            out, err, code = git(path, "checkout", "-q", "-B", main_b,
+                                 f"origin/{dev_b}")
+            if code != 0:
+                cons.error(f"  {label}: rebase checkout failed: "
+                           f"{err.strip() or out.strip()}")
+                failures.append(label)
+                continue
+            rebased.append(label)
+            cons.info(f"  {label}: {main_b} reset to origin/{dev_b} "
+                      f"(first-release mode, will force-push)")
+            continue
+        # ff / merge
+        out, err, code = git(path, "checkout", "-q", "-B", main_b, f"origin/{main_b}")
+        if code != 0:
+            cons.error(f"  {label}: checkout {main_b} failed: {err.strip() or out.strip()}")
+            failures.append(label)
+            continue
+        out, err, code = git(path, "merge", "--no-edit", f"origin/{dev_b}")
+        if code != 0:
+            git(path, "merge", "--abort")
+            git(path, "reset", "-q", "--hard", f"origin/{main_b}")
+            cons.error(f"  {label}: MERGE CONFLICT — {main_b} left untouched, "
+                       "resolve manually")
+            failures.append(label)
+            continue
+        if "up to date" in (out + err):
+            cons.info(f"  {label}: already up to date")
+        else:
+            cons.info(f"  {label}: merged origin/{dev_b} → {main_b} ({action})")
+
+    # ── devstack VERSION: strip -dev on main ──
+    for label, path, dev_b, main_b, gh, st in entries:
+        if label != "devstack" or label in failures or label in skipped:
+            continue
+        vf = path / "VERSION"
+        current = vf.read_text().strip()
+        if current.endswith("-dev"):
+            stable = current[: -len("-dev")]
+            vf.write_text(stable + "\n")
+            git(path, "add", "VERSION")
+            out, err, code = git(path, "commit", "-m",
+                                 f"release: {stable} — stable branch promoted from dev")
+            if code != 0:
+                cons.error(f"  devstack: VERSION commit failed: {err.strip()}")
+                failures.append("devstack")
+            else:
+                cons.info(f"  devstack: VERSION {current} → {stable} (on {main_b})")
+
+    # ── Push ──
+    cons.info("")
+    cons.info("Pushing stable branches...")
+    for label, path, dev_b, main_b, gh, st in entries:
+        if label in failures or label in skipped:
+            continue
+        action, _ = _repo_action(st, rebase)
+        if action == "no-op":
+            continue
+        push_args = ["push", "origin", main_b]
+        if label in rebased:
+            push_args = ["push", "--force-with-lease", "origin", main_b]
+        out, err, code = git_auth(path, *push_args, timeout=180)
+        if code != 0:
+            cons.error(f"  {label}: push failed: {err.strip() or out.strip()}")
+            failures.append(label)
+        else:
+            force = " (force)" if label in rebased else ""
+            cons.info(f"  pushed {gh}:{main_b}{force}")
+
+    # ── Summary ──
+    cons.info("")
+    if skipped:
+        cons.warn(f"Skipped (local dirty): {', '.join(skipped)}")
+    if failures:
+        cons.error(f"Failed: {', '.join(failures)}")
+        cons.error("Stable release INCOMPLETE — fix the repos above and re-run "
+                   "'lpb-config release promote' (already-promoted repos will "
+                   "fast-forward or no-op).")
+        return 1
+    stable_version = (version[:-len("-dev")] if version.endswith("-dev") else version)
+    cons.done(f"Promoted all 6 repos. CI (main pipeline) will bump to "
+              f"{stable_version.split('-lpb')[0]}-lpb (patch+1), tag stable "
+              f"branches and build :{{v}}-* / :main-* / :latest-* images.")
+    cons.info("After CI passes:")
+    cons.info("  1. lpb-config --tag main workspace sync --extensions")
+    cons.info("  2. pi update --extensions")
+    return 0
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────
 
 def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
@@ -1276,6 +1599,20 @@ def main(argv: list[str] | None = None) -> int:
     # Validate command
     _add_subparser(sub, "validate", "Validate entire stack alignment to current pipeline")
 
+    # Release subcommand group
+    p_rel = sub.add_parser("release", help="Stable release: promote dev branches to stable")
+    rel_sub = p_rel.add_subparsers(dest="release_command")
+    _add_subparser(rel_sub, "status", "Show stable-release readiness across all repos")
+    p_rel_promote = _add_subparser(rel_sub, "promote",
+                                   "Merge dev branches into stable branches + push")
+    p_rel_promote.add_argument("--yes", action="store_true", help="skip confirmation")
+    p_rel_promote.add_argument("--dry-run", action="store_true",
+                               help="show plan + feasibility, change nothing")
+    p_rel_promote.add_argument("--rebase", action="store_true",
+                               help="first-release mode: for repos with unrelated "
+                                    "histories, replace stable with dev history "
+                                    "(force-push)")
+
     # Workspace subcommand group
     p_ws = sub.add_parser("workspace", help="Manage workspace repos")
     ws_sub = p_ws.add_subparsers(dest="workspace_command")
@@ -1322,6 +1659,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.memory_command == "setup":
             non_int = getattr(args, "non_interactive", False)
             return cmd_memory_setup(non_interactive=non_int, cons=cons)
+    if args.command == "release":
+        if not args.release_command:
+            p_rel.print_help()
+            return 1
+        if args.release_command == "status":
+            return cmd_release_status(cons)
+        if args.release_command == "promote":
+            return cmd_release_promote(assume_yes=getattr(args, "yes", False),
+                                       dry_run=getattr(args, "dry_run", False),
+                                       rebase=getattr(args, "rebase", False),
+                                       cons=cons)
     if args.command == "workspace":
         if not args.workspace_command:
             p_ws.print_help()

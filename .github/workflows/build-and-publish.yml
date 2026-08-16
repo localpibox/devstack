@@ -13,9 +13,9 @@
 # Version model (Option C):
 #   - Single source: devstack/VERSION
 #   - CI bumps version after tests pass, sets bumped value as CI output
-#   - All 6 repos tagged together on each CI run (not pushed as a commit)
-#   - Docker images tagged: :{version}-cli, :{version}-web
-#   - Dev branch images: :dev-cli, :dev-web (always latest)
+#   - The 5 stack repos (all except devstack) tagged on each CI run
+#   - Dev pipeline (push to dev):   0.0.x-lpb-dev, images :dev-*, :{v}-*, :{sha}-*
+#   - Main pipeline (push to main): 0.0.x-lpb,     images :main-*, :latest-*, :{v}-*, :{sha}-*
 #
 # Actions: all latest major versions (Node.js 24 native)
 #   actions/checkout@v6 · docker/build-push-action@v7
@@ -99,17 +99,19 @@ jobs:
         run: |
           set -e
           VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0-lpb")
+          MAJOR=$(echo "$VERSION" | sed 's/^\([0-9]*\)\..*/\1/')
+          MINOR=$(echo "$VERSION" | sed 's/^[0-9]*\.\([0-9]*\)\..*/\1/')
           PATCH=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
           NEW_PATCH=$((PATCH + 1))
-          
+
           # Add -dev suffix for dev branch, no suffix for main
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             SUFFIX=""
           else
             SUFFIX="-dev"
           fi
-          NEW_VERSION="0.0.${NEW_PATCH}-lpb${SUFFIX}"
-          
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}-lpb${SUFFIX}"
+
           echo "Bumping $VERSION → $NEW_VERSION"
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
@@ -119,8 +121,7 @@ jobs:
           git config user.email "ci@lpb-stack.dev"
           git add VERSION
           git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
-          git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
-          git push origin dev --force-with-lease || echo "Push failed (already up-to-date)"
+          git push origin "${GITHUB_REF_NAME}" --force-with-lease || echo "Push failed (already up-to-date)"
 
   # ──────────────────────────────────────────────────────
   # Phase 3: Build & publish images
@@ -196,10 +197,11 @@ jobs:
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-cli
-            ${{ env.IMAGE_NAME }}:dev-cli
-            ${{ env.IMAGE_NAME }}:main-cli
+            ${{ github.ref_name == 'main' && format('{0}:main-cli', env.IMAGE_NAME) || format('{0}:dev-cli', env.IMAGE_NAME) }}
+            ${{ github.ref_name == 'main' && format('{0}:latest-cli', env.IMAGE_NAME) || '' }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
             ${{ github.event_name == 'schedule' && format('{0}:weekly-cli', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'workflow_dispatch' && inputs.publish_latest == 'true' && format('{0}:latest-cli', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64
 
@@ -271,10 +273,11 @@ jobs:
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-web
-            ${{ env.IMAGE_NAME }}:dev-web
-            ${{ env.IMAGE_NAME }}:main-web
+            ${{ github.ref_name == 'main' && format('{0}:main-web', env.IMAGE_NAME) || format('{0}:dev-web', env.IMAGE_NAME) }}
+            ${{ github.ref_name == 'main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
             ${{ github.event_name == 'schedule' && format('{0}:weekly-web', env.IMAGE_NAME) || '' }}
+            ${{ github.event_name == 'workflow_dispatch' && inputs.publish_latest == 'true' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
           provenance: false
           platforms: linux/amd64
 
@@ -294,14 +297,25 @@ jobs:
           GH_TOKEN: ${{ secrets.LPB_STACK_PAT }}
         run: |
           set -e
-          # repo -> default branch mapping
-          declare -A REPO_BRANCHS=(
-            ["lpb-stack/pi"]="lpb-dev"
-            ["lpb-stack/pi-subagents"]="lpb-dev"
-            ["lpb-stack/lemonade-pi-plugin"]="lpb-dev"
-            ["lpb-stack/config"]="dev"
-            ["lpb-stack/lpb-memory"]="dev"
-          )
+          # repo -> branch mapping per pipeline
+          # dev pipeline: dev branches; main pipeline: stable branches
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            declare -A REPO_BRANCHS=(
+              ["lpb-stack/pi"]="lpb"
+              ["lpb-stack/pi-subagents"]="lpb"
+              ["lpb-stack/lemonade-pi-plugin"]="lpb"
+              ["lpb-stack/config"]="main"
+              ["lpb-stack/lpb-memory"]="main"
+            )
+          else
+            declare -A REPO_BRANCHS=(
+              ["lpb-stack/pi"]="lpb-dev"
+              ["lpb-stack/pi-subagents"]="lpb-dev"
+              ["lpb-stack/lemonade-pi-plugin"]="lpb-dev"
+              ["lpb-stack/config"]="dev"
+              ["lpb-stack/lpb-memory"]="dev"
+            )
+          fi
           for repo in "${!REPO_BRANCHS[@]}"; do
             branch="${REPO_BRANCHS[$repo]}"
             echo "Tagging $repo@$VERSION (from $branch)"
