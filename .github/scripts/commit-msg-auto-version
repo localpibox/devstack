@@ -46,10 +46,10 @@ echo "$NEW_VERSION" > "$DEVSTACK_DIR/VERSION"
 # Update VERSION in all stack repos
 declare -a REPOS=(
     "$DEVSTACK_DIR/workspace/pi"
-    "/home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin"
+    "/home/lpb/.pi/agent/git/github.com/lpb-stack/lemonade-pi-plugin"
     "/home/lpb/workspace/localpibox/config"
     "/home/lpb/workspace/localpibox/lpb-memory"
-    "/home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents"
+    "/home/lpb/.pi/agent/git/github.com/lpb-stack/pi-subagents"
 )
 
 for repo in "${REPOS[@]}"; do
