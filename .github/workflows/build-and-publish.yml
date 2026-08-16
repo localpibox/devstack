@@ -116,7 +116,7 @@ jobs:
           # Persist bumped version (VERSION excluded from CI paths, won't re-trigger)
           echo "$NEW_VERSION" > VERSION
           git config user.name "ci-localpibox"
-          git config user.email "ci@localpibox.dev"
+          git config user.email "ci@lpb-stack.dev"
           git add VERSION
           git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
           git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
@@ -192,7 +192,7 @@ jobs:
             LPB_VERSION=${{ steps.config.outputs.LPB_VERSION }}
             LPB_MAX_TOKENS_CONTEXT_RATIO=${{ steps.config.outputs.MAX_TOKENS }}
           secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.LOCALPIBOX_PAT }}
+            GIT_AUTH_TOKEN=${{ secrets.LPB_STACK_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-cli
@@ -267,7 +267,7 @@ jobs:
             LPB_VERSION=${{ steps.config.outputs.LPB_VERSION }}
             LPB_MAX_TOKENS_CONTEXT_RATIO=${{ steps.config.outputs.MAX_TOKENS }}
           secrets: |
-            GIT_AUTH_TOKEN=${{ secrets.LOCALPIBOX_PAT }}
+            GIT_AUTH_TOKEN=${{ secrets.LPB_STACK_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
             ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-web
@@ -291,16 +291,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.bump-version.outputs.version }}
-          GH_TOKEN: ${{ secrets.LOCALPIBOX_PAT }}
+          GH_TOKEN: ${{ secrets.LPB_STACK_PAT }}
         run: |
           set -e
           # repo -> default branch mapping
           declare -A REPO_BRANCHS=(
-            ["localpibox/pi"]="lpb-dev"
-            ["localpibox/pi-subagents"]="lpb-dev"
-            ["localpibox/lemonade-pi-plugin"]="lpb-dev"
-            ["localpibox/config"]="dev"
-            ["localpibox/lpb-memory"]="dev"
+            ["lpb-stack/pi"]="lpb-dev"
+            ["lpb-stack/pi-subagents"]="lpb-dev"
+            ["lpb-stack/lemonade-pi-plugin"]="lpb-dev"
+            ["lpb-stack/config"]="dev"
+            ["lpb-stack/lpb-memory"]="dev"
           )
           for repo in "${!REPO_BRANCHS[@]}"; do
             branch="${REPO_BRANCHS[$repo]}"
