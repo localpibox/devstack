@@ -104,17 +104,35 @@ lpb-config workspace sync       # Symlinks + git pull
 lpb-config workspace ensure     # Check branch alignment
 lpb-config workspace ensure --fix  # Auto-fix misaligned repos
 
+# Extension pin sync
+lpb-config workspace sync --extensions  # Sync settings.json pins to LPB_VERSION
+
 # Config repo management
 lpb-config status               # Show config repo state
 lpb-config update               # Fetch + fast-forward
 lpb-config reset [--force]      # Re-clone (destructive)
 lpb-config merge                # Interactive merge
-lpb-config align                # Update extension pins to latest tags
+lpb-config align                # Update extension pins to latest GitHub tags
 
 # Override pipeline detection
 lpb-config --tag main validate  # Force main pipeline check
 lpb-config --tag dev workspace ensure
 ```
+
+## Settings.json Lifecycle
+
+**Template-driven generation**, not git-tracked:
+
+```bash
+# Config repo has: settings.json.template (__LPB_VERSION__ placeholders)
+# start.sh generates: settings.json (replaces placeholders with actual version)
+```
+
+1. **First boot:** start.sh generates settings.json from template + LPB_VERSION
+2. **No model/provider** — user configures via `/login lemonade` after first boot
+3. **Version sync:** `lpb-config workspace sync --extensions` updates pins to LPB_VERSION
+4. **Validate:** `lpb-config validate` checks pins match current version
+5. **Persistent:** settings.json persists on host volume, survives container rebuilds
 
 ## Commit Author Convention
 
