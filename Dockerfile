@@ -7,8 +7,8 @@
 #   web  — Extends cli + adds VSCodium server + web access
 #
 # Build:
-#   docker build --target cli  -t ghcr.io/localpibox/devstack:cli  .
-#   docker build --target web  -t ghcr.io/localpibox/devstack:web  .
+#   docker build --target cli  -t ghcr.io/lpb-stack/devstack:cli  .
+#   docker build --target web  -t ghcr.io/lpb-stack/devstack:web  .
 #
 # Fork configuration: lpb.stack.env (project root)
 #   Sourced at build time to populate ARG defaults:
@@ -27,13 +27,13 @@
 # NOTE: Docker ARG values can't reference source'd shell variables.
 ARG NODE_VERSION=24
 ARG VSCODIUM_VERSION=1.126.04524
-ARG PI_FORK=https://github.com/localpibox/pi.git
+ARG PI_FORK=https://github.com/lpb-stack/pi.git
 ARG PI_REF=lpb
 ARG PI_HEAD_SHA=unknown
 
 # Config preset repo — baked so start.sh clones the fork's config at boot.
 # (CI passes these from lpb.stack.env LPB_CONFIG_FORK / LPB_CONFIG_REF.)
-ARG CONFIG_FORK=https://github.com/localpibox/config.git
+ARG CONFIG_FORK=https://github.com/lpb-stack/config.git
 ARG CONFIG_REF=main
 
 # Runtime defaults baked from lpb.conf.env (start.sh can still override).
@@ -127,7 +127,7 @@ RUN set -eux; \
     git clone --branch ${PI_REF} ${PI_FORK} .; \
     git fetch origin ${PI_REF}; \
     git checkout ${PI_REF}; \
-    git config user.email "build@localpibox.dev"; \
+    git config user.email "build@lpb-stack.dev"; \
     git config user.name "LocalPibox Build"; \
     npm install; \
     ln -sf "$(pwd)/node_modules/@typescript/native-preview-linux-x64/lib/tsgo" "$(pwd)/node_modules/.bin/tsgo"; \
@@ -176,7 +176,7 @@ COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
 # Shared Python helpers used by the ported support tools (import via the
 # script directory, which Python adds to sys.path automatically).
-COPY scripts/localpibox/ /opt/pi-support/localpibox/
+COPY scripts/lpb-stack/ /opt/pi-support/lpb-stack/
 
 # ── Devstack deployment scripts ──
 COPY --chmod=755 support/install-browser.py /opt/devstack/install-browser.py
@@ -218,7 +218,7 @@ WORKDIR /home/lpb/workspace
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — CLI" \
       org.opencontainers.image.description="AI-powered dev environment with Pi CLI (interactive terminal)" \
-      org.opencontainers.image.source="https://github.com/localpibox/devstack" \
+      org.opencontainers.image.source="https://github.com/lpb-stack/devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${IMAGE_REVISION}" \
@@ -284,7 +284,7 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=60s \
 
 LABEL org.opencontainers.image.title="LocalPibox Devstack — Web" \
       org.opencontainers.image.description="AI-powered dev environment with VSCodium web editor" \
-      org.opencontainers.image.source="https://github.com/localpibox/devstack" \
+      org.opencontainers.image.source="https://github.com/lpb-stack/devstack" \
       org.opencontainers.image.vendor="LocalPibox" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.revision="${IMAGE_REVISION}" \

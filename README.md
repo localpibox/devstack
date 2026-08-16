@@ -8,7 +8,7 @@ AI-powered development environment with the Pi coding agent, VSCodium editor, an
 
 ```bash
 # Install the `lpb` launcher (adds it to ~/.local/bin/)
-curl -fsSL https://raw.githubusercontent.com/localpibox/devstack/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh | bash
 
 # Run devstack for your project
 lpb /path/to/your/project
@@ -28,15 +28,15 @@ lpb --help      # Full usage
 
 ```bash
 # Pull the latest image
-podman pull ghcr.io/localpibox/devstack:latest
+podman pull ghcr.io/lpb-stack/devstack:latest
 
 # Run with a project folder
-podman run -d --name localpibox --network host --userns keep-id \
+podman run -d --name lpb-stack --network host --userns keep-id \
     -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
     -e ED_PORT=3000 \
-    ghcr.io/localpibox/devstack:latest
+    ghcr.io/lpb-stack/devstack:latest
 
 # Open browser to http://localhost:3000 (token: devsession)
 ```
@@ -45,19 +45,19 @@ podman run -d --name localpibox --network host --userns keep-id \
 
 ```bash
 # Run and get a shell inside the container
-podman run -it --name localpibox --network host --userns keep-id \
+podman run -it --name lpb-stack --network host --userns keep-id \
     -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
     -e ED_PORT=3000 \
-    ghcr.io/localpibox/devstack:latest
+    ghcr.io/lpb-stack/devstack:latest
 ```
 
 ### Update extensions (no rebuild)
 
 ```bash
 # Inside the running container
-podman exec -it localpibox update --extensions
+podman exec -it lpb-stack update --extensions
 ```
 
 ## Architecture
@@ -66,12 +66,12 @@ podman exec -it localpibox update --extensions
 flowchart TB
     subgraph Host
         H1["~/projects/myproject/"]
-        H2["~/.localpibox/state/"]
-        H3["~/.localpibox/agent-browser/"]
+        H2["~/.lpb-stack/state/"]
+        H3["~/.lpb-stack/agent-browser/"]
         H4["Lemonade (:13305)"]
     end
 
-    subgraph Image["Image: ghcr.io/localpibox/devstack:latest"]
+    subgraph Image["Image: ghcr.io/lpb-stack/devstack:latest"]
         direction TB
         I1["Ubuntu 26.04 + Node.js 24"]
         I2["Pi monorepo (built, patched)"]
@@ -89,8 +89,8 @@ flowchart TB
 
 Mount structure:
 - Host: `$PROJECT → /home/lpb/workspace/myproject/`
-- Host: `~/.localpibox/state → /home/lpb/.pi` (persistent agent state)
-- Host: `~/.localpibox/agent-browser → /home/lpb/.agent-browser` (browser sessions)
+- Host: `~/.lpb-stack/state → /home/lpb/.pi` (persistent agent state)
+- Host: `~/.lpb-stack/agent-browser → /home/lpb/.agent-browser` (browser sessions)
 - Host: `Lemonade (:13305) → 127.0.0.1:13305` (host network mode)
 
 ## Commands Available Inside Container
@@ -108,7 +108,7 @@ Once the container is running, these commands are available:
 
 ```bash
 # Update extensions to latest release
-podman exec -it localpibox update --extensions
+podman exec -it lpb-stack update --extensions
 
 # Patches are baked into the image — to update, rebuild the container
 # with updated fork branches in lpb.stack.env.
@@ -120,11 +120,11 @@ podman exec -it localpibox update --extensions
 
 ```bash
 # Run with any project folder
-podman run -d --name localpibox --network host --userns keep-id \
+podman run -d --name lpb-stack --network host --userns keep-id \
     -v /home/user/projects/myproject:/home/lpb/workspace/myproject:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/localpibox/devstack:latest
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest
 ```
 
 The project mounts at `/workspace/myproject/` so tools see the correct project name (not "workspace").
@@ -133,24 +133,24 @@ The project mounts at `/workspace/myproject/` so tools see the correct project n
 
 ```bash
 # First project
-podman run -d --name localpibox --network host --userns keep-id \
+podman run -d --name lpb-stack --network host --userns keep-id \
     -e ED_PORT=3000 \
     -v /path/to/project-a:/home/lpb/workspace/project-a:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/localpibox/devstack:latest
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest
 # → http://localhost:3000
 
 # Stop and run another
-podman stop localpibox
-podman rm localpibox
+podman stop lpb-stack
+podman rm lpb-stack
 
-podman run -d --name localpibox --network host --userns keep-id \
+podman run -d --name lpb-stack --network host --userns keep-id \
     -e ED_PORT=3001 \
     -v /path/to/project-b:/home/lpb/workspace/project-b:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/localpibox/devstack:latest
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest
 # → http://localhost:3001
 ```
 
@@ -167,7 +167,7 @@ flowchart LR
     end
 
     subgraph Registry["Registry"]
-        GHCR["GHCR\nghcr.io/localpibox/devstack:latest"]
+        GHCR["GHCR\nghcr.io/lpb-stack/devstack:latest"]
     end
 
     subgraph Runtime["Runtime (host)"]
@@ -201,7 +201,7 @@ non-blocking streaming so you'll see real-time progress (no timeouts).
 ## Forked Repos, Patches & Upstream Policy
 
 Fork URLs and branches are tracked in `lpb.stack.env` at the repo root. Each
-LocalPibox fork carries its localpibox work as a **single squashed commit** on
+LocalPibox fork carries its lpb-stack work as a **single squashed commit** on
 top of upstream (or as its own root commit for independent projects), so the
 delta vs upstream is always one clean patch.
 
@@ -268,12 +268,12 @@ LocalPibox originals.
 | Component | URL / ref lives in | Effort | Repoint path |
 |---|---|---|---|
 | **Extensions** (lemonade-pi-plugin, lpb-memory, pi-subagents, …) | runtime config `~/.pi/agent/settings.json` → `packages` | 🟢 trivial, **no rebuild** | edit the `packages` array, or `pi install git:<fork>/<repo>`; applied at next startup via `pi update --extensions` |
-| **Config preset** (localpibox/config) | `lpb.stack.env` → `LPB_CONFIG_FORK` / `LPB_CONFIG_REF` | 🟡 one rebuild, or no rebuild at runtime | rebuild `--build-arg CONFIG_FORK=...`, **or** `git -C ~/.pi/agent/ remote set-url origin <fork>` (no rebuild) |
-| **Pi core** (localpibox/pi) | `lpb.stack.env` → `LPB_PI_FORK` / `LPB_PI_REF` | 🔴 image rebuild | fork `localpibox/pi`, set engine + `LPB_IMAGE_CLI`, rebuild |
+| **Config preset** (lpb-stack/config) | `lpb.stack.env` → `LPB_CONFIG_FORK` / `LPB_CONFIG_REF` | 🟡 one rebuild, or no rebuild at runtime | rebuild `--build-arg CONFIG_FORK=...`, **or** `git -C ~/.pi/agent/ remote set-url origin <fork>` (no rebuild) |
+| **Pi core** (lpb-stack/pi) | `lpb.stack.env` → `LPB_PI_FORK` / `LPB_PI_REF` | 🔴 image rebuild | fork `lpb-stack/pi`, set engine + `LPB_IMAGE_CLI`, rebuild |
 
 ### Full repoint procedure (image build)
 
-1. Fork the repos you care about (e.g. `localpibox/pi`, `localpibox/config`).
+1. Fork the repos you care about (e.g. `lpb-stack/pi`, `lpb-stack/config`).
 2. Clone **this** repo (devstack) and edit `lpb.stack.env` at the root to point
    at your forks:
 
@@ -284,7 +284,7 @@ LocalPibox originals.
    export LPB_CONFIG_REF=main             # your branch
    export LPB_IMAGE_CLI=ghcr.io/<you>/devstack:cli
    export LPB_IMAGE_WEB=ghcr.io/<you>/devstack:web
-   export LPB_CONTAINER_NAME=mybox        # avoid colliding with localpibox
+   export LPB_CONTAINER_NAME=mybox        # avoid colliding with lpb-stack
    ```
 
    (Or pass them as `docker build --build-arg PI_FORK=... --build-arg
@@ -294,7 +294,7 @@ LocalPibox originals.
 4. Install/run `lpb` — it reads the same `lpb.stack.env` for image/container
    names, so it picks up your fork automatically.
 5. Point the launcher at your image
-   `~/.localpibox/devstack/config` → `export
+   `~/.lpb-stack/devstack/config` → `export
    LPB_IMAGE_NAME="ghcr.io/<you>/devstack:latest"`, or let the forked
    `lpb` handle it.
 
@@ -304,7 +304,7 @@ The config preset is a git clone at `~/.pi/agent/` (container). After
 first boot you can repoint it live — no image rebuild needed:
 
 ```sh
-podman exec -it localpibox bash
+podman exec -it lpb-stack bash
 cd ~/.pi/agent/
 git remote set-url origin https://github.com/<you>/config.git
 git pull --ff-only origin <your-branch>
@@ -318,9 +318,9 @@ Extensions are not baked in; they are installed on first boot from
 `settings.json#packages`. Repoint them from the running container:
 
 ```sh
-podman exec -it localpibox pi remove git:github.com/localpibox/lemonade-pi-plugin
-podman exec -it localpibox pi install git:github.com/<you>/lemonade-pi-plugin@<your-branch>
-podman exec -it localpibox pi update --extensions
+podman exec -it lpb-stack pi remove git:github.com/lpb-stack/lemonade-pi-plugin
+podman exec -it lpb-stack pi install git:github.com/<you>/lemonade-pi-plugin@<your-branch>
+podman exec -it lpb-stack pi update --extensions
 ```
 
 Changes apply at the **next pi startup** (or `/reload` in a running session
@@ -352,16 +352,16 @@ Built automatically on GitHub Actions when:
 lsof -i :3000
 
 # Stop existing container
-podman stop localpibox
-podman rm localpibox
+podman stop lpb-stack
+podman rm lpb-stack
 
 # Run with new port
-podman run -d --name localpibox --network host --userns keep-id \
+podman run -d --name lpb-stack --network host --userns keep-id \
     -e ED_PORT=8080 \
     -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/localpibox/devstack:latest
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest
 # → http://localhost:8080
 ```
 
@@ -370,26 +370,26 @@ podman run -d --name localpibox --network host --userns keep-id \
 ```bash
 # Login in the editor (Ctrl+Shift+P → "Pi: Login")
 # Or via CLI
-podman exec -it localpibox pi login
+podman exec -it lpb-stack pi login
 ```
 
 ### Outdated extensions
 
 ```bash
-podman exec -it localpibox update --extensions
+podman exec -it lpb-stack update --extensions
 ```
 
 ### Need a rebuild
 
 ```bash
 # Pull from GHCR (newer build)
-podman pull ghcr.io/localpibox/devstack:latest
-podman stop localpibox && podman rm localpibox
-podman run -d --name localpibox --network host --userns keep-id \
+podman pull ghcr.io/lpb-stack/devstack:latest
+podman stop lpb-stack && podman rm lpb-stack
+podman run -d --name lpb-stack --network host --userns keep-id \
     -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.localpibox/state:/home/lpb/.pi:Z \
-    -v ~/.localpibox/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/localpibox/devstack:latest
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest
 ```
 
 ## Directory Structure
@@ -437,9 +437,9 @@ classDiagram
 
 ## Related Repositories
 
-- [localpibox/pi](https://github.com/localpibox/pi) — Forked Pi monorepo with Qwen reasoning support
-- [localpibox/lemonade-pi-plugin](https://github.com/localpibox/lemonade-pi-plugin) — Lemonade provider plugin
-- [localpibox/config](https://github.com/localpibox/config) — Pi configuration (settings, mcp, skills)
-- [localpibox/lpb-memory](https://github.com/localpibox/lpb-memory) — Persistent memory + session search extension
-- [localpibox/localpibox](https://github.com/localpibox/localpibox) — Project overview & stack reference
-- [localpibox/localpibox.github.io](https://github.com/localpibox/localpibox.github.io) — Project site (GitHub Pages)
+- [lpb-stack/pi](https://github.com/lpb-stack/pi) — Forked Pi monorepo with Qwen reasoning support
+- [lpb-stack/lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) — Lemonade provider plugin
+- [lpb-stack/config](https://github.com/lpb-stack/config) — Pi configuration (settings, mcp, skills)
+- [lpb-stack/lpb-memory](https://github.com/lpb-stack/lpb-memory) — Persistent memory + session search extension
+- [lpb-stack/lpb-stack](https://github.com/lpb-stack/lpb-stack) — Project overview & stack reference
+- [lpb-stack/lpb-stack.github.io](https://github.com/lpb-stack/lpb-stack.github.io) — Project site (GitHub Pages)

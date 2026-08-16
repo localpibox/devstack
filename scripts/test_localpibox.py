@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Test harness for the localpibox package and the ported shell scripts.
+"""Test harness for the lpb-stack package and the ported shell scripts.
 
 Covers:
-  - localpibox.env    — parse/expand/layer KEY=VALUE files
-  - localpibox.log    — leveled, colored output to configurable streams
-  - localpibox.run    — subprocess helpers, tool discovery, container detection
-  - localpibox.cli    — prompts, common flags, fatal-error helper
+  - lpb-stack.env    — parse/expand/layer KEY=VALUE files
+  - lpb-stack.log    — leveled, colored output to configurable streams
+  - lpb-stack.run    — subprocess helpers, tool discovery, container detection
+  - lpb-stack.cli    — prompts, common flags, fatal-error helper
   - support/build.py  — env loading, build-arg mapping, docker command
   - browser-state-cleanup — session pruning (age + count)
 
@@ -47,7 +47,7 @@ iospec = importlib.import_module('install-openspec')
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# localpibox.env
+# lpb-stack.env
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_parse_env_line_basic():
@@ -104,7 +104,7 @@ def test_find_env_file(tmpdir):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# localpibox.log
+# lpb-stack.log
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_log_levels_and_streams():
@@ -133,7 +133,7 @@ def test_log_debug_gated():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# localpibox.run
+# lpb-stack.run
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_run_cmd_success():
@@ -172,7 +172,7 @@ def test_is_container_returns_bool():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# localpibox.cli
+# lpb-stack.cli
 # ═══════════════════════════════════════════════════════════════════════════
 
 def test_confirm_defaults():
@@ -226,18 +226,18 @@ def _fake_runner(responses):
 
 def test_build_load_env_success(tmpdir):
     (tmpdir / "lpb.stack.env").write_text(
-        "LPB_PI_FORK=https://github.com/localpibox/pi.git\n"
+        "LPB_PI_FORK=https://github.com/lpb-stack/pi.git\n"
         "LPB_PI_REF=lpb\n"
-        "LPB_CONFIG_FORK=https://github.com/localpibox/config.git\n"
+        "LPB_CONFIG_FORK=https://github.com/lpb-stack/config.git\n"
         "LPB_CONFIG_REF=main\n"
-        "LPB_IMAGE_CLI=ghcr.io/localpibox/devstack:cli\n"
-        "LPB_IMAGE_WEB=ghcr.io/localpibox/devstack:web\n"
+        "LPB_IMAGE_CLI=ghcr.io/lpb-stack/devstack:cli\n"
+        "LPB_IMAGE_WEB=ghcr.io/lpb-stack/devstack:web\n"
         "LPB_NODE_VERSION=24\n"
         "LPB_VSCODIUM_VERSION=1.126.04524\n"
     )
     (tmpdir / "lpb.conf.env").write_text("LPB_MAX_TOKENS_CONTEXT_RATIO=0.06\n")
     env = build.load_build_env(tmpdir.path)
-    assert env["LPB_IMAGE_CLI"] == "ghcr.io/localpibox/devstack:cli"
+    assert env["LPB_IMAGE_CLI"] == "ghcr.io/lpb-stack/devstack:cli"
     assert env["LPB_MAX_TOKENS_CONTEXT_RATIO"] == "0.06"
 
 
@@ -266,10 +266,10 @@ def test_build_load_env_expands_home(tmpdir):
         "LPB_CONFIG_FORK=c\nLPB_CONFIG_REF=m\nLPB_NODE_VERSION=n\nLPB_VSCODIUM_VERSION=v\n"
     )
     (tmpdir / "lpb.conf.env").write_text(
-        "LPB_MAX_TOKENS_CONTEXT_RATIO=0.06\nLPB_STATE_DIR=${HOME}/.localpibox/state\n"
+        "LPB_MAX_TOKENS_CONTEXT_RATIO=0.06\nLPB_STATE_DIR=${HOME}/.lpb-stack/state\n"
     )
     env = build.load_build_env(tmpdir.path)
-    assert env["LPB_STATE_DIR"] == os.path.expanduser("~") + "/.localpibox/state"
+    assert env["LPB_STATE_DIR"] == os.path.expanduser("~") + "/.lpb-stack/state"
 
 
 def test_build_build_args_with_fake_git(tmpdir):
@@ -611,10 +611,10 @@ def test_validate_extensions(tmpdir):
     cons = _quiet_console()
     c = validate.Checker(cons)
     ext = tmpdir / "git"
-    (ext / "github.com" / "localpibox" / "lemonade-pi-plugin" / "package.json").parent.mkdir(parents=True)
-    (ext / "github.com" / "localpibox" / "lemonade-pi-plugin" / "package.json").touch()
-    (ext / "github.com" / "localpibox" / "lpb-memory" / "package.json").parent.mkdir(parents=True)
-    (ext / "github.com" / "localpibox" / "lpb-memory" / "package.json").touch()
+    (ext / "github.com" / "lpb-stack" / "lemonade-pi-plugin" / "package.json").parent.mkdir(parents=True)
+    (ext / "github.com" / "lpb-stack" / "lemonade-pi-plugin" / "package.json").touch()
+    (ext / "github.com" / "lpb-stack" / "lpb-memory" / "package.json").parent.mkdir(parents=True)
+    (ext / "github.com" / "lpb-stack" / "lpb-memory" / "package.json").touch()
     with mock.patch.object(validate, "EXT_BASE", ext):
         validate.check_extensions(c, cons)
     assert c.errors == 0 and c.checks == 2
@@ -768,11 +768,11 @@ def _tests():
 
 def main() -> int:
     print("=" * 60)
-    print("localpibox + ported-tools test suite")
+    print("lpb-stack + ported-tools test suite")
     print("=" * 60)
     import inspect
     passed = failed = 0
-    tmp = Path(tempfile.mkdtemp(prefix="localpibox-tests-"))
+    tmp = Path(tempfile.mkdtemp(prefix="lpb-stack-tests-"))
     try:
         for name, fn in _tests():
             tmpdir = _TmpDir(tmp) / name

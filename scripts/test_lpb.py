@@ -197,7 +197,7 @@ def make_module(lpb_path: str | None = None):
     mutation tests to load a deliberately-broken copy).
 
     HOME is redirected to a private temp dir, so the module never touches the
-    real ~/.localpibox (token / last-project / last-image / state defaults).
+    real ~/.lpb-stack (token / last-project / last-image / state defaults).
     """
     global _module_counter, _subprocess_orig, _shutil_orig
     _module_counter += 1

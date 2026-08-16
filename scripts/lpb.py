@@ -90,7 +90,7 @@ class DevstackConfigError(DevstackError):
     """Raised when configuration is invalid (e.g. missing files, bad env vars)."""
 
 HOME = os.path.expanduser("~")
-CONFIG_DIR = Path(HOME) / ".localpibox" / "devstack"
+CONFIG_DIR = Path(HOME) / ".lpb-stack" / "devstack"
 CONFIG_FILE = CONFIG_DIR / "config"
 PROJECTS_DIR = CONFIG_DIR / "projects"
 LAST_PROJECT_FILE = CONFIG_DIR / "last-project"
@@ -143,8 +143,8 @@ def _load_stack_env() -> dict[str, str]:
 
 _stack_cfg = _load_stack_env()
 
-CLI_IMAGE = _stack_cfg.get("LPB_IMAGE_CLI", "ghcr.io/localpibox/devstack:cli")
-WEB_IMAGE = _stack_cfg.get("LPB_IMAGE_WEB", "ghcr.io/localpibox/devstack:web")
+CLI_IMAGE = _stack_cfg.get("LPB_IMAGE_CLI", "ghcr.io/lpb-stack/devstack:cli")
+WEB_IMAGE = _stack_cfg.get("LPB_IMAGE_WEB", "ghcr.io/lpb-stack/devstack:web")
 
 # ─── Default image tag from env var ──────────────────────────────────
 # Users can set LPB_IMAGE_TAG=dev in their environment for persistent override.
@@ -165,7 +165,7 @@ def _load_last_version() -> str:
 def _get_remote_version(branch: str = "dev") -> str:
     """Fetch the latest VERSION from the remote branch."""
     try:
-        url = f"https://raw.githubusercontent.com/localpibox/devstack/{branch}/VERSION"
+        url = f"https://raw.githubusercontent.com/lpb-stack/devstack/{branch}/VERSION"
         with urllib.request.urlopen(url, timeout=5) as resp:
             return resp.read().decode().strip()
     except Exception:
@@ -195,9 +195,9 @@ def _resolve_version_image(version: str, mode: str) -> str:
         mode: 'cli' or 'web'
     
     Returns:
-        Full image name (e.g. ghcr.io/localpibox/devstack:0.0.9-lpb-dev-cli)
+        Full image name (e.g. ghcr.io/lpb-stack/devstack:0.0.9-lpb-dev-cli)
     """
-    return f"ghcr.io/localpibox/devstack:{version}-{mode}"
+    return f"ghcr.io/lpb-stack/devstack:{version}-{mode}"
 
 
 def resolve_cli_image(tag: str) -> str:
@@ -278,7 +278,7 @@ _conf_cfg = _load_conf_env()
 class Config:
     image_name = CLI_IMAGE
     image_tag = cfg_image_tag  # dev, main, latest, or custom tag suffix
-    container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "localpibox")
+    container_name = _stack_cfg.get("LPB_CONTAINER_NAME", "lpb-stack")
     container_cmd = ""
     port = int(os.environ.get("LPB_ED_PORT", os.environ.get("ED_PORT", _conf_cfg.get("LPB_ED_PORT", "3000"))))
     host = os.environ.get("LPB_EDITOR_HOST", os.environ.get("HOST", _conf_cfg.get("LPB_EDITOR_HOST", "localhost")))
@@ -288,8 +288,8 @@ class Config:
     # (--new-token flag forces a fresh token instead of reusing persisted one)
     without_token = False
     new_token = False
-    state_dir = os.environ.get("LPB_STATE_DIR", _conf_cfg.get("LPB_STATE_DIR", str(Path(HOME) / ".localpibox" / "state")))
-    browser_dir = os.environ.get("LPB_BROWSER_DIR", _conf_cfg.get("LPB_BROWSER_DIR", str(Path(HOME) / ".localpibox" / "agent-browser")))
+    state_dir = os.environ.get("LPB_STATE_DIR", _conf_cfg.get("LPB_STATE_DIR", str(Path(HOME) / ".lpb-stack" / "state")))
+    browser_dir = os.environ.get("LPB_BROWSER_DIR", _conf_cfg.get("LPB_BROWSER_DIR", str(Path(HOME) / ".lpb-stack" / "agent-browser")))
     project_dir = ""
     project_name = ""
     open_home = False
@@ -333,7 +333,7 @@ def self_update() -> None:
         return
     # Select branch based on cfg.image_tag (set by --tag)
     branch = "dev" if cfg.image_tag == "dev" else "main"
-    script_url = f"https://raw.githubusercontent.com/localpibox/devstack/{branch}/scripts/lpb"
+    script_url = f"https://raw.githubusercontent.com/lpb-stack/devstack/{branch}/scripts/lpb"
     py_url = script_url.replace("/lpb", "/lpb.py")
     try:
         with urllib.request.urlopen(script_url, timeout=10) as resp:
@@ -556,7 +556,7 @@ class ContainerClient:
     def images_pull(self, name):
         """Pull image with full verbosity, auto-login to GHCR if needed."""
         # Auto-login to GHCR for LocalPibox images
-        if name.startswith("ghcr.io/localpibox/"):
+        if name.startswith("ghcr.io/lpb-stack/"):
             self._ghcr_login()
 
         proc = subprocess.Popen(
@@ -583,7 +583,7 @@ class ContainerClient:
         if not token:
             return  # No token available, pull will fail with auth error
 
-        username = os.environ.get("GHCR_USERNAME", "localpibox")
+        username = os.environ.get("GHCR_USERNAME", "lpb-stack")
         run_cmd([self.cmd, "login", "ghcr.io", "-u", username, "-p", token], timeout=30)
 
 
@@ -707,7 +707,7 @@ def apply_overrides(project_dir: str | None = None, project_name: str | None = N
     # Capture shell env BEFORE loading config/.env files
     shell_env = {k: v for k, v in os.environ.items() if k in _ENV_MAP}
 
-    # 1. Load config file (~/.localpibox/devstack/config)
+    # 1. Load config file (~/.lpb-stack/devstack/config)
     load_config_file()
     # 2. Load project .env
     project_env = {}
@@ -1302,7 +1302,7 @@ def cmd_run():
     ]
     # GHCR token for image pulls (personal account requires auth)
     ghcr_token = os.environ.get('GHCR_TOKEN') or os.environ.get('GITHUB_TOKEN') or os.environ.get('LPB_GITHUB_TOKEN', '')
-    ghcr_username = os.environ.get('GHCR_USERNAME', _conf_cfg.get('GHCR_USERNAME', 'localpibox'))
+    ghcr_username = os.environ.get('GHCR_USERNAME', _conf_cfg.get('GHCR_USERNAME', 'lpb-stack'))
     if ghcr_token:
         env_vars.append(f"GHCR_TOKEN={ghcr_token}")
         env_vars.append(f"GHCR_USERNAME={ghcr_username}")

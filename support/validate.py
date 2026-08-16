@@ -10,7 +10,7 @@ Run inside the container to verify:
   - VSCodium server is accessible
   - Pi CLI is functional
 
-Usage: podman exec -it localpibox /opt/devstack/validate
+Usage: podman exec -it lpb-stack /opt/devstack/validate
 """
 
 from __future__ import annotations
@@ -23,16 +23,16 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "localpibox").is_dir():
+    if (_c / "lpb-stack").is_dir():
         sys.path.insert(0, str(_c))
         break
 
-from localpibox.cli import install_sigpipe_handler  # noqa: E402
-from localpibox.log import Console  # noqa: E402
-from localpibox.run import run_cmd, which  # noqa: E402
+from lpb-stack.cli import install_sigpipe_handler  # noqa: E402
+from lpb-stack.log import Console  # noqa: E402
+from lpb-stack.run import run_cmd, which  # noqa: E402
 
 EXT_BASE = Path("/home/lpb/.pi/agent/git")
-CHECK_REPOS = ("localpibox/lemonade-pi-plugin", "localpibox/lpb-memory")
+CHECK_REPOS = ("lpb-stack/lemonade-pi-plugin", "lpb-stack/lpb-memory")
 SQLITE_LIB_DIRS = ["/usr/lib/x86_64-linux-gnu"]
 
 

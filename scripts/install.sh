@@ -2,19 +2,19 @@
 # Installer for lpb (LocalPibox Devstack launcher)
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/localpibox/devstack/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh | bash
 #
 # Best practice: download first, inspect, then run
-#   curl -fsSL https://raw.githubusercontent.com/localpibox/devstack/main/scripts/install.sh -o /tmp/install.sh
+#   curl -fsSL https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh -o /tmp/install.sh
 #   cat /tmp/install.sh
 #   bash /tmp/install.sh
 
 set -euo pipefail
 
 INSTALL_DIR="${HOME}/.local/bin"
-CONFIG_DIR="${HOME}/.localpibox/devstack"
+CONFIG_DIR="${HOME}/.lpb-stack/devstack"
 CONFIG_FILE="${CONFIG_DIR}/config"
-SCRIPT_URL="https://raw.githubusercontent.com/localpibox/devstack/main/scripts/lpb"
+SCRIPT_URL="https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/lpb"
 
 # 1. Validate prerequisites
 for dep in curl; do
@@ -31,7 +31,7 @@ echo "Installing lpb..."
 curl -fsSL "${SCRIPT_URL}" -o "${INSTALL_DIR}/lpb"
 chmod +x "${INSTALL_DIR}/lpb"
 # The shell wrapper execs lpb.py from the same directory.
-OWNER_REPO="localpibox/devstack"
+OWNER_REPO="lpb-stack/devstack"
 curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/scripts/lpb.py" -o "${INSTALL_DIR}/lpb.py"
 chmod +x "${INSTALL_DIR}/lpb.py"
 # Install the canonical env defaults alongside so a plain install picks up
@@ -61,10 +61,10 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 # Override any of them here — these take priority.
 #
 # Project-specific overrides go in:
-#   ~/.localpibox/devstack/projects/<project-name>
+#   ~/.lpb-stack/devstack/projects/<project-name>
 
 # ─── Container ──────────────────────────────────────────────────────────────
-export LPB_CONTAINER_NAME="localpibox"
+export LPB_CONTAINER_NAME="lpb-stack"
 
 # ─── VSCodium ───────────────────────────────────────────────────────────────
 export LPB_EDITOR_HOST="localhost"
@@ -72,8 +72,8 @@ export LPB_EDITOR_HOST="localhost"
 export LPB_CONNECTION_TOKEN=""
 
 # ─── Directories ────────────────────────────────────────────────────────────
-export LPB_STATE_DIR="${HOME}/.localpibox/state"
-export LPB_BROWSER_DIR="${HOME}/.localpibox/agent-browser"
+export LPB_STATE_DIR="${HOME}/.lpb-stack/state"
+export LPB_BROWSER_DIR="${HOME}/.lpb-stack/agent-browser"
 EOF
     echo "  Created config: ${CONFIG_FILE}"
 fi

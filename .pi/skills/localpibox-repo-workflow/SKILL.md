@@ -1,5 +1,5 @@
 ---
-name: localpibox-repo-workflow
+name: lpb-stack-repo-workflow
 description: Manage the 6 LocalPibox repos — CI-only versioning, hooks, image builds, lpb.py.
 ---
 # LocalPibox Repository Workflow
@@ -60,11 +60,11 @@ Standardized workflow for managing the 6 LocalPibox repositories, with conventio
 Workspace (single repo):
   /home/lpb/workspace/devstack                  (devstack + lpb.py + Dockerfile)
 
-Agent config (cloned from localpibox/config):
+Agent config (cloned from lpb-stack/config):
   /home/lpb/.pi/agent/                          (settings.json, AGENTS.md, skills/, agents/)
 
 Extension clones:
-  /home/lpb/.pi/agent/git/github.com/localpibox/
+  /home/lpb/.pi/agent/git/github.com/lpb-stack/
       lemonade-pi-plugin                        (lpb-dev)
       lpb-memory                                (dev)
       pi-subagents                              (lpb-dev)
@@ -158,7 +158,7 @@ Same pattern — template in repo, user config on host:
 
 ALL LocalPibox-specific commits MUST use:
 ```
-Author: localpibox <localpibox@gmail.com>
+Author: lpb-stack <lpb-stack@gmail.com>
 ```
 
 Never use `lpb`, `LocalPibox`, or other aliases.
@@ -166,14 +166,14 @@ Never use `lpb`, `LocalPibox`, or other aliases.
 ### Fixing wrong authors
 ```bash
 # Single commit
-git commit --amend --author="localpibox <localpibox@gmail.com>" --no-edit
+git commit --amend --author="lpb-stack <lpb-stack@gmail.com>" --no-edit
 
 # Entire repo history
 FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '
-export GIT_AUTHOR_NAME="localpibox"
-export GIT_AUTHOR_EMAIL="localpibox@gmail.com"
-export GIT_COMMITTER_NAME="localpibox"
-export GIT_COMMITTER_EMAIL="localpibox@gmail.com"
+export GIT_AUTHOR_NAME="lpb-stack"
+export GIT_AUTHOR_EMAIL="lpb-stack@gmail.com"
+export GIT_COMMITTER_NAME="lpb-stack"
+export GIT_COMMITTER_EMAIL="lpb-stack@gmail.com"
 ' -- --all
 ```
 
@@ -256,8 +256,8 @@ lpb-config --tag main workspace ensure --fix
 ### Quick manual branch switch
 ```bash
 cd /home/lpb/workspace/devstack && git checkout dev
-cd /home/lpb/.pi/agent/git/github.com/localpibox/pi-subagents && git checkout lpb-dev
-cd /home/lpb/.pi/agent/git/github.com/localpibox/lemonade-pi-plugin && git checkout lpb-dev
+cd /home/lpb/.pi/agent/git/github.com/lpb-stack/pi-subagents && git checkout lpb-dev
+cd /home/lpb/.pi/agent/git/github.com/lpb-stack/lemonade-pi-plugin && git checkout lpb-dev
 ```
 
 ### Creating lpb-dev with upstream base
@@ -292,7 +292,7 @@ git push origin --delete <old-tag>
 Before declaring a repo clean:
 - [ ] Default branch set correctly (`dev` or `lpb-dev`)
 - [ ] Working on default branch
-- [ ] All commits from `localpibox <localpibox@gmail.com>`
+- [ ] All commits from `lpb-stack <lpb-stack@gmail.com>`
 - [ ] Stale branches deleted
 - [ ] Old LPB tags cleaned up
 - [ ] `lpb` branch exists (receives clean merges from `lpb-dev` when stable)
@@ -330,8 +330,8 @@ on:
 ```
 
 ### Build images
-- `ghcr.io/localpibox/devstack:cli` — Base dev environment + Pi CLI
-- `ghcr.io/localpibox/devstack:web` — Extends cli + VSCodium server
+- `ghcr.io/lpb-stack/devstack:cli` — Base dev environment + Pi CLI
+- `ghcr.io/lpb-stack/devstack:web` — Extends cli + VSCodium server
 
 ### CI does NOT use workspace/pi
 - CI clones pi to `/opt/pi-src` during Docker build
@@ -348,7 +348,7 @@ The devstack image contains:
 - Support scripts
 
 Extensions loaded from:
-- `/home/lpb/.pi/agent/git/github.com/localpibox/`
+- `/home/lpb/.pi/agent/git/github.com/lpb-stack/`
 - Or symlinked via `workspace/` → extension repos
 
 Settings pinned in `~/.pi/agent/settings.json` under `"packages"` array.

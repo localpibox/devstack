@@ -6,9 +6,9 @@
 #                   starting VSCodium server, and executing the target command.
 #
 # Usage:
-#   podman run -d --name localpibox --network host --userns keep-id \
+#   podman run -d --name lpb-stack --network host --userns keep-id \
 #     -v /path/to/project:/home/lpb/workspace/<project-name>:Z \
-#     ghcr.io/localpibox/devstack:web
+#     ghcr.io/lpb-stack/devstack:web
 #
 # Environment variables:
 #   All LPB_* vars are handled by start.sh

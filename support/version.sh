@@ -52,9 +52,9 @@ import json, sys
 with open('$settings') as f:
     d = json.load(f)
 pins = {
-    'lemonade-pi-plugin': 'git:github.com/localpibox/lemonade-pi-plugin@$new_ver',
-    'lpb-memory': 'git:github.com/localpibox/lpb-memory@$new_ver',
-    'pi-subagents': 'git:github.com/localpibox/pi-subagents@$new_ver',
+    'lemonade-pi-plugin': 'git:github.com/lpb-stack/lemonade-pi-plugin@$new_ver',
+    'lpb-memory': 'git:github.com/lpb-stack/lpb-memory@$new_ver',
+    'pi-subagents': 'git:github.com/lpb-stack/pi-subagents@$new_ver',
 }
 for pkg in d.get('packages', []):
     for name in pins:

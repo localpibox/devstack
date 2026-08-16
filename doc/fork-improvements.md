@@ -11,16 +11,16 @@ This stack uses 6 repositories. The two code forks and their changes:
 
 | Repo | Upstream | Purpose |
 |---|---|---|
-| `localpibox/pi` | `earendil-works/pi` | Forked Pi monorepo — Qwen reasoning protocol + overflow detection |
-| `localpibox/lemonade-pi-plugin` | `lemonade-sdk/lemonade-pi-plugin` | Lemonade provider — Qwen model detection, vision, dynamic sizing |
-| `localpibox/pi-subagents` | `tintinweb/pi-subagents` | Subagent model registry — removes Anthropic defaults, local-first |
-| `localpibox/config` | — | User settings, skills, agents |
-| `localpibox/devstack` | — | Docker-based dev environment |
-| `localpibox/lpb-memory` | — | Persistent memory extension |
+| `lpb-stack/pi` | `earendil-works/pi` | Forked Pi monorepo — Qwen reasoning protocol + overflow detection |
+| `lpb-stack/lemonade-pi-plugin` | `lemonade-sdk/lemonade-pi-plugin` | Lemonade provider — Qwen model detection, vision, dynamic sizing |
+| `lpb-stack/pi-subagents` | `tintinweb/pi-subagents` | Subagent model registry — removes Anthropic defaults, local-first |
+| `lpb-stack/config` | — | User settings, skills, agents |
+| `lpb-stack/devstack` | — | Docker-based dev environment |
+| `lpb-stack/lpb-memory` | — | Persistent memory extension |
 
 ---
 
-## Pi Fork (`localpibox/pi`)
+## Pi Fork (`lpb-stack/pi`)
 
 **Key commit: `53c1dc2` — surgical Qwen patches on v0.84.1**
 
@@ -48,7 +48,7 @@ This commit makes the **surgical edits** to Pi itself that enable the Qwen reaso
 
 ---
 
-## Subagents Fork (`localpibox/pi-subagents`)
+## Subagents Fork (`lpb-stack/pi-subagents`)
 
 **Key commit: `5a3159d` — centralized model registry on upstream v0.15.0**
 
@@ -89,7 +89,7 @@ This commit **removes Anthropic-hardcoded defaults** from the subagents extensio
 
 ---
 
-## Lemonade Fork (`localpibox/lemonade-pi-plugin`)
+## Lemonade Fork (`lpb-stack/lemonade-pi-plugin`)
 
 **Changes: +334 lines across 13 files — all major improvements**
 

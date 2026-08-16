@@ -23,13 +23,13 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "localpibox").is_dir():
+    if (_c / "lpb-stack").is_dir():
         sys.path.insert(0, str(_c))
         break
 
-from localpibox.cli import add_common_args, console_from_args, install_sigpipe_handler  # noqa: E402
-from localpibox.log import Console  # noqa: E402
-from localpibox.run import run_cmd, which  # noqa: E402
+from lpb-stack.cli import add_common_args, console_from_args, install_sigpipe_handler  # noqa: E402
+from lpb-stack.log import Console  # noqa: E402
+from lpb-stack.run import run_cmd, which  # noqa: E402
 import subprocess  # noqa: E402
 
 OPENSPEC_PKG = "@fission-ai/openspec"

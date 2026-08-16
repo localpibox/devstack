@@ -16,14 +16,14 @@ has its own scope:
 
 | Repo | What to work on |
 |---|---|
-| [devstack](https://github.com/localpibox/devstack) | Container image (`Dockerfile`), `lpb` launcher (`scripts/`), entrypoints (`support/`), CI |
-| [config](https://github.com/localpibox/config) | Pi settings, MCP servers, custom skills, subagents presets |
-| [pi](https://github.com/localpibox/pi) | Qwen `reasoning_effort` + context-overflow patches (fork) |
-| [lemonade-pi-plugin](https://github.com/localpibox/lemonade-pi-plugin) | Qwen thinking + vision support (fork) |
-| [pi-subagents](https://github.com/localpibox/pi-subagents) | Centralized subagent model registry (fork) |
-| [lpb-memory](https://github.com/localpibox/lpb-memory) | Persistent memory / session search extension |
-| [localpibox](https://github.com/localpibox/localpibox) | Project overview & stack reference |
-| [localpibox.github.io](https://github.com/localpibox/localpibox.github.io) | GitHub Pages project site |
+| [devstack](https://github.com/lpb-stack/devstack) | Container image (`Dockerfile`), `lpb` launcher (`scripts/`), entrypoints (`support/`), CI |
+| [config](https://github.com/lpb-stack/config) | Pi settings, MCP servers, custom skills, subagents presets |
+| [pi](https://github.com/lpb-stack/pi) | Qwen `reasoning_effort` + context-overflow patches (fork) |
+| [lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) | Qwen thinking + vision support (fork) |
+| [pi-subagents](https://github.com/lpb-stack/pi-subagents) | Centralized subagent model registry (fork) |
+| [lpb-memory](https://github.com/lpb-stack/lpb-memory) | Persistent memory / session search extension |
+| [lpb-stack](https://github.com/lpb-stack/lpb-stack) | Project overview & stack reference |
+| [lpb-stack.github.io](https://github.com/lpb-stack/lpb-stack.github.io) | GitHub Pages project site |
 
 ### Process
 
@@ -48,7 +48,7 @@ has its own scope:
 
 1. Fork the repos you care about.
 2. Clone devstack and edit `lpb.stack.env` to point at your forks (see
-   [Forking & Repointing](https://github.com/localpibox/devstack#forking--repointing)).
+   [Forking & Repointing](https://github.com/lpb-stack/devstack#forking--repointing)).
 3. Build & push your image, then run `lpb`.
 
 You own your variant — change anything: image names, container name, branch

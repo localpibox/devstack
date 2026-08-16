@@ -19,7 +19,7 @@ Pipeline detection:
 
 Environment:
   AGENT_DIR         — Config repo path (default: /home/lpb/.pi/agent)
-  CONFIG_REMOTE     — Git remote URL (default: https://github.com/localpibox/config.git)
+  CONFIG_REMOTE     — Git remote URL (default: https://github.com/lpb-stack/config.git)
   CONFIG_REF        — Branch to track (default: main)
   LPB_GITHUB_TOKEN  — GitHub token for authenticated operations
 """
@@ -38,23 +38,23 @@ from pathlib import Path
 
 _SELF_DIR = Path(__file__).resolve().parent
 for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "localpibox").is_dir():
+    if (_c / "lpb-stack").is_dir():
         sys.path.insert(0, str(_c))
         break
 
-from localpibox.cli import confirm, install_sigpipe_handler  # noqa: E402
-from localpibox.env import parse_env_file  # noqa: E402
-from localpibox.log import Console  # noqa: E402
-from localpibox.run import run_cmd  # noqa: E402
+from lpb-stack.cli import confirm, install_sigpipe_handler  # noqa: E402
+from lpb-stack.env import parse_env_file  # noqa: E402
+from lpb-stack.log import Console  # noqa: E402
+from lpb-stack.run import run_cmd  # noqa: E402
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
 DEFAULT_AGENT_DIR = "/home/lpb/.pi/agent"
-DEFAULT_REMOTE = "https://github.com/localpibox/config.git"
+DEFAULT_REMOTE = "https://github.com/lpb-stack/config.git"
 DEFAULT_REF = "main"
 
 WORKSPACE_ROOT = Path("/home/lpb/workspace")
-AGENT_GIT = Path("/home/lpb/.pi/agent/git/github.com/localpibox")
+AGENT_GIT = Path("/home/lpb/.pi/agent/git/github.com/lpb-stack")
 
 MIGRATE_KEEP = {".initialized", "ssh-host-keys", "gh-config", "agent"}
 
@@ -418,7 +418,7 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     for pkg in packages:
         if isinstance(pkg, str) and "@" in pkg:
             for name in lpb_repos:
-                if f"localpibox/{name}@" in pkg:
+                if f"lpb-stack/{name}@" in pkg:
                     current_pins[name] = pkg.split("@")[-1]
 
     cons.info("Current extension pins:")
@@ -430,7 +430,7 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     for name in lpb_repos:
         try:
             token = _github_token()
-            url = f"https://api.github.com/repos/localpibox/{name}/tags"
+            url = f"https://api.github.com/repos/lpb-stack/{name}/tags"
             headers = {"Accept": "application/vnd.github+json"}
             if token:
                 headers["Authorization"] = f"Bearer {token}"
@@ -456,8 +456,8 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
 
         if confirm("\nUpdate settings.json to latest?"):
             for name, cur, lat in mismatches:
-                old = f"git:github.com/localpibox/{name}@{cur}"
-                new = f"git:github.com/localpibox/{name}@{lat}"
+                old = f"git:github.com/lpb-stack/{name}@{cur}"
+                new = f"git:github.com/lpb-stack/{name}@{lat}"
                 idx = packages.index(old) if old in packages else -1
                 if idx >= 0:
                     packages[idx] = new
@@ -800,7 +800,7 @@ def _get_pinned_versions(settings: dict) -> dict[str, str]:
         if not isinstance(pkg, str):
             continue
         for name in LPB_EXTENSION_REPOS:
-            marker = f"localpibox/{name}@"
+            marker = f"lpb-stack/{name}@"
             if marker in pkg:
                 pins[name] = pkg.split("@")[-1]
     return pins
@@ -811,7 +811,7 @@ def _update_pinned_versions(settings: dict, target_version: str) -> list[tuple[s
     packages = settings.get("packages", [])
     changes: list[tuple[str, str, str]] = []
     for name in LPB_EXTENSION_REPOS:
-        marker = f"git:github.com/localpibox/{name}@"
+        marker = f"git:github.com/lpb-stack/{name}@"
         for i, pkg in enumerate(packages):
             if isinstance(pkg, str) and pkg.startswith(marker):
                 old_tag = pkg.split("@")[-1]
@@ -1242,7 +1242,7 @@ def main(argv: list[str] | None = None) -> int:
         epilog=(
             "Environment:\n"
             "  AGENT_DIR         Config repo path (default: /home/lpb/.pi/agent)\n"
-            "  CONFIG_REMOTE     Git remote URL (default: https://github.com/localpibox/config.git)\n"
+            "  CONFIG_REMOTE     Git remote URL (default: https://github.com/lpb-stack/config.git)\n"
             "  CONFIG_REF        Branch to track (default: main)\n"
             "  LPB_GITHUB_TOKEN  GitHub token for authenticated git operations\n\n"
             "Pipeline:\n"

@@ -259,7 +259,7 @@ else
 fi
 
 # ─── 4a. CONFIG REPO — CLONE/FETCH INTO ~/.pi/agent/ (BEFORE FIRST-RUN) ────
-# The config repo (localpibox/config) IS the runtime agent config directory
+# The config repo (lpb-stack/config) IS the runtime agent config directory
 # (~/.pi/agent/). Pi reads the repo root directly via PI_CODING_AGENT_DIR.
 # The agent dir is ~/.pi/agent/ (upstream pi default) — NOT ~/.pi/ root —
 # because pi and its extensions hardcode that path: getAgentDir() defaults to
@@ -271,7 +271,7 @@ AGENT_PI_ROOT="${HOME_DIR}/.pi"
 AGENT_DIR="${AGENT_PI_ROOT}/agent"
 # Config preset repo — baked into the image from lpb.stack.env (Dockerfile
 # ENV LPB_CONFIG_REMOTE / LPB_CONFIG_REF). Shell env can still override.
-CONFIG_REMOTE="${LPB_CONFIG_REMOTE:-${LPB_CONFIG_FORK:-https://github.com/localpibox/config.git}}"
+CONFIG_REMOTE="${LPB_CONFIG_REMOTE:-${LPB_CONFIG_FORK:-https://github.com/lpb-stack/config.git}}"
 CONFIG_REF="${LPB_CONFIG_REF:-main}"
 
 export PI_CODING_AGENT_DIR="${AGENT_DIR}"
@@ -383,9 +383,9 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     if [[ -n "${GHCR_TOKEN:-}" ]]; then
         info "Logging in to GHCR..."
         if command -v podman &>/dev/null; then
-            podman login ghcr.io -u "${GHCR_USERNAME:-localpibox}" -p "${GHCR_TOKEN}"
+            podman login ghcr.io -u "${GHCR_USERNAME:-lpb-stack}" -p "${GHCR_TOKEN}"
         elif command -v docker &>/dev/null; then
-            docker login ghcr.io -u "${GHCR_USERNAME:-localpibox}" -p "${GHCR_TOKEN}"
+            docker login ghcr.io -u "${GHCR_USERNAME:-lpb-stack}" -p "${GHCR_TOKEN}"
         fi
         info "  GHCR login complete (baked token)"
     fi
