@@ -350,6 +350,22 @@ if [[ "$FIRST_RUN" = "true" ]]; then
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${AGENT_DIR}/git/.npmrc" 2>/dev/null || true
     printf 'allow-scripts=better-sqlite3\nallow-scripts=agent-browser\nallow-scripts=esbuild\nallow-scripts=protobufjs\nallow-scripts=@google/genai\n' > "${HOME_DIR}/.npmrc" 2>/dev/null || true
 
+    # ── Generate settings.json from template (first boot only) ───────
+    # Template is in the config repo; generated file is persisted on host volume.
+    # No model/provider — user will configure via /login after first boot.
+    _lpb_version="${LPB_VERSION:-0.0.0-lpb}"
+    _settings_template="${AGENT_DIR}/settings.json.template"
+    _settings_file="${AGENT_DIR}/settings.json"
+    if [[ -f "${_settings_template}" && ! -f "${_settings_file}" ]]; then
+        info "Generating settings.json from template..."
+        # Replace __LPB_VERSION__ placeholder with actual version
+        sed "s/__LPB_VERSION__/${_lpb_version}/g" "${_settings_template}" > "${_settings_file}"
+        info "  settings.json generated (version: ${_lpb_version})"
+        info "  No model configured — run '/login lemonade' to set your model"
+    elif [[ ! -f "${_settings_template}" ]]; then
+        warn "settings.json.template not found — Pi will use defaults"
+    fi
+
     # ── Config repo: clone/fetch into ~/.pi/agent/ (runs every boot — see §4a)
     touch "${HOME_DIR}/.pi/.initialized"
 

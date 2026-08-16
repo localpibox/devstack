@@ -751,7 +751,132 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
         cons.info("")
         cons.info("Run 'lpb-config workspace ensure --fix' to auto-fix.")
 
+    # ── Generate settings.json from template if missing ────────────────
+    if fix:
+        agent_dir = Path(DEFAULT_AGENT_DIR)
+        template = agent_dir / "settings.json.template"
+        settings_file = agent_dir / "settings.json"
+        if template.is_file() and not settings_file.is_file():
+            version = get_version()
+            if pipeline == "main":
+                version = version.replace("-dev", "")
+            content = template.read_text()
+            content = content.replace("__LPB_VERSION__", version)
+            settings_file.write_text(content)
+            cons.info(f"\nGenerated {settings_file} from template (version: {version})")
+
     return 0 if all_aligned else 1
+
+
+# ─── Settings.json helpers ──────────────────────────────────────────────
+
+LPB_EXTENSION_REPOS = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
+
+
+def _read_settings(agent_dir: str | Path) -> dict | None:
+    """Read settings.json from agent dir."""
+    path = Path(agent_dir) / "settings.json"
+    if not path.is_file():
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _write_settings(agent_dir: str | Path, settings: dict) -> None:
+    """Write settings.json to agent dir."""
+    path = Path(agent_dir) / "settings.json"
+    with open(path, "w") as f:
+        json.dump(settings, f, indent=2)
+        f.write("\n")
+
+
+def _get_pinned_versions(settings: dict) -> dict[str, str]:
+    """Extract version pins for LPB extension repos from settings."""
+    pins: dict[str, str] = {}
+    for pkg in settings.get("packages", []):
+        if not isinstance(pkg, str):
+            continue
+        for name in LPB_EXTENSION_REPOS:
+            marker = f"localpibox/{name}@"
+            if marker in pkg:
+                pins[name] = pkg.split("@")[-1]
+    return pins
+
+
+def _update_pinned_versions(settings: dict, target_version: str) -> list[tuple[str, str, str]]:
+    """Update LPB extension pins to target_version. Returns list of changes."""
+    packages = settings.get("packages", [])
+    changes: list[tuple[str, str, str]] = []
+    for name in LPB_EXTENSION_REPOS:
+        marker = f"git:github.com/localpibox/{name}@"
+        for i, pkg in enumerate(packages):
+            if isinstance(pkg, str) and pkg.startswith(marker):
+                old_tag = pkg.split("@")[-1]
+                if old_tag != target_version:
+                    new_pkg = f"{marker}{target_version}"
+                    packages[i] = new_pkg
+                    changes.append((name, old_tag, target_version))
+    settings["packages"] = packages
+    return changes
+
+
+# ─── Workspace: sync extensions ───────────────────────────────────────────
+
+def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
+    """Sync settings.json extension pins to match current LPB_VERSION."""
+    agent_dir = Path(DEFAULT_AGENT_DIR)
+    settings = _read_settings(agent_dir)
+
+    if settings is None:
+        cons.error(f"settings.json not found: {agent_dir}")
+        cons.info("  Run 'lpb-config workspace ensure' to generate from template.")
+        return 1
+
+    # Determine target version
+    version = get_version()
+    # For main pipeline, strip -dev from version
+    if pipeline == "main":
+        target_version = version.replace("-dev", "")
+    else:
+        target_version = version
+
+    current_pins = _get_pinned_versions(settings)
+
+    cons.info(f"Pipeline:     {pipeline}")
+    cons.info(f"LPB_VERSION:  {version}")
+    cons.info(f"Target pins:  {target_version}")
+    cons.info("")
+
+    # Check mismatches
+    mismatches = []
+    for name in LPB_EXTENSION_REPOS:
+        cur = current_pins.get(name, "(unpinned)")
+        if cur != target_version:
+            mismatches.append((name, cur, target_version))
+
+    if not mismatches:
+        cons.info("All extension pins already match LPB_VERSION.")
+        return 0
+
+    cons.warn(f"Version mismatch ({len(mismatches)} extension(s)):")
+    for name, cur, target in mismatches:
+        cons.warn(f"  {name}: {cur} → {target}")
+
+    cons.info("")
+    if confirm("Update settings.json extension pins?"):
+        changes = _update_pinned_versions(settings, target_version)
+        _write_settings(agent_dir, settings)
+        for name, old, new in changes:
+            cons.info(f"  {name}: {old} → {new}")
+        cons.info("")
+        cons.done("Extension pins updated. Run 'pi update --extensions' to apply.")
+    else:
+        cons.info("Skipped. Run 'lpb-config workspace sync --extensions' when ready.")
+
+    return 0 if not mismatches else 1
 
 
 # ─── Validate command ─────────────────────────────────────────────────────
@@ -909,36 +1034,36 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     cons.info("")
     cons.info("  Extension pins:")
 
+    # Determine target version for this pipeline
+    target_version = version
+    if pipeline == "main":
+        target_version = version.replace("-dev", "")
+
     settings_path = config_path / "settings.json"
-    if settings_path.is_file():
-        with open(settings_path) as f:
-            settings = json.load(f)
+    settings = _read_settings(config_path)
+    if settings:
+        current_pins = _get_pinned_versions(settings)
 
-        packages = settings.get("packages", [])
-        lpb_repos = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
-
-        for pkg_name in lpb_repos:
-            pinned_tag = None
-            for pkg in packages:
-                if isinstance(pkg, str) and f"localpibox/{pkg_name}@" in pkg:
-                    pinned_tag = pkg.split("@")[-1]
-                    break
-
+        for pkg_name in LPB_EXTENSION_REPOS:
+            pinned_tag = current_pins.get(pkg_name)
             if pinned_tag:
-                # Check if the tag matches or is newer than current version
-                tag_matches_version = pinned_tag == version or version.startswith(pinned_tag.split("-lpb")[0] + "-lpb")
-                # Also accept if tag is a valid version format
-                is_version_tag = bool(re.match(r"^\d+\.\d+\.\d+-lpb", pinned_tag))
-                check(
-                    f"  {pkg_name} pinned",
-                    True,
-                    f"@{pinned_tag}",
-                    f"lpb-config align" if not tag_matches_version else "",
-                )
+                if pinned_tag == target_version:
+                    check(
+                        f"  {pkg_name} pinned",
+                        True,
+                        f"@{pinned_tag} (matches VERSION)",
+                    )
+                else:
+                    check(
+                        f"  {pkg_name} pinned",
+                        False,
+                        f"@{pinned_tag} (expected: {target_version})",
+                        "lpb-config workspace sync --extensions",
+                    )
             else:
                 check(f"  {pkg_name} pinned", False,
                       "not found in settings.json",
-                      "lpb-config align")
+                      "lpb-config workspace sync --extensions")
     else:
         check("settings.json exists", False,
               f"{settings_path} not found",
@@ -1041,7 +1166,9 @@ def main(argv: list[str] | None = None) -> int:
     p_ws = sub.add_parser("workspace", help="Manage workspace repos")
     ws_sub = p_ws.add_subparsers(dest="workspace_command")
     _add_subparser(ws_sub, "status", "Show workspace repo branches + alignment")
-    _add_subparser(ws_sub, "sync", "Create symlinks + git pull current branches")
+    p_ws_sync = _add_subparser(ws_sub, "sync", "Create symlinks + git pull current branches")
+    p_ws_sync.add_argument("--extensions", action="store_true",
+                           help="sync settings.json extension pins to LPB_VERSION")
     p_ws_ensure = _add_subparser(ws_sub, "ensure", "Switch repos to correct branches for pipeline")
     p_ws_ensure.add_argument("--fix", action="store_true", help="auto-fix misaligned repos")
 
@@ -1079,6 +1206,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.workspace_command == "status":
             return cmd_workspace_status(pipeline, cons)
         if args.workspace_command == "sync":
+            sync_ext = getattr(args, "extensions", False)
+            if sync_ext:
+                return cmd_workspace_sync_extensions(pipeline, cons)
             return cmd_workspace_sync(pipeline, cons)
         if args.workspace_command == "ensure":
             fix = getattr(args, "fix", False)
