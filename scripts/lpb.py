@@ -554,8 +554,11 @@ class ContainerClient:
             return False
 
     def images_pull(self, name):
-        """Pull image with full verbosity, no stdin, and no timeout.
-        Uses Popen to stream output in real-time. No stdin to avoid blocking on slow connections."""
+        """Pull image with full verbosity, auto-login to GHCR if needed."""
+        # Auto-login to GHCR for LocalPibox images
+        if name.startswith("ghcr.io/localpibox/"):
+            self._ghcr_login()
+
         proc = subprocess.Popen(
             [self.cmd, "pull", name],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -568,6 +571,20 @@ class ContainerClient:
         proc.stdout.close()
         rc = proc.wait()
         return rc
+
+    def _ghcr_login(self):
+        """Login to GHCR with read-only token if not already authenticated."""
+        # Try existing auth first
+        _, _, rc = run_cmd([self.cmd, "login", "ghcr.io", "--inspect"], timeout=10)
+        if rc == 0:
+            return  # Already logged in
+
+        token = os.environ.get("GHCR_TOKEN") or os.environ.get("GITHUB_TOKEN") or os.environ.get("LPB_GITHUB_TOKEN", "")
+        if not token:
+            return  # No token available, pull will fail with auth error
+
+        username = os.environ.get("GHCR_USERNAME", "localpibox")
+        run_cmd([self.cmd, "login", "ghcr.io", "-u", username, "-p", token], timeout=30)
 
 
     def images_inspect(self, name):
@@ -1283,6 +1300,12 @@ def cmd_run():
         f"LPB_EXA_API_KEY={os.environ.get('LPB_EXA_API_KEY', os.environ.get('EXA_API_KEY', ''))}",
         f"LPB_MAX_TOKENS_CONTEXT_RATIO={os.environ.get('LPB_MAX_TOKENS_CONTEXT_RATIO', _conf_cfg.get('LPB_MAX_TOKENS_CONTEXT_RATIO', '0.06'))}",
     ]
+    # GHCR token for image pulls (personal account requires auth)
+    ghcr_token = os.environ.get('GHCR_TOKEN') or os.environ.get('GITHUB_TOKEN') or os.environ.get('LPB_GITHUB_TOKEN', '')
+    ghcr_username = os.environ.get('GHCR_USERNAME', _conf_cfg.get('GHCR_USERNAME', 'localpibox'))
+    if ghcr_token:
+        env_vars.append(f"GHCR_TOKEN={ghcr_token}")
+        env_vars.append(f"GHCR_USERNAME={ghcr_username}")
     for k in ("PI_WORKTREE_ID", "LPB_AGENT_BROWSER_ARGS", "LPB_AGENT_BROWSER_MAX_OUTPUT",
               "LPB_AGENT_BROWSER_CONTENT_BOUNDARIES", "LPB_AGENT_BROWSER_CONFIRM_ACTIONS",
               "LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS", "LPB_AGENT_BROWSER_SESSION"):

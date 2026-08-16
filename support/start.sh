@@ -379,6 +379,17 @@ if [[ "$FIRST_RUN" = "true" ]]; then
         warn "lpb-memory-config.json.template not found — extension uses defaults"
     fi
 
+    # ── GHCR login for image pulls ────────────────────────────────────
+    if [[ -n "${GHCR_TOKEN:-}" ]]; then
+        info "Logging in to GHCR..."
+        if command -v podman &>/dev/null; then
+            podman login ghcr.io -u "${GHCR_USERNAME:-localpibox}" -p "${GHCR_TOKEN}"
+        elif command -v docker &>/dev/null; then
+            docker login ghcr.io -u "${GHCR_USERNAME:-localpibox}" -p "${GHCR_TOKEN}"
+        fi
+        info "  GHCR login complete (baked token)"
+    fi
+
     # ── Config repo: clone/fetch into ~/.pi/agent/ (runs every boot — see §4a)
     touch "${HOME_DIR}/.pi/.initialized"
 
