@@ -282,8 +282,8 @@ LocalPibox originals.
    export LPB_PI_REF=main                 # your branch
    export LPB_CONFIG_FORK=https://github.com/<you>/config.git
    export LPB_CONFIG_REF=main             # your branch
-   export LPB_IMAGE_CLI=ghcr.io/<you>/devstack:cli
-   export LPB_IMAGE_WEB=ghcr.io/<you>/devstack:web
+   export LPB_IMAGE_CLI=ghcr.io/<you>/devstack:dev-cli
+   export LPB_IMAGE_WEB=ghcr.io/<you>/devstack:dev-web
    export LPB_CONTAINER_NAME=mybox        # avoid colliding with lpb-stack
    ```
 
@@ -293,10 +293,9 @@ LocalPibox originals.
    which reads `lpb.stack.env`).
 4. Install/run `lpb` — it reads the same `lpb.stack.env` for image/container
    names, so it picks up your fork automatically.
-5. Point the launcher at your image
-   `~/.lpb-stack/devstack/config` → `export
-   LPB_IMAGE_NAME="ghcr.io/<you>/devstack:latest"`, or let the forked
-   `lpb` handle it.
+5. Pin a specific image with `~/.lpb-stack/devstack/config` → `export
+   LPB_IMAGE_TAG="0.0.1-lpb-dev"` (a version tag on your fork's registry),
+   or let the forked `lpb` resolve the latest for you.
 
 ### Repointing the config preset without a rebuild
 
