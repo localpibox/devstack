@@ -159,9 +159,9 @@ class _OutputCapture:
     """Redirect stdout+stderr to a sink while active (suppresses expected noise).
 
     Also redirects the root logger's handler streams — lpb.py's err()/warn()
-    write through BOTH print(..., file=sys.stderr) and logger.error, and the
-    logger handler captured the original sys.stderr at import time, so it
-    would bypass a plain sys.stderr swap.
+    write through logger.error/logger.warning, and the logger handler captured
+    the original sys.stderr at import time, so it would bypass a plain
+    sys.stderr swap.
     """
 
     def __init__(self):
@@ -582,21 +582,173 @@ def test_resolve_web_image_dev():
     print("  PASS\n")
 
 
+def test_dev_short_flag():
+    """--dev is shorthand for --tag dev."""
+    print("TEST: --dev short flag")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--dev"])
+    assert mod.cfg.image_tag == "dev", f"Expected 'dev', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_main_short_flag():
+    """--main is shorthand for --tag main."""
+    print("TEST: --main short flag")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--main"])
+    assert mod.cfg.image_tag == "main", f"Expected 'main', got {mod.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+def test_tag_wins_over_short_flags():
+    """Explicit --tag / --version win when combined with --dev/--main."""
+    print("TEST: --tag wins over short flags")
+    reset_mock()
+    mod = make_module()
+    mod.parse_cli(["--dev", "--tag", "main"])
+    assert mod.cfg.image_tag == "main", f"Expected 'main', got {mod.cfg.image_tag!r}"
+    mod2 = make_module()
+    mod2.parse_cli(["--main", "--version", "0.0.9-lpb-dev"])
+    assert mod2.cfg.image_tag == "0.0.9-lpb-dev", f"Expected pinned version, got {mod2.cfg.image_tag!r}"
+    print("  PASS\n")
+
+
+class _FakeResp:
+    """Minimal urlopen() response stand-in."""
+    def __init__(self, data: bytes):
+        self._data = data
+    def read(self):
+        return self._data
+    def __enter__(self):
+        return self
+    def __exit__(self, *a):
+        return False
+
+
+def _run_self_update(mod, tag: str, tmpdir: str, create_wrapper: bool = True) -> list[str]:
+    """Run mod.self_update() against a fake urlopen; return fetched URLs.
+
+    Sets up a temp install layout (lpb + lpb.py) and points the module's
+    LPB_ENGINE_PATH at it, so the real repo files are never touched.
+    """
+    from pathlib import Path as _P
+    fetched: list[str] = []
+
+    def fake_urlopen(url, timeout=None):
+        fetched.append(url)
+        return _FakeResp(b"NEW-CONTENT-" + str(url).encode())
+
+    engine = _P(tmpdir) / "lpb.py"
+    wrapper = _P(tmpdir) / "lpb"
+    engine.write_text("old engine\n")
+    if create_wrapper:
+        wrapper.write_text("old wrapper\n")
+
+    orig_engine = mod.LPB_ENGINE_PATH
+    orig_urlopen = mod.urllib.request.urlopen
+    mod.LPB_ENGINE_PATH = engine
+    mod.urllib.request.urlopen = fake_urlopen
+    mod.cfg.image_tag = tag
+    try:
+        with _OutputCapture():
+            mod.self_update()
+    finally:
+        mod.LPB_ENGINE_PATH = orig_engine
+        mod.urllib.request.urlopen = orig_urlopen
+    return fetched
+
+
 def test_self_update_branch_selection():
-    """self_update selects dev branch when image_tag=dev, main otherwise."""
+    """self_update pulls from the branch matching the pipeline tag."""
     print("TEST: self_update branch selection")
     reset_mock()
     mod = make_module()
-    # When image_tag is dev, branch should be dev
-    mod.cfg.image_tag = "dev"
-    # Can't easily mock urllib, but we can verify the branch logic
-    # by checking the URL pattern would be correct
-    branch = "dev" if mod.cfg.image_tag == "dev" else "main"
-    assert branch == "dev", f"Expected 'dev' branch, got {branch}"
-    # When image_tag is not dev, branch should be main
-    mod.cfg.image_tag = "main"
-    branch = "dev" if mod.cfg.image_tag == "dev" else "main"
-    assert branch == "main", f"Expected 'main' branch, got {branch}"
+    cases = [
+        ("dev", "dev"),                # dev pipeline
+        ("main", "main"),              # stable pipeline
+        ("latest", "main"),            # latest = main pipeline
+        ("0.0.27-lpb-dev", "dev"),     # versioned dev pin
+        ("0.0.27-lpb", "main"),        # versioned stable pin
+        ("", "main"),                  # no tag → main (install default)
+    ]
+    for tag, expected_branch in cases:
+        with tempfile.TemporaryDirectory() as td:
+            fetched = _run_self_update(mod, tag, td)
+        expect = f"https://raw.githubusercontent.com/lpb-stack/devstack/{expected_branch}/scripts/"
+        assert len(fetched) == 2, f"tag={tag!r}: expected 2 fetches, got {fetched}"
+        assert fetched[0] == expect + "lpb.py", f"tag={tag!r}: engine URL wrong: {fetched[0]}"
+        assert fetched[1] == expect + "lpb", f"tag={tag!r}: wrapper URL wrong: {fetched[1]}"
+    print("  PASS\n")
+
+
+def test_self_update_replaces_files():
+    """self_update atomically replaces engine + wrapper, leaves no .new files."""
+    print("TEST: self_update replaces files")
+    reset_mock()
+    mod = make_module()
+    with tempfile.TemporaryDirectory() as td:
+        fetched = _run_self_update(mod, "dev", td)
+        from pathlib import Path as _P
+        engine = _P(td) / "lpb.py"
+        wrapper = _P(td) / "lpb"
+        assert engine.read_text() == "NEW-CONTENT-" + fetched[0]
+        assert wrapper.read_text() == "NEW-CONTENT-" + fetched[1]
+        assert not ( _P(td) / "lpb.py.new" ).exists(), "staging file left behind"
+        assert (engine.stat().st_mode & 0o111) != 0, "engine lost exec bit"
+    print("  PASS\n")
+
+
+def test_self_update_no_wrapper():
+    """self_update works when only the engine is present (no bash wrapper)."""
+    print("TEST: self_update without wrapper")
+    reset_mock()
+    mod = make_module()
+    from pathlib import Path as _P
+    with tempfile.TemporaryDirectory() as td:
+        # First run: full layout (engine + wrapper). Second: engine only.
+        _run_self_update(mod, "dev", td)
+        (_P(td) / "lpb").unlink()
+        fetched = _run_self_update(mod, "dev", td, create_wrapper=False)
+        assert len(fetched) == 1, f"expected engine-only fetch, got {fetched}"
+        assert ( _P(td) / "lpb.py" ).read_text().startswith("NEW-CONTENT-")
+    print("  PASS\n")
+
+
+def test_self_update_network_failure_warns_once():
+    """A failed self_update warns exactly once and never raises."""
+    print("TEST: self_update network failure")
+    reset_mock()
+    mod = make_module()
+    with tempfile.TemporaryDirectory() as td:
+        from pathlib import Path as _P
+        engine = _P(td) / "lpb.py"
+        wrapper = _P(td) / "lpb"
+        engine.write_text("old engine\n")
+        wrapper.write_text("old wrapper\n")
+
+        class _Boom(Exception):
+            pass
+
+        def boom(url, timeout=None):
+            raise _Boom("HTTP Error 404: Not Found")
+
+        orig_engine = mod.LPB_ENGINE_PATH
+        orig_urlopen = mod.urllib.request.urlopen
+        mod.LPB_ENGINE_PATH = engine
+        mod.urllib.request.urlopen = boom
+        mod.cfg.image_tag = "dev"
+        cap = _OutputCapture()
+        try:
+            with cap:
+                mod.self_update()
+        finally:
+            mod.LPB_ENGINE_PATH = orig_engine
+            mod.urllib.request.urlopen = orig_urlopen
+        lines = [l for l in "".join(cap.out).splitlines() if "self-update skipped" in l]
+        assert len(lines) == 1, f"expected exactly 1 warning line, got {len(lines)}: {lines}"
+        assert engine.read_text() == "old engine\n", "engine must be untouched on failure"
     print("  PASS\n")
 
 
@@ -835,8 +987,23 @@ def test_cmd_run_env_vars():
         return ("cid123", "cid123", "", 0)
 
     mod.ContainerClient.containers_run = spy_containers_run
-    with _OutputCapture():
-        mod.cmd_run()
+
+    # Health-check loop: make the (real) TCP probe succeed and pre-count the
+    # mocked curl attempts so the readiness wait exits in ~1s instead of
+    # spinning the full 120s budget (this test only asserts env/volume args).
+    class _ReadySock:
+        def close(self):
+            pass
+
+    global _curl_attempts
+    _curl_attempts = 2  # mocked curl succeeds from attempt 3 onward
+    _orig_cc = mod.socket.create_connection
+    mod.socket.create_connection = lambda *a, **k: _ReadySock()
+    try:
+        with _OutputCapture():
+            mod.cmd_run()
+    finally:
+        mod.socket.create_connection = _orig_cc
     assert mod.cfg.project_name == "tmp"
     env_vars = captured.get("env", [])
     env_str = "\n".join(env_vars)
@@ -862,8 +1029,8 @@ _MUTATION_DIR = os.path.join(tempfile.gettempdir(), "lpb_regression_mutations")
 _REG_MUTATIONS = {
     # real regression: comment swallowed `def self_update()` → NameError at runtime
     "swallowed_def": (
-        "# ── Output helpers (stdout) ───────────────────────────────────────────────────\n\ndef self_update() -> None:",
-        "# ── Output helpers (stdout) ───────────────────────────────────────────def self_update() -> None:",
+        "# ── Self-update (lpb --update) ───────────────────────────────────────────────────\n\ndef self_update() -> None:",
+        "# ── Self-update (lpb --update) ───────────────────────────────────────────────────def self_update() -> None:",
         ["missing/not-callable"],
     ),
     # real regression: resolve_path() returns str, cmd_remove called d.is_dir() → AttributeError
@@ -976,11 +1143,17 @@ if __name__ == "__main__":
         test_tag_with_project,
         test_update_with_tag,
         test_tag_web_mode,
+        test_dev_short_flag,
+        test_main_short_flag,
+        test_tag_wins_over_short_flags,
         test_resolve_cli_image_dev,
         test_resolve_cli_image_main,
         test_resolve_cli_image_custom,
         test_resolve_web_image_dev,
         test_self_update_branch_selection,
+        test_self_update_replaces_files,
+        test_self_update_no_wrapper,
+        test_self_update_network_failure_warns_once,
     ]
 
     passed = failed = 0
