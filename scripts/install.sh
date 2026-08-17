@@ -38,6 +38,8 @@ chmod +x "${INSTALL_DIR}/lpb.py"
 # stack/repo defaults (a fork's lpb.py loads these via CONFIG_DIR fallback).
 curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/lpb.stack.env" -o "${CONFIG_DIR}/lpb.stack.env"
 curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/lpb.conf.env" -o "${CONFIG_DIR}/lpb.conf.env"
+# Installed VERSION file (source for `lpb --version`; refreshed by self-update)
+curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/VERSION" -o "${CONFIG_DIR}/VERSION"
 
 # 4. Add to PATH if needed (warn only, don't modify shell configs)
 case ":${PATH}:" in

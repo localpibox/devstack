@@ -386,7 +386,13 @@ def test_run_shell():
     mod.cfg.browser_dir = "/tmp/lpb-test-browser"
     mod.cmd_run()
     assert mod.cfg.shell_mode, "shell_mode should be True"
-    assert mod.cfg.image_name == mod.CLI_IMAGE, f"expected {mod.CLI_IMAGE}, got {mod.cfg.image_name}"
+    # Shell mode must resolve a CLI image (never the web image). The exact
+    # tag depends on pin/remote state, so assert the tag family, not equality
+    # with the CLI_IMAGE fallback constant.
+    assert mod.cfg.image_name.endswith(("-cli", ":dev-cli", ":main-cli", ":latest-cli")), \
+        f"expected a CLI image, got {mod.cfg.image_name}"
+    assert not mod.cfg.image_name.endswith(("-web", ":web")), \
+        f"shell mode must not use the web image: {mod.cfg.image_name}"
     assert mod.cfg.project_name == "tmp", f"expected 'tmp', got '{mod.cfg.project_name}'"
     print("  PASS\n")
 
@@ -582,6 +588,82 @@ def test_resolve_web_image_dev():
     print("  PASS\n")
 
 
+def test_resolve_cli_image_default():
+    """resolve_cli_image('') with no pin defaults to the dev pipeline."""
+    print("TEST: resolve_cli_image('') -> dev pipeline")
+    reset_mock()
+    mod = make_module()
+    mod.LAST_VERSION_FILE.unlink(missing_ok=True)  # no pin in this scenario
+    mod._get_remote_version = lambda branch="dev": "0.0.99-lpb-dev"
+    image = mod.resolve_cli_image("")
+    assert image == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-dev-cli", f"got {image}"
+    print(f"  Image: {image}")
+    print("  PASS\n")
+
+
+def test_resolve_cli_image_default_offline():
+    """No pin + offline -> floating :dev-cli/:dev-web tags (real registry tags).
+
+    Regression guard: the old fallback used the bare :cli/:web tags, which CI
+    never publishes -> 'manifest unknown' on every fresh install.
+    """
+    print("TEST: resolve_cli_image('') offline -> :dev-cli")
+    reset_mock()
+    mod = make_module()
+    mod.LAST_VERSION_FILE.unlink(missing_ok=True)  # no pin in this scenario
+    mod._get_remote_version = lambda branch="dev": ""
+    image = mod.resolve_cli_image("")
+    assert image == "ghcr.io/lpb-stack/devstack:dev-cli", f"got {image}"
+    web = mod.resolve_web_image("")
+    assert web == "ghcr.io/lpb-stack/devstack:dev-web", f"got {web}"
+    print("  PASS\n")
+
+
+def test_resolve_cli_image_default_pinned():
+    """A pinned last-version wins over the remote (no network consulted)."""
+    print("TEST: resolve_cli_image('') with pin")
+    reset_mock()
+    mod = make_module()
+
+    def no_remote(branch="dev"):
+        raise AssertionError("remote must not be consulted when pinned")
+
+    mod._get_remote_version = no_remote
+    # Pin a version in the isolated HOME (test's last-version file)
+    mod.LAST_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    mod.LAST_VERSION_FILE.write_text("0.0.50-lpb-dev\n")
+    image = mod.resolve_cli_image("")
+    assert image == "ghcr.io/lpb-stack/devstack:0.0.50-lpb-dev-cli", f"got {image}"
+    print("  PASS\n")
+
+
+def test_cmd_update_saves_version():
+    """--update (no tag) pulls the dev pipeline and pins the new version.
+
+    Regression guard: the old save loop matched the version regex against the
+    full tag including the -cli/-web suffix, so it never saved. A bare `lpb`
+    after `lpb --update` then fell back to the dead :cli tag and failed with
+    'manifest unknown' even though devstack images were already local.
+    """
+    print("TEST: --update saves version")
+    reset_mock()
+    mod = make_module()
+    mod.self_update = lambda: None
+    mod._get_remote_version = lambda branch="dev": "0.0.99-lpb-dev"
+    pulled = []
+    mod.ContainerClient.images_pull = lambda self, name: pulled.append(name) or 0
+    mod.parse_cli(["--update"])
+    mod.apply_overrides()
+    with _OutputCapture():
+        mod.cmd_update()
+    assert len(pulled) == 2, f"expected cli+web pulls, got {pulled}"
+    assert pulled[0] == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-dev-cli", f"got {pulled}"
+    assert pulled[1] == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-dev-web", f"got {pulled}"
+    assert mod._load_last_version() == "0.0.99-lpb-dev", \
+        f"last-version not saved, got {mod._load_last_version()!r}"
+    print("  PASS\n")
+
+
 def test_dev_short_flag():
     """--dev is shorthand for --tag dev."""
     print("TEST: --dev short flag")
@@ -648,7 +730,13 @@ def _run_self_update(mod, tag: str, tmpdir: str, create_wrapper: bool = True) ->
 
     orig_engine = mod.LPB_ENGINE_PATH
     orig_urlopen = mod.urllib.request.urlopen
+    orig_config_dir = mod.CONFIG_DIR
     mod.LPB_ENGINE_PATH = engine
+    # Isolate the installed-layout dir so the VERSION sync step (and any
+    # CONFIG_DIR access) hits the temp tree, never the real ~/.lpb-stack.
+    # The temp "cfg" dir does not exist unless a test creates it, which
+    # keeps the engine/wrapper fetch count at 2.
+    mod.CONFIG_DIR = _P(tmpdir) / "cfg"
     mod.urllib.request.urlopen = fake_urlopen
     mod.cfg.image_tag = tag
     try:
@@ -657,6 +745,7 @@ def _run_self_update(mod, tag: str, tmpdir: str, create_wrapper: bool = True) ->
     finally:
         mod.LPB_ENGINE_PATH = orig_engine
         mod.urllib.request.urlopen = orig_urlopen
+        mod.CONFIG_DIR = orig_config_dir
     return fetched
 
 
@@ -749,6 +838,24 @@ def test_self_update_network_failure_warns_once():
         lines = [l for l in "".join(cap.out).splitlines() if "self-update skipped" in l]
         assert len(lines) == 1, f"expected exactly 1 warning line, got {len(lines)}: {lines}"
         assert engine.read_text() == "old engine\n", "engine must be untouched on failure"
+    print("  PASS\n")
+
+
+def test_self_update_syncs_version():
+    """self_update refreshes the installed VERSION file from the same branch."""
+    print("TEST: self_update syncs VERSION")
+    reset_mock()
+    mod = make_module()
+    with tempfile.TemporaryDirectory() as td:
+        from pathlib import Path as _P
+        cfgdir = _P(td) / "cfg"
+        cfgdir.mkdir()
+        (cfgdir / "VERSION").write_text("0.0.1-lpb\n")
+        fetched = _run_self_update(mod, "dev", td)
+        version_urls = [u for u in fetched if u.endswith("/dev/VERSION")]
+        assert len(version_urls) == 1, f"expected one VERSION fetch, got {fetched}"
+        assert (cfgdir / "VERSION").read_text().strip() == "NEW-CONTENT-" + version_urls[0], \
+            f"VERSION not synced: {(cfgdir / 'VERSION').read_text()!r}"
     print("  PASS\n")
 
 
@@ -1150,10 +1257,15 @@ if __name__ == "__main__":
         test_resolve_cli_image_main,
         test_resolve_cli_image_custom,
         test_resolve_web_image_dev,
+        test_resolve_cli_image_default,
+        test_resolve_cli_image_default_offline,
+        test_resolve_cli_image_default_pinned,
+        test_cmd_update_saves_version,
         test_self_update_branch_selection,
         test_self_update_replaces_files,
         test_self_update_no_wrapper,
         test_self_update_network_failure_warns_once,
+        test_self_update_syncs_version,
     ]
 
     passed = failed = 0

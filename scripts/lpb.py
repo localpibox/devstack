@@ -176,10 +176,15 @@ def _get_remote_version(branch: str = "dev") -> str:
         return ""
 
 
+# Versioned image tag pattern: 0.0.x-lpb (stable) or 0.0.x-lpb-dev (dev pipeline).
+# Floating registry tags (dev-cli, main-cli, latest-cli, ...) deliberately
+# do NOT match — they are moving pointers, not versions to pin.
+_VERSION_TAG_RE = re.compile(r'^0\.0\.\d+-lpb(-dev)?$')
+
 def _save_version(version: str) -> None:
     """Persist the version tag for reconnection/update (only valid versioned tags)."""
     # Only persist tags that match the version pattern (0.0.x-lpb[-dev]), not legacy :cli/:web
-    if not re.match(r'^0\.0\.\d+-lpb(-dev)?$', version):
+    if not _VERSION_TAG_RE.match(version):
         return
     LAST_VERSION_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(LAST_VERSION_FILE, "w") as f:
@@ -204,9 +209,44 @@ def _resolve_version_image(version: str, mode: str) -> str:
     return f"ghcr.io/lpb-stack/devstack:{version}-{mode}"
 
 
+def _resolve_tagged_image(tag: str, mode: str) -> str:
+    """Resolve the image for an explicit pipeline/version tag.
+
+    dev            → latest dev-pipeline version (0.0.x-lpb-dev-{mode})
+    main / latest  → latest main-pipeline version (0.0.x-lpb-{mode})
+    <version>      → that exact version (0.0.x-lpb[-dev]-{mode})
+
+    When the remote VERSION is unreachable (offline) the cached
+    last-version is used; if that is missing too, the floating registry
+    tag (:dev-{mode} / :main-{mode} / :latest-{mode}) is returned. The
+    bare :{mode} tag is never used — CI does not publish it, so pulling
+    it always fails with "manifest unknown".
+    """
+    if tag == "dev":
+        version = _get_remote_version("dev") or _load_last_version()
+        if _VERSION_TAG_RE.match(version):
+            if not version.endswith("-dev"):
+                version += "-dev"  # cached stable pin → dev counterpart
+        else:
+            version = "dev"  # floating tag — real, always pullable
+        return _resolve_version_image(version, mode)
+
+    if tag in ("main", "latest"):
+        version = _get_remote_version("main") or _load_last_version()
+        if _VERSION_TAG_RE.match(version):
+            version = version.replace("-dev", "")
+        else:
+            version = "latest" if tag == "latest" else "main"  # floating tag
+        return _resolve_version_image(version, mode)
+
+    # Custom/explicit version tag (e.g. 0.0.52-lpb-dev)
+    return _resolve_version_image(tag, mode)
+
+
 def resolve_cli_image(tag: str) -> str:
     """Resolve the final CLI image name from stack config + tag override.
-    
+
+    no tag         → pinned last-version if any, else the dev pipeline
     --tag dev/main → latest versioned image (0.0.x-lpb[-dev]-cli)
     --tag <custom> → :<custom>-cli (explicit version)
     """
@@ -214,58 +254,24 @@ def resolve_cli_image(tag: str) -> str:
         last = _load_last_version()
         if last:
             return _resolve_version_image(last, "cli")
-        return CLI_IMAGE  # fallback
-    
-    if tag == "dev":
-        # Always try remote first for dev/main tags (get latest)
-        version = _get_remote_version("dev")
-        if not version:
-            version = _load_last_version()  # fallback to cached
-        if not version:
-            version = "0.0.0-lpb"  # last resort
-        return _resolve_version_image(version if "-dev" in version else version + "-dev", "cli")
-    
-    if tag == "main" or tag == "latest":
-        # Always try remote first for dev/main tags (get latest)
-        version = _get_remote_version("main")
-        if not version:
-            version = _load_last_version()  # fallback to cached
-        if not version:
-            version = "0.0.0-lpb"  # last resort
-        return _resolve_version_image(version.replace("-dev", ""), "cli")
-    
-    # Custom/explicit version tag
-    return _resolve_version_image(tag, "cli")
+        # No pinned version yet — default to the dev pipeline (the active
+        # mainline). Never fall back to the legacy bare :cli tag: CI only
+        # publishes versioned tags plus :dev-*, :main-*, :latest-* floats.
+        return _resolve_tagged_image("dev", "cli")
+    return _resolve_tagged_image(tag, "cli")
 
 
 def resolve_web_image(tag: str) -> str:
-    """Resolve the final WEB image name from stack config + tag override."""
+    """Resolve the final WEB image name from stack config + tag override.
+
+    Same resolution rules as resolve_cli_image, for the -web image.
+    """
     if not tag:
         last = _load_last_version()
         if last:
             return _resolve_version_image(last, "web")
-        return WEB_IMAGE
-    
-    if tag == "dev":
-        # Always try remote first for dev/main tags (get latest)
-        version = _get_remote_version("dev")
-        if not version:
-            version = _load_last_version()  # fallback to cached
-        if not version:
-            version = "0.0.0-lpb"  # last resort
-        return _resolve_version_image(version if "-dev" in version else version + "-dev", "web")
-    
-    if tag == "main" or tag == "latest":
-        # Always try remote first for dev/main tags (get latest)
-        version = _get_remote_version("main")
-        if not version:
-            version = _load_last_version()  # fallback to cached
-        if not version:
-            version = "0.0.0-lpb"  # last resort
-        return _resolve_version_image(version.replace("-dev", ""), "web")
-    
-    # Custom/explicit version tag
-    return _resolve_version_image(tag, "web")
+        return _resolve_tagged_image("dev", "web")
+    return _resolve_tagged_image(tag, "web")
 
 
 # ─── Load runtime configuration ──────────────────────────────────────────
@@ -371,6 +377,17 @@ def self_update() -> None:
         # Wrapper (optional — only present in install.sh installs)
         if wrapper_path.is_file():
             _fetch_file(base_url + "lpb", wrapper_path, staging)
+        # Keep the installed VERSION file in sync (best effort —
+        # `lpb --version` reads it; only present in install.sh installs)
+        version_dest = CONFIG_DIR / "VERSION"
+        if version_dest.parent.is_dir():
+            version_url = f"https://raw.githubusercontent.com/lpb-stack/devstack/{branch}/VERSION"
+            with urllib.request.urlopen(version_url, timeout=10) as resp:
+                new_v = resp.read().decode().strip()
+            old_v = version_dest.read_text().strip() if version_dest.is_file() else ""
+            if new_v and new_v != old_v:
+                version_dest.write_text(new_v + "\n")
+                info(f"Updating {version_dest.name}...")
     except Exception as exc:
         warn(f"self-update skipped: {exc}")
     finally:
@@ -978,90 +995,88 @@ def cmd_config():
 
 
 def cmd_version():
-    """Show the stack version from the VERSION file and exit."""
-    # Search for devstack dir (has both VERSION and lpb.stack.env)
-    for candidate in (Path(__file__).parent.parent, Path.cwd()):
-        vf = candidate / "VERSION"
+    """Show the stack version and exit.
+
+    Resolution order:
+      1. Repo checkout this script lives in (in-tree runs)
+      2. Installed VERSION (next to the installed lpb.stack.env)
+      3. A VERSION file up the current directory chain
+      4. Remote VERSION (dev branch, then main)
+    """
+    # 1. In-tree: scripts/lpb.py inside a devstack checkout
+    repo = Path(__file__).resolve().parent.parent
+    if (repo / "lpb.stack.env").is_file():
+        vf = repo / "VERSION"
         if vf.is_file():
-            version = vf.read_text().strip()
-            print(f"LocalPibox stack {version}")
+            print(f"LocalPibox stack {vf.read_text().strip()}")
             return
-        # Check parent dirs
-        p = candidate
-        for _ in range(10):
-            p = p.parent
-            vf = p / "VERSION"
-            if vf.is_file():
-                version = vf.read_text().strip()
-                print(f"LocalPibox stack {version}")
-                return
-            if str(p) == "/":
-                break
 
-    # Fallback: read from lpb.stack.env
+    # 2. Installed layout: VERSION installed by install.sh / self_update
     stack_env = _find_env_file("lpb.stack.env")
-    if stack_env and stack_env.is_file():
-        cfg_env = _parse_env_file(stack_env)
-        version = cfg_env.get("LPB_PI_REF", "unknown")
-        print(f"LocalPibox stack {version}")
-        return
+    if stack_env:
+        vf = stack_env.parent / "VERSION"
+        if vf.is_file():
+            print(f"LocalPibox stack {vf.read_text().strip()}")
+            return
 
-    print("unknown")
+    # 3. Up the cwd chain (running from inside a checkout)
+    p = Path.cwd()
+    for _ in range(10):
+        p = p.parent
+        vf = p / "VERSION"
+        if vf.is_file():
+            print(f"LocalPibox stack {vf.read_text().strip()}")
+            return
+        if str(p) == "/":
+            break
+
+    # 4. Remote (dev branch is the active mainline)
+    version = _get_remote_version("dev") or _get_remote_version("main")
+    print(f"LocalPibox stack {version}" if version else "unknown")
     sys.exit(0)
 
 
 def cmd_update():
-    """Self-update the launcher and pull the latest devstack image(s)."""
+    """Self-update the launcher and pull the latest devstack image(s).
+
+    No tag → updates the default pipeline (dev) — the same images a
+    bare `lpb` run would pull. With a tag (dev/main/latest/<version>) →
+    updates that pipeline/version. The pinned last-version is refreshed
+    so a bare `lpb` reconnects to the updated image.
+    """
     ensure_container_cmd()
     c = client()
 
     # Self-update
     self_update()
 
-    # Determine which image(s) to pull
-    images_to_update = []
-    
-    if cfg.image_tag:
-        # Resolve versioned image from tag (dev/main/latest/custom)
-        cli_img = resolve_cli_image(cfg.image_tag)
-        web_img = resolve_web_image(cfg.image_tag)
-        # For versioned tags (dev/main), always pull even if not local
-        if cfg.image_tag in ("dev", "main"):
-            images_to_update = [cli_img, web_img]
-        elif c.images_exists(cli_img):
-            images_to_update.append(cli_img)
-            if c.images_exists(web_img):
-                images_to_update.append(web_img)
-        else:
-            # Custom version not local — fall through to defaults
-            pass
-    
-    if not images_to_update:
-        # Fall back to default images
-        for img in [CLI_IMAGE, WEB_IMAGE]:
-            if c.images_exists(img):
-                images_to_update.append(img)
+    # No tag = default pipeline (dev), same as a bare `lpb` run.
+    # This is an explicit update request - always pull both images.
+    tag = cfg.image_tag or "dev"
+    images_to_update = [resolve_cli_image(tag), resolve_web_image(tag)]
 
-    if not images_to_update:
-        err("No devstack images found locally",
-            "Run 'lpb' or 'lpb --web' first to pull an image.")
-        raise DevstackError
-
+    pulled_ok = []
     for img in images_to_update:
         info(f"Pulling {img}...")
-        rc = c.images_pull(img)
-        if rc != 0:
+        if c.images_pull(img) == 0:
+            pulled_ok.append(img)
+        else:
             err(f"Failed to pull {img}")
 
-    # Save last version for next run
-    for img in images_to_update:
-        last = img.rsplit(":", 1)[-1]
-        if not re.match(r'^0\.0\.\d+-lpb(-dev)?$', last):
-            continue
-        _save_version(last.replace("-cli", "").replace("-web", ""))
-        break
+    # Save last version for the next run - only for successfully pulled,
+    # versioned images. Strip the -cli/-web suffix BEFORE matching the
+    # version pattern (the old order never matched, so --update never
+    # pinned a version and a bare `lpb` fell back to the dead :cli tag).
+    for img in pulled_ok:
+        v = img.rsplit(":", 1)[-1]
+        if v.endswith("-cli") or v.endswith("-web"):
+            v = v[:-4]
+        if _VERSION_TAG_RE.match(v):
+            _save_version(v)
+            break
 
     done("Images up to date.")
+
 
 
 def _get_lan_ips():
