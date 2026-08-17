@@ -10,10 +10,9 @@ Usage:
     lpb --stop                          Stop the container
     lpb --remove                        Stop + remove container + state dirs
     lpb --logs                          Stream container logs
-    lpb --update                        Pull latest image(s)
-    lpb --config                        Show config file location
-    lpb --help                          Show usage
     lpb --tag dev|main|latest           Select image pipeline (dev/main/latest/<custom>)
+    lpb --dev / lpb --main              Shorthand for --tag dev / --tag main
+    lpb --update                        Pull latest image(s) (+ self-update launcher)
 
 Positional command aliases (no -- needed):
     lpb logs     → lpb --logs
@@ -29,7 +28,12 @@ Image tag selection:
     lpb --tag main                     Use latest stable image (0.0.x-lpb-cli)
     lpb --tag latest                   Same as main
     lpb --tag 0.0.9-lpb-dev            Pin to specific version image
+    lpb --dev / lpb --main             Shorthand for --tag dev / --tag main
     LPB_IMAGE_TAG=0.0.9-lpb-dev        Or set env var for persistent override
+
+Self-update (lpb --update):
+    Updates the installed lpb/lpb.py from the pipeline branch matching the
+    tag (dev tags → dev branch, stable tags → main branch), then pulls images.
 
 Pi passthrough (after "--"):
     lpb /myproject -- -p "summarize this repo"
@@ -310,64 +314,68 @@ _cli_overrides = {}
 def err(msg: str, hint: str = "") -> None:
     """Print an error (red) to stderr; optionally with a yellow hint line."""
     logger.error("%sError: %s%s", _ERR, msg, _RSV)
-    print(f"{_ERR}Error: {msg}{_RSV}", file=sys.stderr)
     if hint:
         logger.warning("  %s%s%s", _WRN, hint, _RSV)
-        print(f"  {_WRN}{hint}{_RSV}", file=sys.stderr)
 
 
 def warn(msg: str) -> None:
-    """Print a warning (yellow) to stderr."""
+    """Print a warning (yellow) to stderr (single line via logger)."""
     logger.warning("%sWarning: %s%s", _WRN, msg, _RSV)
-    print(f"{_WRN}Warning: {msg}{_RSV}", file=sys.stderr)
 
 
 # ── Output helpers (stdout) ───────────────────────────────────────────────────
 
-def self_update() -> None:
-    """Update lpb itself from the GitHub repo if a newer version is available."""
-    lpb_path = Path(sys.argv[0]).resolve()
-    lpb_dir = lpb_path.parent
-    new_path = lpb_dir / "lpb.new"
-    if not lpb_path.is_file():
+# Engine file path — resolved from __file__, NOT sys.argv[0]: the bash wrapper
+# execs `python3 lpb.py`, so argv[0] is the engine and the wrapper is its
+# sibling "lpb" in the same directory. (Tests may override this.)
+LPB_ENGINE_PATH = Path(__file__).resolve()
+
+
+def _fetch_file(url: str, dest: Path, staging: Path) -> None:
+    """Download url and atomically replace dest if the content changed."""
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        new_data = resp.read()
+    with open(dest, "rb") as f:
+        old_data = f.read()
+    if new_data == old_data:
         return
-    # Select branch based on cfg.image_tag (set by --tag)
-    branch = "dev" if cfg.image_tag == "dev" else "main"
-    script_url = f"https://raw.githubusercontent.com/lpb-stack/devstack/{branch}/scripts/lpb"
-    py_url = script_url.replace("/lpb", "/lpb.py")
+    info(f"Updating {dest.name}...")
+    with open(staging, "wb") as f:
+        f.write(new_data)
+    staging.rename(dest)
+    dest.chmod(0o755)
+
+
+# ── Self-update (lpb --update) ───────────────────────────────────────────────────
+
+def self_update() -> None:
+    """Update lpb (wrapper) + lpb.py (engine) from the GitHub repo.
+
+    Source branch follows the pipeline tag: --tag dev (or a versioned
+    *-dev tag) pulls from the dev branch, everything else from main — so a
+    launcher installed from main can be updated from dev (and vice versa)
+    simply by choosing the tag. Network/IO failures never break startup.
+    """
+    engine_path = LPB_ENGINE_PATH
+    if not engine_path.is_file():
+        return
+    base_dir = engine_path.parent
+    wrapper_path = base_dir / "lpb"
+    tag = (cfg.image_tag or "").strip().lower()
+    branch = "dev" if (tag == "dev" or tag.endswith("-dev")) else "main"
+    base_url = f"https://raw.githubusercontent.com/lpb-stack/devstack/{branch}/scripts/"
+    staging = base_dir / "lpb.py.new"
     try:
-        with urllib.request.urlopen(script_url, timeout=10) as resp:
-            new_wrapper = resp.read()
-        with open(lpb_path, "rb") as f:
-            old_wrapper = f.read()
-        if new_wrapper != old_wrapper:
-            info(f"Updating lpb launcher...")
-            with open(new_path, "wb") as f:
-                f.write(new_wrapper)
-            new_path.rename(lpb_path)
-            lpb_path.chmod(0o755)
-        with urllib.request.urlopen(py_url, timeout=10) as resp:
-            new_py = resp.read()
-        py_path = lpb_dir / "lpb.py"
-        if py_path.is_file():
-            with open(py_path, "rb") as f:
-                old_py = f.read()
-            if new_py != old_py:
-                info(f"Updating lpb.py...")
-                with open(new_path, "wb") as f:
-                    f.write(new_py)
-                new_path.rename(py_path)
-        elif not py_path.is_file():
-            info(f"Installing missing lpb.py...")
-            with open(new_path, "wb") as f:
-                f.write(new_py)
-            new_path.rename(py_path)
-            py_path.chmod(0o755)
-        for _f in lpb_dir.iterdir():
-            if _f.name.endswith(".new"):
-                _f.unlink()
-    except Exception as exc:  # network/IO failures should never break startup
+        # Engine first (this running script itself)
+        _fetch_file(base_url + "lpb.py", engine_path, staging)
+        # Wrapper (optional — only present in install.sh installs)
+        if wrapper_path.is_file():
+            _fetch_file(base_url + "lpb", wrapper_path, staging)
+    except Exception as exc:
         warn(f"self-update skipped: {exc}")
+    finally:
+        if staging.exists():
+            staging.unlink()
 
 def info(msg):
     """Print an informational message to stdout (no color)."""
@@ -739,9 +747,10 @@ HELP = (
     "  lpb --stop                       Stop the container\n"
     "  lpb --remove                     Stop + remove container + state dirs\n"
     "  lpb --logs                       Stream container logs\n"
-    "  lpb --update                     Pull latest image(s)\n"
+    "  lpb --update                     Pull latest image(s) (+ self-update launcher)\n"
     "  lpb --config                     Show config file location\n"
-    "  lpb --help                       Show this help\n\n"
+    "  lpb --help                       Show this help\n"
+    "  lpb --tag dev|main|latest        Select image pipeline (or --dev / --main)\n\n"
     "Pi passthrough (after \"--\"):\n"
     '  lpb /myproject -- -p "summarize"           # Non-interactive, process & exit\n'
     '  lpb /myproject -- --session abc123          # Resume specific session\n'
@@ -785,6 +794,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--web", action="store_true")
     parser.add_argument("--tag", default=None,
                         help="Select image pipeline (dev|main|latest|<custom>)")
+    parser.add_argument("--dev", action="store_true",
+                        help="Shorthand for --tag dev (dev pipeline)")
+    parser.add_argument("--main", action="store_true",
+                        help="Shorthand for --tag main (stable pipeline)")
     parser.add_argument("--version", nargs="?", const="_show",
                         help="Pin to version tag (e.g. 0.0.9-lpb) or show stack version")
     parser.add_argument("--stop", "-s", action="store_true")
@@ -844,8 +857,14 @@ def parse_cli(args: list[str]) -> None:
         cfg.shell_mode = True
     if known.web:
         cfg.web_mode = True
+    # Pipeline short flags: --dev / --main (only used when --tag/--version absent;
+    # explicit --tag or --version always win)
+    if known.dev:
+        cfg.image_tag = "dev"
+    if known.main:
+        cfg.image_tag = "main"
     if known.tag is not None:
-        cfg.image_tag = known.tag
+        cfg.image_tag, _cli_overrides["image_tag"] = known.tag, True
     if known.version:
         if known.version == "_show" or known.version == "":
             # --version without value → show version and exit
