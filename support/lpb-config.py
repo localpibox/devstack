@@ -1251,10 +1251,13 @@ def _release_repos() -> list[tuple[str, Path, str, str, str]]:
     return repos
 
 
-def _repo_release_state(path: Path, dev_branch: str, main_branch: str) -> dict:
+def _repo_release_state(path: Path, dev_branch: str, main_branch: str,
+                        cons: Console | None = None) -> dict:
     """Fetch and gather per-repo promotion state (non-destructive)."""
     # Explicit refspecs: some clones (e.g. config) have restricted fetch
     # configs that would not create refs/remotes/origin/<dev>.
+    if cons is not None:
+        cons.info(f"  fetching {path.name} …")
     git_auth(path, "fetch", "origin", "--quiet",
              f"+refs/heads/{dev_branch}:refs/remotes/origin/{dev_branch}",
              f"+refs/heads/{main_branch}:refs/remotes/origin/{main_branch}",
@@ -1348,7 +1351,7 @@ def cmd_release_status(cons: Console) -> int:
             cons.error(f"{label:18s} repo missing at {path}")
             problems += 1
             continue
-        st = _repo_release_state(path, dev_b, main_b)
+        st = _repo_release_state(path, dev_b, main_b, cons)
         feas = st["feasibility"]
         if feas == "unknown":
             mark, note = "❌", "origin refs not found (fetch failed?)"
@@ -1412,7 +1415,7 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
             cons.error(f"{label}: repo missing at {path}")
             ok = False
             continue
-        st = _repo_release_state(path, dev_b, main_b)
+        st = _repo_release_state(path, dev_b, main_b, cons)
         entries.append((label, path, dev_b, main_b, gh, st))
         if st["origin_main"] == "?":
             cons.error(f"{label}: origin/{main_b} does not exist")
@@ -1501,10 +1504,24 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
             stable = current[: -len("-dev")]
             vf.write_text(stable + "\n")
             git(path, "add", "VERSION")
+            cons.info(f"  devstack: committing VERSION {current} → {stable} "
+                      f"on {main_b} …")
+            cons.info("  (pre-commit hook runs the test suite — may take a "
+                      "while)")
             out, err, code = git(path, "commit", "-m",
-                                 f"release: {stable} — stable branch promoted from dev")
+                                 f"release: {stable} — stable branch promoted "
+                                 f"from dev",
+                                 timeout=300)
             if code != 0:
-                cons.error(f"  devstack: VERSION commit failed: {err.strip()}")
+                detail = err.strip() or out.strip() or "unknown error"
+                cons.error(f"  devstack: VERSION commit failed: {detail}")
+                cons.error("  State: main has the merged dev content; the "
+                           "VERSION change is STAGED (not committed).")
+                cons.error(
+                    f"  Recover: cd {path} && "
+                    f"git commit -m 'release: {stable} — stable branch promoted "
+                    f"from dev' && git push origin {main_b}"
+                )
                 failures.append("devstack")
             else:
                 cons.info(f"  devstack: VERSION {current} → {stable} (on {main_b})")
@@ -1521,6 +1538,7 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
         push_args = ["push", "origin", main_b]
         if label in rebased:
             push_args = ["push", "--force-with-lease", "origin", main_b]
+        cons.info(f"  pushing {gh}:{main_b} …")
         out, err, code = git_auth(path, *push_args, timeout=180)
         if code != 0:
             cons.error(f"  {label}: push failed: {err.strip() or out.strip()}")
@@ -1531,12 +1549,24 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
 
     # ── Summary ──
     cons.info("")
+    cons.info("Result:")
+    for label, path, dev_b, main_b, gh, st in entries:
+        if label in failures:
+            cons.error(f"  ❌ {gh:35s} failed")
+        elif label in skipped:
+            cons.warn(f"  ⏭ {gh:35s} skipped")
+        elif _repo_action(st, rebase)[0] == "no-op":
+            cons.info(f"  ✅ {gh:35s} aligned (no change)")
+        else:
+            force = " (force)" if label in rebased else ""
+            cons.info(f"  ✅ {gh:35s} promoted{force}")
     if skipped:
-        cons.warn(f"Skipped (local dirty): {', '.join(skipped)}")
+        cons.warn(f"Skipped: {', '.join(skipped)} — see notes above")
     if failures:
         cons.error(f"Failed: {', '.join(failures)}")
-        cons.error("Stable release INCOMPLETE — fix the repos above and re-run "
-                   "'lpb-config release promote' (already-promoted repos will "
+        cons.error("Stable release INCOMPLETE — complete the failing repo "
+                   "(recovery steps above), then re-run "
+                   "'lpb-config release promote' (already-promoted repos "
                    "fast-forward or no-op).")
         return 1
     stable_version = (version[:-len("-dev")] if version.endswith("-dev") else version)

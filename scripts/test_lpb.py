@@ -835,8 +835,23 @@ def test_cmd_run_env_vars():
         return ("cid123", "cid123", "", 0)
 
     mod.ContainerClient.containers_run = spy_containers_run
-    with _OutputCapture():
-        mod.cmd_run()
+
+    # Health-check loop: make the (real) TCP probe succeed and pre-count the
+    # mocked curl attempts so the readiness wait exits in ~1s instead of
+    # spinning the full 120s budget (this test only asserts env/volume args).
+    class _ReadySock:
+        def close(self):
+            pass
+
+    global _curl_attempts
+    _curl_attempts = 2  # mocked curl succeeds from attempt 3 onward
+    _orig_cc = mod.socket.create_connection
+    mod.socket.create_connection = lambda *a, **k: _ReadySock()
+    try:
+        with _OutputCapture():
+            mod.cmd_run()
+    finally:
+        mod.socket.create_connection = _orig_cc
     assert mod.cfg.project_name == "tmp"
     env_vars = captured.get("env", [])
     env_str = "\n".join(env_vars)
