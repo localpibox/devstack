@@ -156,6 +156,11 @@ jobs:
         run: |
           set -a
           source lpb.stack.env
+          # Pipeline profile: main builds stable branches (lpb/main), dev builds lpb-dev/dev
+          case "${GITHUB_REF_NAME}" in
+            main) [ -f lpb.stack.main.env ] && source lpb.stack.main.env ;;
+            dev)  [ -f lpb.stack.dev.env ]  && source lpb.stack.dev.env ;;
+          esac
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
           # Use branch name for cloning (not version tag, which doesn't exist yet)
@@ -235,6 +240,11 @@ jobs:
         run: |
           set -a
           source lpb.stack.env
+          # Pipeline profile: main builds stable branches (lpb/main), dev builds lpb-dev/dev
+          case "${GITHUB_REF_NAME}" in
+            main) [ -f lpb.stack.main.env ] && source lpb.stack.main.env ;;
+            dev)  [ -f lpb.stack.dev.env ]  && source lpb.stack.dev.env ;;
+          esac
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
           echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
