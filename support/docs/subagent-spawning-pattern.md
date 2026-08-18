@@ -2,14 +2,15 @@
 
 ## Overview
 
-When spawning subagents for browser testing, use the following pattern to ensure isolated sessions and structured JSON output.
+When spawning subagents for browser testing, use the following pattern to ensure
+isolated sessions and structured JSON output.
 
 ## Steps
 
 ### 1. Generate a Unique Session ID
 
 ```bash
-SESSION_ID=$(npx tsx bin/session-uuid.ts "${PI_WORKTREE_ID}-<test-name>")
+SESSION_ID=$(session-uuid "${PI_WORKTREE_ID}-<test-name>")
 ```
 
 Example output: `pi-main-abc123-login-flow-7f3a9b2c`
@@ -17,77 +18,67 @@ Example output: `pi-main-abc123-login-flow-7f3a9b2c`
 ### 2. Load the System Prompt Template
 
 ```bash
-PROMPT=$(cat subagent-browser-prompt.txt)
+PROMPT=$(cat /opt/pi-support/config/subagent-browser-prompt.txt)
 ```
 
-The template at `subagent-browser-prompt.txt` includes:
+The template at `/opt/pi-support/config/subagent-browser-prompt.txt` includes:
 - The JSON schema the subagent must produce
 - Instructions for using agent-browser with bundled Chrome
 - Metrics collection steps (vitals, a11y, snapshot)
 
 ### 3. Spawn the Subagent
 
+Use the Pi `Agent` tool with `subagent_type: "browser-automation"`:
+
 ```javascript
-// Via the subagent tool in Pi:
-subagent({
-  agent: "researcher",
-  task: `Run browser test on https://example.com:
+Agent(
+  description: "Browser test on https://example.com",
+  subagent_type: "browser-automation",
+  prompt: `Run browser test on https://example.com:
     1. Navigate to the URL
     2. Verify the page loads correctly
     3. Check for accessibility issues
     4. Measure performance metrics
     
-    Session ID: ${SESSION_ID}
-    Prompt: ${PROMPT}`,
-  outputSchema: JSON.parse(readFileSync("subagent-browser-schema.json")),
-});
+    Session ID: ${SESSION_ID}`,
+  thinking: "low",
+  isolation: "worktree"
+)
 ```
 
 ### 4. Collect and Validate the Result
 
-```bash
-# Pipe subagent output to the validator
-echo "${SUBAGENT_OUTPUT}" | npx tsx bin/validate-subagent-output.ts
+The subagent returns structured output directly via its completion. Close the
+browser session when done:
 
-# Close the browser session to prevent zombie processes
+```bash
 agent-browser --session "$SESSION_ID" close
 ```
 
 ### 5. Retry on Failure (Max 3 Attempts)
 
-```typescript
-import { validate, buildRepairPrompt } from "./bin/validate-subagent-output";
+If the output needs validation, use the support utility:
 
-let output = await spawnSubagent(task);
-let result = validate(output);
-let attempts = 1;
-
-while (!result.success && attempts < 3) {
-  const repairPrompt = buildRepairPrompt(result.error!, originalTask);
-  output = await spawnSubagent(repairPrompt);
-  result = validate(output);
-  attempts++;
-}
-
-if (!result.success) {
-  console.error(`Test failed after ${attempts} attempts: ${result.error}`);
-}
+```bash
+echo "${SUBAGENT_OUTPUT}" | tsx /opt/pi-support/validate-subagent-output.ts
+agent-browser --session "$SESSION_ID" close
 ```
 
 ## Key Points
 
 - **Always use bundled Chrome** (not CDP) for subagents
 - **Always set `AGENT_BROWSER_SESSION`** to a unique value
-- **Always pass the JSON schema** in the subagent's prompt
 - **Always validate** the output on the parent side
 - **Always retry** with a repair prompt if validation fails
 - **Cap at 3 attempts** to avoid infinite loops
+- **Close browser sessions** — without it, Chrome processes become zombies
 
 ## File Reference
 
-| File | Purpose |
-|------|---------|
-| `bin/session-uuid.ts` | Generate unique session IDs |
-| `subagent-browser-schema.json` | Unified JSON schema (all fields) |
-| `subagent-browser-prompt.txt` | System prompt template |
-| `bin/validate-subagent-output.ts` | Parent-side validation utility |
+| Path | Purpose |
+|---|---|
+| `session-uuid` (installed at `/opt/pi-support/bin/`) | Generate unique session IDs |
+| `/opt/pi-support/schemas/browser-validation-schema.json` | Unified JSON schema (all fields) |
+| `/opt/pi-support/config/subagent-browser-prompt.txt` | System prompt template |
+| `/opt/pi-support/validate-subagent-output.ts` | Parent-side validation utility |
+| `/opt/pi-support/browser-validate.ts` | Browser validation entry point |
