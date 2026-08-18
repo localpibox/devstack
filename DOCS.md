@@ -9,6 +9,10 @@ This branch carries the documentation site for the LocalPibox stack
 - **`docs/` is derived** (gitignored) — `scripts/generate.py` copies the
   tracked content and stamps version pages (repo map, versions) from the
   6 stack repos. Run it before every build; CI does this automatically.
+- **Mermaid diagrams** (` ```mermaid ` fences, e.g. in `README.md`) are
+  rendered client-side by the Material theme, which lazy-loads mermaid@11
+  from the unpkg CDN on first visit — viewing diagrams needs internet
+  access; without it the raw source shows as a code block (fallback).
 - **Versions** are cut by `.github/workflows/docs-publish.yml`:
   - push to `docs` → living `edge` version (always newest content)
   - dispatch with `tag: 0.0.X-lpb[-dev]` → immutable per-tag version + alias
@@ -19,7 +23,7 @@ This branch carries the documentation site for the LocalPibox stack
 ## Local build
 
 ```bash
-python3 -m pip install --user mkdocs-material mike
+python3 -m pip install --user "mkdocs-material==9.7.7" mike
 python3 scripts/generate.py          # or: --tag 0.0.53-lpb-dev
 mike serve                           # live preview at http://localhost:8000
 ```

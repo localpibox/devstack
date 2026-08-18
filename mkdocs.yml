@@ -50,6 +50,13 @@ markdown_extensions:
   - admonition
   - attr_list
   - md_in_html
+  # Mermaid.js diagrams: theme renders ```mermaid fences client-side
+  # (lazy-loads mermaid@11 from CDN when a .mermaid block is present)
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 
 nav:
   - Home: index.md

@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Install docs tooling
-        run: python3 -m pip install --quiet mkdocs-material mike
+        run: python3 -m pip install --quiet "mkdocs-material==9.7.7" mike
 
       - name: Prepare docs tree + version stamp
         run: python3 scripts/generate.py ${TAG:+--tag "$TAG"}
