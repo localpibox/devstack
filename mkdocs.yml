@@ -68,4 +68,9 @@ nav:
     - Fork improvements: reference/fork-improvements.md
     - lpb-memory analysis: reference/lpb-memory-analysis.md
     - Repo workflow skill: reference/repo-workflow-skill.md
+    - lpb CLI: reference/lpb-cli.md
+    - lpb-config: reference/lpb-config.md
+    - Environment variables: reference/env-vars.md
+    - Config repo: reference/config-repo.md
+    - lpb-memory overview: reference/lpb-memory-overview.md
     - Contributing: contributing.md
