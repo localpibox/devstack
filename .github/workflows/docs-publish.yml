@@ -1,0 +1,104 @@
+# Docs publishing for the LocalPibox stack (MkDocs Material + mike 2.x).
+#
+# Versions:
+#   edge    — living docs (docs branch HEAD), refreshed on every push to docs
+#   <tag>   — immutable per-tag snapshots, e.g. 0.0.53-lpb-dev / 0.0.53-lpb
+#   latest  — alias → most recent stable (main pipeline) tag
+#   dev     — alias → most recent dev pipeline tag
+#
+# Two flows:
+#   1. push to `docs` branch         → rebuild the living `edge` version
+#   2. workflow_dispatch with `tag`  → cut an immutable version for a stack tag
+#      and point the alias (default: latest) at it
+#
+# Output: `gh-pages` branch (mike's branch); GitHub Pages serves it from the
+# repo root:  https://lpb-stack.github.io/devstack/<version>/
+#
+# Run the tag flow AFTER the code release is done (tags exist on all 5 repos).
+# Keep the `docs` branch merged with `dev` before cutting a version so the
+# hand-written content matches the tag.
+
+name: docs
+
+on:
+  push:
+    branches: [docs]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Stack tag to cut a docs version for (e.g. 0.0.53-lpb-dev)"
+        required: false
+      alias:
+        description: "Alias for the new version (latest = stable, dev = dev pipeline)"
+        required: false
+        default: "latest"
+
+# dev + main pipelines can both cut versions — serialize gh-pages deploys
+concurrency:
+  group: docs-deploy
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag }}
+      ALIAS: ${{ inputs.alias || 'latest' }}
+      AGENT_DIR: ${{ github.workspace }}/ws/config
+      LPB_AGENT_GIT: ${{ github.workspace }}/ws/git
+      LPB_WORKSPACE_ROOT: ${{ github.workspace }}/ws
+    steps:
+      - name: Checkout docs branch
+        uses: actions/checkout@v4
+        with:
+          ref: docs
+          fetch-depth: 0
+
+      - name: Fetch stack repos (default branch, or $TAG when cutting)
+        run: |
+          set -e
+          mkdir -p ws/git
+          git clone --quiet https://github.com/lpb-stack/config.git ws/config
+          for r in lpb-memory pi-subagents lemonade-pi-plugin; do
+            git clone --quiet "https://github.com/lpb-stack/$r.git" "ws/git/$r"
+          done
+          git clone --quiet https://github.com/lpb-stack/pi.git ws/pi
+          if [ -n "$TAG" ]; then
+            for d in ws/config ws/git/lpb-memory ws/git/pi-subagents \
+                     ws/git/lemonade-pi-plugin ws/pi; do
+              git -C "$d" fetch --quiet --depth 1 origin tag "$TAG"
+              git -C "$d" checkout -q "$TAG"
+            done
+          fi
+
+      - name: Install docs tooling
+        run: python3 -m pip install --quiet mkdocs-material mike
+
+      - name: Prepare docs tree + version stamp
+        run: python3 scripts/generate.py ${TAG:+--tag "$TAG"}
+
+      - name: Configure git identity for mike
+        run: |
+          git config user.name "lpb-docs"
+          git config user.email "ci@lpb-stack.dev"
+
+      - name: Publish living edge docs
+        if: ${{ inputs.tag == '' }}
+        run: |
+          mike deploy edge --push
+          # bootstrap: until the first tagged version exists, root → edge
+          if [ -z "$(mike list | grep -v '^edge')" ]; then
+            mike set-default edge --push
+          fi
+
+      - name: Publish tagged version
+        if: ${{ inputs.tag != '' }}
+        run: |
+          mike deploy "$TAG" "$ALIAS" --push --update-aliases
+          if [ "$ALIAS" = "latest" ]; then
+            mike set-default latest --push
+          elif ! mike list | grep -q '\[latest\]'; then
+            # dev-pipeline tag while no stable release exists yet
+            mike set-default dev --push
+          fi
+          echo "Docs version: https://lpb-stack.github.io/devstack/$TAG/"

@@ -7,3 +7,7 @@ __pycache__/
 *.pyo
 .env
 node_modules/
+
+# ── Docs site (docs branch: derived by scripts/generate.py) ───────────────
+/docs/
+/site/

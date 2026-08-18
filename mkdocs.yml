@@ -1,0 +1,64 @@
+# LocalPibox stack docs — MkDocs Material + mike (per-tag versioning).
+#
+# Tracked content lives in place (README.md, doc/, support/docs/, ...) exactly
+# as on `dev`, so this branch stays in sync via merges. `scripts/generate.py`
+# materializes the derived `docs/` tree (copies + version stamping) before
+# every build — docs/ is gitignored, like the image is built from the source.
+#
+# Versions are cut with mike (see .github/workflows/docs-publish.yml):
+#   tag 0.0.X-lpb-dev / 0.0.X-lpb  →  /devstack/<tag>/   (+ latest/dev aliases)
+
+site_name: LocalPibox Stack
+site_description: Documentation for the LocalPibox development stack — versioned per stack tag
+site_url: https://lpb-stack.github.io/devstack/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+
+# Version switcher (mike)
+extra:
+  version:
+    provider: mike
+    default: latest
+
+markdown_extensions:
+  - toc:
+      permalink: true
+  - tables
+  - admonition
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Repo map: repo-map.md
+  - Stack versions: versions.md
+  - Operations:
+    - Subagent spawning: operations/subagent-spawning-pattern.md
+  - Reference:
+    - Fork improvements: reference/fork-improvements.md
+    - lpb-memory analysis: reference/lpb-memory-analysis.md
+    - Repo workflow skill: reference/repo-workflow-skill.md
+    - Contributing: contributing.md
