@@ -33,6 +33,10 @@ on:
         required: false
         default: "latest"
 
+# mike pushes the gh-pages branch
+permissions:
+  contents: write
+
 # dev + main pipelines can both cut versions — serialize gh-pages deploys
 concurrency:
   group: docs-deploy
