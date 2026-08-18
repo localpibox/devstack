@@ -1,0 +1,1997 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Documentation for the LocalPibox development stack — versioned per stack tag">
+      
+      
+      
+        <link rel="canonical" href="https://lpb-stack.github.io/devstack/edge/reference/fork-improvements/">
+      
+      
+        <link rel="prev" href="../../operations/subagent-spawning-pattern/">
+      
+      
+        <link rel="next" href="../lpb-memory-analysis/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Fork improvements - LocalPibox Stack</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#localpibox-fork-improvements" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="LocalPibox Stack" class="md-header__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            LocalPibox Stack
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Fork improvements
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="LocalPibox Stack" class="md-nav__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    LocalPibox Stack
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../repo-map/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo map
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../versions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack versions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../operations/subagent-spawning-pattern/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Subagent spawning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fork improvements
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fork improvements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pi-fork-lpb-stackpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi Fork (lpb-stack/pi)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subagents-fork-lpb-stackpi-subagents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subagents Fork (lpb-stack/pi-subagents)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lemonade-fork-lpb-stacklemonade-pi-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lemonade Fork (lpb-stack/lemonade-pi-plugin)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lemonade Fork (lpb-stack/lemonade-pi-plugin)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-qwen-reasoning-model-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Qwen Reasoning Model Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-vision-capability-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vision Capability Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sync-model-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Sync Model Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-api-field-propagation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. API Field Propagation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-auth-config-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Auth &amp; Config Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-admin-command-oauth-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Admin Command &amp; OAuth Sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-qwen-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Qwen Constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-model-type-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Model Type Definitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-documentation-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Documentation &amp; Version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Design Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#patch-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Patch Model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-ratios-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the Ratios Matter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flm-vs-mtp-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FLM vs MTP Backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vision-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vision Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vision Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-agent-vision-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Agent (vision-analysis)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-alternative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Alternative
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-issues-mitigations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Issues &amp; Mitigations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Known Issues &amp; Mitigations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qwen3-thinking-overflow-2026-08-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qwen3 Thinking Overflow (2026-08-02)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-browser_chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        agent-browser_chat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#admin-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#support-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lpb-memory-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lpb-memory analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repo-workflow-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo workflow skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architecture
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pi-fork-lpb-stackpi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi Fork (lpb-stack/pi)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#subagents-fork-lpb-stackpi-subagents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subagents Fork (lpb-stack/pi-subagents)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lemonade-fork-lpb-stacklemonade-pi-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lemonade Fork (lpb-stack/lemonade-pi-plugin)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lemonade Fork (lpb-stack/lemonade-pi-plugin)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-qwen-reasoning-model-support" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Qwen Reasoning Model Support
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-vision-capability-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Vision Capability Detection
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-sync-model-store" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Sync Model Store
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#4-api-field-propagation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. API Field Propagation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#5-auth-config-improvements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Auth &amp; Config Improvements
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#6-admin-command-oauth-sync" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Admin Command &amp; OAuth Sync
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#7-qwen-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Qwen Constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#8-model-type-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Model Type Definitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#9-documentation-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Documentation &amp; Version
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-design-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key Design Decisions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Key Design Decisions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#patch-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Patch Model
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-the-ratios-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the Ratios Matter
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#flm-vs-mtp-backend" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FLM vs MTP Backend
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#vision-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Vision Pipeline
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Vision Pipeline">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#custom-agent-vision-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Custom Agent (vision-analysis)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#manual-alternative" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Manual Alternative
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-issues-mitigations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known Issues &amp; Mitigations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Known Issues &amp; Mitigations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#qwen3-thinking-overflow-2026-08-02" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Qwen3 Thinking Overflow (2026-08-02)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#agent-browser_chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        agent-browser_chat
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quick-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Quick Reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Quick Reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#admin-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Admin Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#support-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Support Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="localpibox-fork-improvements">LocalPibox Fork Improvements<a class="headerlink" href="#localpibox-fork-improvements" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Generated: 2025-08-13<br />
+Status: Complete — Qwen3.6 reasoning + vision fully operational</p>
+</blockquote>
+<hr />
+<h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
+<p>This stack uses 6 repositories. The two code forks and their changes:</p>
+<table>
+<thead>
+<tr>
+<th>Repo</th>
+<th>Upstream</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lpb-stack/pi</code></td>
+<td><code>earendil-works/pi</code></td>
+<td>Forked Pi monorepo — Qwen reasoning protocol + overflow detection</td>
+</tr>
+<tr>
+<td><code>lpb-stack/lemonade-pi-plugin</code></td>
+<td><code>lemonade-sdk/lemonade-pi-plugin</code></td>
+<td>Lemonade provider — Qwen model detection, vision, dynamic sizing</td>
+</tr>
+<tr>
+<td><code>lpb-stack/pi-subagents</code></td>
+<td><code>tintinweb/pi-subagents</code></td>
+<td>Subagent model registry — removes Anthropic defaults, local-first</td>
+</tr>
+<tr>
+<td><code>lpb-stack/config</code></td>
+<td>—</td>
+<td>User settings, skills, agents</td>
+</tr>
+<tr>
+<td><code>lpb-stack/devstack</code></td>
+<td>—</td>
+<td>Docker-based dev environment</td>
+</tr>
+<tr>
+<td><code>lpb-stack/lpb-memory</code></td>
+<td>—</td>
+<td>Persistent memory extension</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="pi-fork-lpb-stackpi">Pi Fork (<code>lpb-stack/pi</code>)<a class="headerlink" href="#pi-fork-lpb-stackpi" title="Permanent link">&para;</a></h2>
+<p><strong>Key commit: <code>53c1dc2</code> — surgical Qwen patches on v0.84.1</strong></p>
+<p>This commit makes the <strong>surgical edits</strong> to Pi itself that enable the Qwen reasoning protocol:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>packages/ai/src/api/openai-completions.ts</code></td>
+<td>Adds <code>reasoning_effort</code> mapping to <code>chat_template_kwargs</code></td>
+<td>Sends <code>reasoning_effort: "high"|"medium"|"low"</code> to Qwen models when thinking is enabled</td>
+</tr>
+<tr>
+<td><code>packages/ai/src/api/openai-completions.ts</code></td>
+<td>Adds <code>reasoning_budget_tokens</code> param</td>
+<td>Sends soft-cap (0) to prevent runaway thinking blocks that exhaust max_tokens</td>
+</tr>
+<tr>
+<td><code>packages/ai/src/types.ts</code></td>
+<td>Adds <code>reasoningBudgetTokens</code> compat field</td>
+<td>New compat flag for Qwen reasoning budget</td>
+</tr>
+<tr>
+<td><code>packages/ai/src/utils/overflow.ts</code></td>
+<td>Adds <strong>Case 4</strong> reasoning overflow detection</td>
+<td>Detects when Qwen thinking blocks silently consume output token budget (input ≥ 90% of context, stopReason=withLength, output &gt; 0, no text/tool calls)</td>
+</tr>
+<tr>
+<td><code>packages/coding-agent/src/config.ts</code></td>
+<td>Adds <code>LOCALPIB_VERSION</code> env</td>
+<td>Reads from <code>LPB_VERSION</code> env for fork identification</td>
+</tr>
+<tr>
+<td><code>VERSION</code></td>
+<td>New file: <code>0.0.1-lpb</code></td>
+<td>Fork version marker</td>
+</tr>
+<tr>
+<td><code>package.json</code></td>
+<td>Version → <code>0.0.1-lpb</code></td>
+<td>Fork version</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Additional 3 commits on top (lpb-dev branch):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Commit</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>2a3e9bc</code> feat</td>
+<td><code>allowScripts</code> for native addons</td>
+</tr>
+<tr>
+<td><code>346947d</code> hooks</td>
+<td>Validation-only hook sync for devstack</td>
+</tr>
+<tr>
+<td><code>8449290</code> chore</td>
+<td>Install husky pre-commit hook</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Verdict:</strong> <code>53c1dc2</code> is the <strong>critical commit</strong> — it wires Pi's OpenAI completions layer to send Qwen-specific reasoning parameters (<code>reasoning_effort</code>, <code>reasoning_budget_tokens</code>) and adds overflow detection for thinking-block exhaustion.</p>
+<hr />
+<h2 id="subagents-fork-lpb-stackpi-subagents">Subagents Fork (<code>lpb-stack/pi-subagents</code>)<a class="headerlink" href="#subagents-fork-lpb-stackpi-subagents" title="Permanent link">&para;</a></h2>
+<p><strong>Key commit: <code>5a3159d</code> — centralized model registry on upstream v0.15.0</strong></p>
+<p>This commit <strong>removes Anthropic-hardcoded defaults</strong> from the subagents extension, making it fully local-first:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Change</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>src/agent-runner.ts</code></td>
+<td>Adds <code>globalDefaultModel</code> setting + getter/setter</td>
+<td>New centralized model registry — single source of truth for all subagent models</td>
+</tr>
+<tr>
+<td><code>src/agent-runner.ts</code></td>
+<td><code>resolveDefaultModel()</code> priority: explicit &gt; config &gt; <strong>globalDefaultModel</strong> &gt; parent</td>
+<td>New intermediate step between config and parent inheritance</td>
+</tr>
+<tr>
+<td><code>src/default-agents.ts</code></td>
+<td>Removes <code>model: "anthropic/claude-haiku-4-5"</code> from Explore agent</td>
+<td><code>model: undefined</code> — inherits parent model</td>
+</tr>
+<tr>
+<td><code>src/index.ts</code></td>
+<td>Reads <code>globalDefaultModel</code> from settings + resolves it</td>
+<td>Applies the centralized model to agent spawns</td>
+</tr>
+<tr>
+<td><code>src/settings.ts</code></td>
+<td>Adds <code>globalDefaultModel</code> field to settings interface</td>
+<td>Configurable via <code>pi-defaults.json</code> or <code>/agents → Settings</code></td>
+</tr>
+<tr>
+<td><code>package.json</code></td>
+<td>Version → <code>0.14.3</code> (reverted from 0.15.0)</td>
+<td>Aligns with upstream stable release</td>
+</tr>
+<tr>
+<td><code>README.md</code></td>
+<td>Rewritten — adds "Configuring for local models" section</td>
+<td>Documents <code>globalDefaultModel: null</code> in <code>pi-defaults.json</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why it matters:</strong> Without this change, subagents would default to <code>anthropic/claude-haiku-4-5</code> and <strong>fail when no Anthropic API key is configured</strong>. For stacks running entirely on local models (like LocalPibox), this is critical.</p>
+<p><strong>Model resolution chain (after patch):</strong>
+1. Explicit <code>model</code> param in <code>Agent()</code> call
+2. <code>model</code> field in agent <code>.md</code> frontmatter
+3. <strong><code>globalDefaultModel</code></strong> from <code>pi-defaults.json</code> / <code>subagents.json</code> (centralized registry)
+4. Parent session model (inherit)</p>
+<p><strong>Configuration for local-first:</strong></p>
+<pre><code class="language-json">{
+  &quot;extensions&quot;: {
+    &quot;@tintinweb/pi-subagents&quot;: {
+      &quot;globalDefaultModel&quot;: null,
+      &quot;disableDefaultAgents&quot;: true
+    }
+  }
+}
+</code></pre>
+<p><code>globalDefaultModel: null</code> means subagents inherit whatever model the parent session uses — <strong>zero Anthropic dependency</strong>.</p>
+<p><strong>Verdict:</strong> This is the <strong>glue that makes the local-only stack work end-to-end</strong> — it ensures subagents (like <code>vision-analysis</code>, <code>researcher</code>, etc.) all use the session's local Qwen model instead of falling back to Anthropic.</p>
+<hr />
+<h2 id="lemonade-fork-lpb-stacklemonade-pi-plugin">Lemonade Fork (<code>lpb-stack/lemonade-pi-plugin</code>)<a class="headerlink" href="#lemonade-fork-lpb-stacklemonade-pi-plugin" title="Permanent link">&para;</a></h2>
+<p><strong>Changes: +334 lines across 13 files — all major improvements</strong></p>
+<h3 id="1-qwen-reasoning-model-support">1. Qwen Reasoning Model Support<a class="headerlink" href="#1-qwen-reasoning-model-support" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/models.ts</code> (~130 new lines)</p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Qwen detection</strong></td>
+<td><code>isQwenReasoningModel()</code> — detects Qwen3.x, QwQ, Qwen2.5-thinking, Qwen2.5-72B via regex on name/recipe</td>
+</tr>
+<tr>
+<td><strong>MTP detection</strong></td>
+<td><code>isMtpModel()</code> — detects Multi-Token Prediction models via name, recipe, or <code>mtp-gguf</code> label</td>
+</tr>
+<tr>
+<td><strong>FLM detection</strong></td>
+<td><code>flmTemplateRejectsDeveloperRole()</code> — disables reasoning for FLM backends (reject <code>developer</code> role in chat template)</td>
+</tr>
+<tr>
+<td><strong>Dynamic maxTokens ratio</strong></td>
+<td>Reasoning models: <code>0.06 × contextWindow</code> (~15.7k for 262k). Non-reasoning: <code>0.125</code> (~32k) — prevents context overflow from thinking blocks</td>
+</tr>
+<tr>
+<td><strong>Thinking protocol</strong></td>
+<td>Adds <code>enable_thinking</code>, <code>reasoning_budget_tokens</code>, <code>thinkingFormat: "qwen-chat-template"</code> to Qwen models</td>
+</tr>
+<tr>
+<td><strong>Heuristic detection</strong></td>
+<td><code>isReasoningByHeuristic()</code> — catches models where <code>recipe</code> field is absent or non-matching (checks name, labels)</td>
+</tr>
+<tr>
+<td><strong>Reasoning flag</strong></td>
+<td>Combines <code>isReasoningModel(recipe)</code> + heuristic + Qwen detection</td>
+</tr>
+</tbody>
+</table>
+<h3 id="2-vision-capability-detection">2. Vision Capability Detection<a class="headerlink" href="#2-vision-capability-detection" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/models.ts</code></p>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Label-based detection</strong></td>
+<td><code>detectVision()</code> — checks for <code>"vision"</code> in model labels</td>
+</tr>
+<tr>
+<td><strong>Auto image input</strong></td>
+<td>Vision models automatically get <code>input: ["text", "image"]</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="3-sync-model-store">3. Sync Model Store<a class="headerlink" href="#3-sync-model-store" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/sync-store.ts</code> (new, 61 lines)</p>
+<table>
+<thead>
+<tr>
+<th>Aspect</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Purpose</strong></td>
+<td>Keeps <code>~/.pi/agent/models-store.json</code> in sync with Lemonade API</td>
+</tr>
+<tr>
+<td><strong>Why</strong></td>
+<td>Subprocesses and subagents resolve models with correct <code>contextWindow</code> and <code>maxTokens</code> without network calls</td>
+</tr>
+<tr>
+<td><strong>Triggers</strong></td>
+<td>OAuth login, token refresh, <code>/lemonade refresh</code>, <code>/lemonade change-ctx</code></td>
+</tr>
+<tr>
+<td><strong>Error handling</strong></td>
+<td>Non-critical — falls back to provider at runtime if sync fails</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-api-field-propagation">4. API Field Propagation<a class="headerlink" href="#4-api-field-propagation" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/http.ts</code> (+8 lines)</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>labels</code></td>
+<td>Passed through to drive <code>detectVision()</code> and other heuristics</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td>Passed through for backend configuration</td>
+</tr>
+<tr>
+<td><code>max_context_window</code></td>
+<td>Respected for context sizing</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5-auth-config-improvements">5. Auth &amp; Config Improvements<a class="headerlink" href="#5-auth-config-improvements" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> <code>extensions/index.ts</code>, <code>lib/provider.ts</code></p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auth_type: "api-key"</code></td>
+<td>Registers provider as API-key auth type</td>
+</tr>
+<tr>
+<td>Spread copy in <code>refreshToken</code></td>
+<td><code>{ ...decodeCreds(creds) }</code> — prevents credential mutation</td>
+</tr>
+<tr>
+<td><code>creds.access</code> fallback</td>
+<td><code>getApiKey</code> checks <code>creds.access</code> as fallback</td>
+</tr>
+<tr>
+<td><code>LEMONADE_BASE_URL</code> env fallback</td>
+<td>Resolves baseUrl when stored creds are stale</td>
+</tr>
+</tbody>
+</table>
+<h3 id="6-admin-command-oauth-sync">6. Admin Command &amp; OAuth Sync<a class="headerlink" href="#6-admin-command-oauth-sync" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> <code>lib/admin.ts</code>, <code>lib/oauth.ts</code></p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Post-refresh sync</td>
+<td><code>syncModelStore()</code> after <code>/lemonade refresh</code></td>
+</tr>
+<tr>
+<td>Post-change-ctx sync</td>
+<td><code>syncModelStore()</code> after <code>/lemonade change-ctx</code></td>
+</tr>
+<tr>
+<td>Post-login sync</td>
+<td><code>syncModelStore()</code> after OAuth login</td>
+</tr>
+<tr>
+<td>Post-refresh sync</td>
+<td><code>syncModelStore()</code> in <code>registerLemonadeProvider</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-qwen-constants">7. Qwen Constants<a class="headerlink" href="#7-qwen-constants" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/constants.ts</code> (21 new lines)</p>
+<table>
+<thead>
+<tr>
+<th>Constant</th>
+<th>Value</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>DEFAULT_MAX_TOKENS_CONTEXT_RATIO</code></td>
+<td>0.125</td>
+<td>Non-reasoning Qwen models</td>
+</tr>
+<tr>
+<td><code>QWEN_REASONING_MAX_TOKENS_CONTEXT_RATIO</code></td>
+<td>0.06</td>
+<td>Reasoning models (thinking headroom)</td>
+</tr>
+<tr>
+<td><code>QWEN_REASONING_BUDGET_TOKENS</code></td>
+<td>0</td>
+<td>Soft-capped thinking (prevents runaway)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="8-model-type-definitions">8. Model Type Definitions<a class="headerlink" href="#8-model-type-definitions" title="Permanent link">&para;</a></h3>
+<p><strong>File:</strong> <code>lib/types.ts</code></p>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Details</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>labels?: string[]</code></td>
+<td>Added to <code>LemonadeModelInfo</code> interface</td>
+</tr>
+</tbody>
+</table>
+<h3 id="9-documentation-version">9. Documentation &amp; Version<a class="headerlink" href="#9-documentation-version" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CONTRIBUTING.md</code></td>
+<td>Docs on patch model, rebase workflow, forking guide</td>
+</tr>
+<tr>
+<td><code>VERSION</code></td>
+<td><code>0.2.0-lpb</code> — fork version marker</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="key-design-decisions">Key Design Decisions<a class="headerlink" href="#key-design-decisions" title="Permanent link">&para;</a></h2>
+<h3 id="patch-model">Patch Model<a class="headerlink" href="#patch-model" title="Permanent link">&para;</a></h3>
+<p>All LocalPibox changes are kept as a <strong>single squashed commit</strong> on top of upstream <code>main</code>. The delta is always one clean patch.</p>
+<pre><code>upstream main ──→ [latest] ──┐
+                             │
+lpb-dev branch      ──→ [lpb patch]──┘
+</code></pre>
+<p>To update:</p>
+<pre><code class="language-bash">git fetch upstream main
+git checkout lpb-dev
+git rebase upstream/main
+git push --force-with-lease origin lpb-dev
+</code></pre>
+<h3 id="why-the-ratios-matter">Why the Ratios Matter<a class="headerlink" href="#why-the-ratios-matter" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Model Type</th>
+<th>Ratio</th>
+<th>262k Context → maxTokens</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reasoning (Qwen MTP)</td>
+<td>0.06</td>
+<td>~15.7k</td>
+<td>Thinking blocks consume 10-20k tokens; leaving budget prevents context overflow</td>
+</tr>
+<tr>
+<td>Non-reasoning (Qwen)</td>
+<td>0.125</td>
+<td>~32k</td>
+<td>Standard ratio, no thinking overhead</td>
+</tr>
+</tbody>
+</table>
+<h3 id="flm-vs-mtp-backend">FLM vs MTP Backend<a class="headerlink" href="#flm-vs-mtp-backend" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Reasoning Support</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>MTP</strong> (<code>Qwen3.6-35B-A3B-MTP-GGUF</code>)</td>
+<td>✅ Yes</td>
+<td>Uses newer chat template that accepts <code>developer</code> role</td>
+</tr>
+<tr>
+<td><strong>FLM</strong> (<code>qwen3.5-9b-FLM</code>, <code>qwen3.6-moe-35b-a3b-FLM</code>)</td>
+<td>❌ No</td>
+<td>Chat template only accepts <code>system/user/assistant/tool</code> roles, raises error on <code>developer</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="vision-pipeline">Vision Pipeline<a class="headerlink" href="#vision-pipeline" title="Permanent link">&para;</a></h2>
+<h3 id="custom-agent-vision-analysis">Custom Agent (<code>vision-analysis</code>)<a class="headerlink" href="#custom-agent-vision-analysis" title="Permanent link">&para;</a></h3>
+<p>Created at <code>~/.pi/agent/agents/vision-analysis.md</code></p>
+<p><strong>Workflow:</strong>
+1. <code>mcp</code> → <code>agent-browser_open</code> — open URL in Chrome
+2. <code>mcp</code> → <code>agent-browser_screenshot</code> — capture screenshot
+3. <code>read</code> — pass image to session model for vision analysis
+4. <code>mcp</code> → <code>agent-browser_close</code> — close browser</p>
+<p><strong>Usage:</strong></p>
+<pre><code class="language-bash">Agent(description: &quot;Vision analysis of &lt;url&gt;&quot;, subagent_type: &quot;vision-analysis&quot;, prompt: &quot;Analyze this page: &lt;url&gt;&quot;)
+</code></pre>
+<p>Runs in background, uses session model by default (can override with <code>model:</code> parameter).</p>
+<h3 id="manual-alternative">Manual Alternative<a class="headerlink" href="#manual-alternative" title="Permanent link">&para;</a></h3>
+<pre><code class="language-bash"># Open browser
+mcp({ tool: &quot;agent-browser_open&quot;, args: { url: &quot;...&quot; } })
+# Take screenshot
+mcp({ tool: &quot;agent-browser_screenshot&quot;, args: {} })
+# Read image (passes to session model)
+read(path: &quot;/home/lpb/.agent-browser/tmp/screenshots/screenshot-xxx.png&quot;)
+# Close browser
+mcp({ tool: &quot;agent-browser_close&quot;, args: { all: false } })
+</code></pre>
+<hr />
+<h2 id="known-issues-mitigations">Known Issues &amp; Mitigations<a class="headerlink" href="#known-issues-mitigations" title="Permanent link">&para;</a></h2>
+<h3 id="qwen3-thinking-overflow-2026-08-02">Qwen3 Thinking Overflow (2026-08-02)<a class="headerlink" href="#qwen3-thinking-overflow-2026-08-02" title="Permanent link">&para;</a></h3>
+<p>Qwen3.6 with thinking enabled throws "context size exceeded" when <code>prompt + max_tokens</code> exceeds the 262k window.</p>
+<p><strong>Mitigations:</strong>
+- <code>maxTokens</code> reduced to ~15k (<code>ratio 0.06</code>) — leaves room for 10-20k thinking blocks
+- <code>reserveTokens</code> doubled to 32k — compaction fires at ~88% (230k) instead of ~94% (246k)
+- Thinking disabled during compaction — prevents meta-thinking waste
+- <code>LPB_MAX_TOKENS_CONTEXT_RATIO=0.06</code> set in <code>support/start.sh</code> and <code>.env.example</code></p>
+<h3 id="agent-browser_chat">agent-browser_chat<a class="headerlink" href="#agent-browser_chat" title="Permanent link">&para;</a></h3>
+<p>Requires <code>AI_GATEWAY_API_KEY</code> (Vercel AI SDK gateway). Not configurable per-call. Cannot point at local Lemonade server. Not usable with this stack.</p>
+<hr />
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<h3 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Value</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>LEMONADE_BASE_URL</code></td>
+<td><code>http://127.0.0.1:13305/v1</code></td>
+<td>Model API endpoint</td>
+</tr>
+<tr>
+<td><code>VISION_MODEL</code></td>
+<td><code>Qwen3.6-35B-A3B-MTP-GGUF</code></td>
+<td>Vision model ID</td>
+</tr>
+<tr>
+<td><code>LPB_MAX_TOKENS_CONTEXT_RATIO</code></td>
+<td><code>0.06</code></td>
+<td>Max tokens ratio for Qwen reasoning</td>
+</tr>
+<tr>
+<td><code>AGENT_BROWSER_MAX_OUTPUT</code></td>
+<td><code>4000</code></td>
+<td>Max chars for snapshot output</td>
+</tr>
+</tbody>
+</table>
+<h3 id="admin-commands">Admin Commands<a class="headerlink" href="#admin-commands" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/lemonade health</code></td>
+<td>Check server health</td>
+</tr>
+<tr>
+<td><code>/lemonade models</code></td>
+<td>List detected models</td>
+</tr>
+<tr>
+<td><code>/lemonade refresh</code></td>
+<td>Re-sync models</td>
+</tr>
+<tr>
+<td><code>/lemonade change-ctx</code></td>
+<td>Change context window for active model</td>
+</tr>
+</tbody>
+</table>
+<h3 id="support-files">Support Files<a class="headerlink" href="#support-files" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/opt/pi-support/bin/session-uuid</code></td>
+<td>Generate unique session IDs</td>
+</tr>
+<tr>
+<td><code>/opt/pi-support/bin/browser-state-cleanup</code></td>
+<td>Cleanup browser state volumes</td>
+</tr>
+<tr>
+<td><code>/opt/pi-support/browser-validate.ts</code></td>
+<td>Browser validation entry point</td>
+</tr>
+<tr>
+<td><code>/opt/pi-support/start.sh</code></td>
+<td>Start script</td>
+</tr>
+<tr>
+<td><code>/opt/pi-support/config/agent-browser-action-policy.json</code></td>
+<td>Agent action policies</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
