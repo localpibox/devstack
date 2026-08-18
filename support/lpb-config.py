@@ -9,7 +9,7 @@ Usage:
   lpb-config align     — Align settings.json extension pins to latest tags
 
   lpb-config workspace status   — Show workspace repo branches + alignment
-  lpb-config workspace sync     — Create symlinks + git pull current branches
+  lpb-config workspace sync     — Clone missing repos, create symlinks, align branches, pull latest
   lpb-config workspace ensure   — Switch repos to correct branches for pipeline
 
   lpb-config validate           — Validate entire stack alignment to current pipeline
@@ -25,6 +25,9 @@ Environment:
   CONFIG_REMOTE     — Git remote URL (default: https://github.com/lpb-stack/config.git)
   CONFIG_REF        — Branch to track (default: main)
   LPB_GITHUB_TOKEN  — GitHub token for authenticated operations
+  LPB_WORKSPACE_ROOT    — Workspace root (default: /home/lpb/workspace)
+  LPB_AGENT_GIT         — Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)
+  LPB_STACK_REMOTE_BASE — Stack remote base (default: https://github.com/lpb-stack)
 """
 
 from __future__ import annotations
@@ -52,12 +55,13 @@ from localpibox.run import run_cmd  # noqa: E402
 
 # ─── Constants ──────────────────────────────────────────────────────────────
 
-DEFAULT_AGENT_DIR = "/home/lpb/.pi/agent"
-DEFAULT_REMOTE = "https://github.com/lpb-stack/config.git"
-DEFAULT_REF = "main"
+DEFAULT_AGENT_DIR = os.environ.get("AGENT_DIR", "/home/lpb/.pi/agent")
+DEFAULT_REMOTE = os.environ.get("CONFIG_REMOTE", "https://github.com/lpb-stack/config.git")
+DEFAULT_REF = os.environ.get("CONFIG_REF", "main")
 
-WORKSPACE_ROOT = Path("/home/lpb/workspace")
-AGENT_GIT = Path("/home/lpb/.pi/agent/git/github.com/lpb-stack")
+WORKSPACE_ROOT = Path(os.environ.get("LPB_WORKSPACE_ROOT", "/home/lpb/workspace"))
+AGENT_GIT = Path(os.environ.get(
+    "LPB_AGENT_GIT", f"{DEFAULT_AGENT_DIR}/git/github.com/lpb-stack"))
 
 MIGRATE_KEEP = {".initialized", "ssh-host-keys", "gh-config", "agent"}
 
@@ -555,6 +559,83 @@ def _ensure_branch_tracked(repo_path: Path, branch: str) -> bool:
     return False
 
 
+def _repo_remote(name: str) -> str:
+    """GitHub remote URL for a stack repo (LPB_STACK_REMOTE_BASE override for tests/offline)."""
+    base = os.environ.get("LPB_STACK_REMOTE_BASE", "https://github.com/lpb-stack").rstrip("/")
+    return f"{base}/{name}.git"
+
+
+def _is_dirty(path: Path) -> bool:
+    """True when the worktree has uncommitted changes (tracked or untracked)."""
+    out, _, _ = git(path, "status", "--porcelain")
+    return bool(out.strip())
+
+
+def _detached_ref(path: Path) -> str:
+    """Readable description of a detached HEAD ('detached @ 0.0.52-lpb-dev'); '' on a branch."""
+    out, _, code = git(path, "rev-parse", "--abbrev-ref", "HEAD")
+    if code != 0 or out.strip() != "HEAD":
+        return ""
+    tag, _, tcode = git(path, "describe", "--tags", "--exact-match")
+    if tcode == 0 and tag.strip():
+        return f"detached @ {tag.strip()}"
+    return f"detached @ {_repo_head(path)}"
+
+
+def _clone_repo(name: str, dest: Path, expected: str, cons: Console) -> bool:
+    """Clone a stack repo at *expected* into *dest*. Returns True on success."""
+    remote = _repo_remote(name)
+    cons.info(f"  {name}: cloning {remote} (branch: {expected}) ...")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    out, err, code = run_cmd(
+        _git_authenticated(["clone", "-q", "--branch", expected, remote, str(dest)]),
+        timeout=600,
+    )
+    if code != 0:
+        cons.error(f"  {name}: clone failed ({(err or out).strip()[:100]})")
+        shutil.rmtree(dest, ignore_errors=True)
+        return False
+    return True
+
+
+def _sync_repo(name: str, path: Path, expected: str, cons: Console) -> bool:
+    """Fetch, align the branch, and fast-forward *path* to origin/*expected*.
+
+    Returns True when the repo ends up on *expected* and up to date.
+    Dirty worktrees are left untouched and reported.
+    """
+    out, err, code = git_auth(path, "fetch", "--prune", "origin", timeout=180)
+    if code != 0:
+        cons.error(f"  {name}: fetch failed ({(err or out).strip()[:80]})")
+        return False
+
+    if _is_dirty(path):
+        st, _, _ = git(path, "status", "--short")
+        first = (st.strip().splitlines() or ["?"])[0][:60]
+        cons.warn(f"  {name}: uncommitted changes ({first}) — skipped (commit or stash first)")
+        return False
+
+    branch = _repo_branch(path)
+    if branch != expected:
+        before = _detached_ref(path) or branch or "?"
+        if not _ensure_branch_tracked(path, expected):
+            cons.error(f"  {name}: branch '{expected}' not found on origin")
+            return False
+        out, err, code = git(path, "checkout", "-q", expected)
+        if code != 0:
+            cons.error(f"  {name}: checkout '{expected}' failed ({err.strip()[:80]})")
+            return False
+        cons.info(f"  {name}: {before} → {expected}")
+
+    out, err, code = git(path, "merge", "--ff-only", "-q", f"origin/{expected}")
+    if code != 0:
+        cons.error(f"  {name}: fast-forward to origin/{expected} failed ({err.strip()[:80]})")
+        return False
+
+    cons.info(f"  {name}: {expected} @ {_repo_head(path)} ✅")
+    return True
+
+
 def cmd_workspace_status(pipeline: str, cons: Console) -> int:
     """Show workspace repo branches and alignment."""
     cons.info(f"Pipeline: {pipeline} (VERSION: {get_version()})")
@@ -573,11 +654,12 @@ def cmd_workspace_status(pipeline: str, cons: Console) -> int:
         branch = _repo_branch(path)
         head = _repo_head(path)
         symlink = " (symlink)" if is_sym else ""
+        where = branch if branch else (_detached_ref(path) or "(detached)")
 
         if branch == expected:
-            cons.info(f"  {name}: {branch}{symlink} ({head}) ✅")
+            cons.info(f"  {name}: {where}{symlink} ({head}) ✅")
         else:
-            cons.warn(f"  {name}: {branch} (expected: {expected}){symlink} ({head}) ❌")
+            cons.warn(f"  {name}: {where} (expected: {expected}){symlink} ({head}) ❌")
             all_aligned = False
 
     # Config repo
@@ -605,68 +687,90 @@ def cmd_workspace_status(pipeline: str, cons: Console) -> int:
 
 
 def cmd_workspace_sync(pipeline: str, cons: Console) -> int:
-    """Create symlinks + git pull current branches."""
-    cons.info(f"Syncing workspace for pipeline: {pipeline}")
+    """Prepare the workspace for *pipeline*:
+
+    - clone missing repos (extension clones + real workspace repos)
+    - create/repair symlinks for extension repos
+    - check out the pipeline's expected branch (fixes detached-HEAD checkouts
+      left behind by pi's pinned-tag extension loads)
+    - fast-forward to origin
+
+    Returns 0 only when every repo is on the expected branch and up to date.
+    """
+    cons.info(f"Preparing workspace for pipeline: {pipeline}")
     cons.info("")
 
-    # Create symlinks for extension repos
-    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
-        if not is_sym:
-            continue
+    prepared = True
+    WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
 
+    for name, is_sym, _is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
         expected = dev_branch if pipeline == "dev" else main_branch
-        ext_path = AGENT_GIT / name
-        ws_path = WORKSPACE_ROOT / name
 
-        if ext_path.exists():
-            # Remove existing symlink or file
-            if ws_path.is_symlink() or ws_path.exists():
-                if ws_path.is_symlink():
-                    ws_path.unlink()
-                elif ws_path.is_dir():
-                    shutil.rmtree(ws_path)
-                else:
-                    ws_path.unlink()
-            ws_path.symlink_to(ext_path)
-            cons.info(f"  {name}: symlink → {ext_path}")
-
-            # Pull latest
-            out, err, code = git_auth(ext_path, "pull", "--ff-only")
-            if code == 0:
-                cons.info(f"  {name}: pulled ✅")
-            else:
-                cons.warn(f"  {name}: pull failed ({err.strip()[:80]})")
-        else:
-            cons.warn(f"  {name}: extension not found at {ext_path}")
-
-    # Pull real repos
-    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
         if is_sym:
+            # Extension repos live in the agent git area; the workspace entry is a symlink
+            ext_path = AGENT_GIT / name
+            ws_path = WORKSPACE_ROOT / name
+
+            if not (ext_path / ".git").exists():
+                if not _clone_repo(name, ext_path, expected, cons):
+                    prepared = False
+                    continue
+
+            if ws_path.is_symlink():
+                if ws_path.resolve() != ext_path.resolve():
+                    ws_path.unlink()
+                    ws_path.symlink_to(ext_path)
+                    cons.info(f"  {name}: symlink → {ext_path}")
+            elif ws_path.is_dir():
+                if (ws_path / ".git").exists():
+                    rem, _, _ = git(ws_path, "remote", "get-url", "origin")
+                    if rem.strip() == _repo_remote(name):
+                        shutil.rmtree(ws_path)
+                        ws_path.symlink_to(ext_path)
+                        cons.info(f"  {name}: replaced real clone with symlink → {ext_path}")
+                    else:
+                        cons.error(f"  {name}: {ws_path} is a git repo with a different remote — left untouched")
+                        prepared = False
+                        continue
+                else:
+                    cons.error(f"  {name}: {ws_path} exists but is not a git repo — left untouched")
+                    prepared = False
+                    continue
+            else:
+                ws_path.symlink_to(ext_path)
+                cons.info(f"  {name}: symlink → {ext_path}")
+
+            if not _sync_repo(name, ext_path, expected, cons):
+                prepared = False
             continue
+
+        # Real repos live in the workspace root
         path = _resolve_repo_path(name)
         if path is None:
-            continue
+            if not _clone_repo(name, WORKSPACE_ROOT / name, expected, cons):
+                prepared = False
+                continue
+            path = WORKSPACE_ROOT / name
 
-        expected = dev_branch if pipeline == "dev" else main_branch
-        out, err, code = git_auth(path, "pull", "--ff-only")
-        if code == 0:
-            cons.info(f"  {name}: pulled ✅")
-        else:
-            cons.warn(f"  {name}: pull failed ({err.strip()[:80]})")
+        if not _sync_repo(name, path, expected, cons):
+            prepared = False
 
-    # Pull config repo
+    # Config repo (the agent dir itself)
     config_path = Path(DEFAULT_AGENT_DIR)
     if (config_path / ".git").exists():
-        config_branch = _repo_branch(config_path)
-        out, err, code = git(config_path, "pull", "--ff-only")
-        if code == 0:
-            cons.info(f"  config: pulled ✅")
-        else:
-            cons.warn(f"  config: pull failed ({err.strip()[:80]})")
+        config_expected = "dev" if pipeline == "dev" else "main"
+        if not _sync_repo("config", config_path, config_expected, cons):
+            prepared = False
+    else:
+        cons.warn(f"  config: no git repo at {config_path} — run 'lpb-config update' to install it")
+        prepared = False
 
     cons.info("")
-    cons.done("Workspace sync complete.")
-    return 0
+    if prepared:
+        cons.done("Workspace prepared.")
+        return 0
+    cons.warn("Workspace not fully prepared — see messages above.")
+    return 1
 
 
 def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> int:
@@ -697,6 +801,8 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
             cons.info(f"  {name}: {branch} ✅")
             continue
 
+        where = branch if branch else (_detached_ref(path) or "(detached)")
+
         # Repo is on wrong branch
         all_aligned = False
         if fix:
@@ -714,11 +820,11 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
             git(path, "checkout", expected)
             new_branch = _repo_branch(path)
             if new_branch == expected:
-                cons.info(f"  {name}: {branch} → {expected} ✅ (fixed)")
+                cons.info(f"  {name}: {where} → {expected} ✅ (fixed)")
             else:
                 cons.error(f"  {name}: checkout failed (still on {new_branch})")
         else:
-            actions.append(f"  • {name}: '{branch}' → '{expected}' (run --fix)")
+            actions.append(f"  • {name}: '{where}' → '{expected}' (run --fix)")
 
     # Config repo
     config_path = Path(DEFAULT_AGENT_DIR)
@@ -740,7 +846,8 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
                     else:
                         cons.error(f"  config: checkout failed: {err.strip()[:80]}")
             else:
-                actions.append(f"  • config: '{config_branch}' → '{config_expected}' (run --fix)")
+                where = config_branch if config_branch else (_detached_ref(config_path) or "(detached)")
+                actions.append(f"  • config: '{where}' → '{config_expected}' (run --fix)")
 
     cons.info("")
     if all_aligned:
@@ -1597,7 +1704,10 @@ def main(argv: list[str] | None = None) -> int:
             "  AGENT_DIR         Config repo path (default: /home/lpb/.pi/agent)\n"
             "  CONFIG_REMOTE     Git remote URL (default: https://github.com/lpb-stack/config.git)\n"
             "  CONFIG_REF        Branch to track (default: main)\n"
-            "  LPB_GITHUB_TOKEN  GitHub token for authenticated git operations\n\n"
+            "  LPB_GITHUB_TOKEN  GitHub token for authenticated git operations\n"
+            "  LPB_WORKSPACE_ROOT    Workspace root (default: /home/lpb/workspace)\n"
+            "  LPB_AGENT_GIT         Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)\n"
+            "  LPB_STACK_REMOTE_BASE Stack remote base (default: https://github.com/lpb-stack)\n\n"
             "Pipeline:\n"
             "  Detected from VERSION file or LPB_IMAGE_TAG env var.\n"
             "  Override with --tag dev|main on any command."
@@ -1647,7 +1757,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ws = sub.add_parser("workspace", help="Manage workspace repos")
     ws_sub = p_ws.add_subparsers(dest="workspace_command")
     _add_subparser(ws_sub, "status", "Show workspace repo branches + alignment")
-    p_ws_sync = _add_subparser(ws_sub, "sync", "Create symlinks + git pull current branches")
+    p_ws_sync = _add_subparser(ws_sub, "sync", "Prepare workspace: clone missing repos, create symlinks, align branches, pull latest")
     p_ws_sync.add_argument("--extensions", action="store_true",
                            help="sync settings.json extension pins to LPB_VERSION")
     p_ws_ensure = _add_subparser(ws_sub, "ensure", "Switch repos to correct branches for pipeline")
