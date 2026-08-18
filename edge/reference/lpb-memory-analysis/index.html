@@ -1385,7 +1385,7 @@
 <hr />
 <h2 id="current-architecture">Current Architecture<a class="headerlink" href="#current-architecture" title="Permanent link">&para;</a></h2>
 <h3 id="memory-flow">Memory Flow<a class="headerlink" href="#memory-flow" title="Permanent link">&para;</a></h3>
-<pre><code>┌─────────────────────────────────────────────────────────────────┐
+<div class="highlight"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────┐
 │                      Main Session                               │
 │                                                                 │
 │  User messages ─────────────────────────────────────────┐       │
@@ -1410,7 +1410,7 @@
 │  correct  ──► detects user corrections                       │
 │  consolidate ──► merges similar entries                     │
 └───────────────────────────────────────────────────────────────┘
-</code></pre>
+</code></pre></div>
 <h3 id="current-configuration">Current Configuration<a class="headerlink" href="#current-configuration" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1502,73 +1502,73 @@
 <h3 id="a-quick-wins-no-code-changes">A. Quick Wins (no code changes)<a class="headerlink" href="#a-quick-wins-no-code-changes" title="Permanent link">&para;</a></h3>
 <h4 id="1-switch-to-legacy-inject-mode">1. Switch to <code>legacy-inject</code> mode<a class="headerlink" href="#1-switch-to-legacy-inject-mode" title="Permanent link">&para;</a></h4>
 <p>Change <code>memoryMode</code> from <code>policy-only</code> to <code>legacy-inject</code> in <code>lpb-memory-config.json</code>:</p>
-<pre><code class="language-json">{
-  &quot;reviewTransport&quot;: &quot;subprocess&quot;,
-  &quot;llmModelOverride&quot;: &quot;qwen3.5-9b-FLM&quot;,
-  &quot;reviewTimeoutMs&quot;: 300000,
-  &quot;consolidationTimeoutMs&quot;: 300000,
-  &quot;memoryMode&quot;: &quot;legacy-inject&quot;
-}
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;reviewTransport&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subprocess&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;llmModelOverride&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;qwen3.5-9b-FLM&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;reviewTimeoutMs&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">300000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;consolidationTimeoutMs&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">300000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;memoryMode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;legacy-inject&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
 <p><strong>Effect:</strong> Memory (MEMORY.md, USER.md, failures.md) is injected into system prompt every turn. AI sees it without searching.</p>
 <p><strong>Trade-off:</strong> Uses more context tokens (~2-3KB of memory), but guarantees visibility.</p>
 <h4 id="2-compact-the-policy-prompt">2. Compact the policy prompt<a class="headerlink" href="#2-compact-the-policy-prompt" title="Permanent link">&para;</a></h4>
 <p>Switch <code>memoryPolicyStyle</code> to <code>"compact"</code> (15 lines instead of 40):</p>
-<pre><code class="language-json">{
-  &quot;memoryPolicyStyle&quot;: &quot;compact&quot;
-}
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;memoryPolicyStyle&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;compact&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
 <p><strong>Effect:</strong> Less context waste, more room for actual memory.</p>
 <h4 id="3-increase-review-frequency">3. Increase review frequency<a class="headerlink" href="#3-increase-review-frequency" title="Permanent link">&para;</a></h4>
 <p>Lower <code>nudgeInterval</code> to capture memories sooner:</p>
-<pre><code class="language-json">{
-  &quot;nudgeInterval&quot;: 5
-}
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;nudgeInterval&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span>
+<span class="p">}</span>
+</code></pre></div>
 <p><strong>Effect:</strong> Memory extracted every 5 turns instead of 10. Faster feedback loop.</p>
 <h4 id="4-fix-npu-model-routing">4. Fix NPU model routing<a class="headerlink" href="#4-fix-npu-model-routing" title="Permanent link">&para;</a></h4>
 <p>The failures.md has 12 entries about NPU model not routing correctly. This is a known issue. Debug path exists in <code>pi-child-process.ts</code> — check if <code>llmModelOverride</code> survives to CLI args.</p>
 <h3 id="b-medium-effort-extension-config-changes">B. Medium Effort (extension config changes)<a class="headerlink" href="#b-medium-effort-extension-config-changes" title="Permanent link">&para;</a></h3>
 <h4 id="5-hybrid-mode-inject-high-value-targets-only">5. Hybrid mode: inject high-value targets only<a class="headerlink" href="#5-hybrid-mode-inject-high-value-targets-only" title="Permanent link">&para;</a></h4>
 <p>If <code>legacy-inject</code> uses too much context, add a config option to inject only specific targets:</p>
-<pre><code class="language-json">{
-  &quot;memoryMode&quot;: &quot;legacy-inject&quot;,
-  &quot;injectedTargets&quot;: [&quot;user&quot;, &quot;failure&quot;]
-}
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;memoryMode&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;legacy-inject&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;injectedTargets&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;failure&quot;</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
 <p>Inject USER.md and failures.md (high-value), skip MEMORY.md (lower priority).</p>
 <p><strong>Requires:</strong> Small code change in <code>prompt-context.ts</code> to support target filtering.</p>
 <h4 id="6-add-project-scoped-memory-injection">6. Add project-scoped memory injection<a class="headerlink" href="#6-add-project-scoped-memory-injection" title="Permanent link">&para;</a></h4>
 <p>Currently <code>buildPromptContext</code> checks for project store. Ensure devstack project memory is separate and injected:</p>
-<pre><code class="language-json">{
-  &quot;projectsMemoryDir&quot;: &quot;~/.pi/agent/projects-memory/devstack&quot;
-}
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;projectsMemoryDir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;~/.pi/agent/projects-memory/devstack&quot;</span>
+<span class="p">}</span>
+</code></pre></div>
 <h3 id="c-long-term-extension-code-changes">C. Long Term (extension code changes)<a class="headerlink" href="#c-long-term-extension-code-changes" title="Permanent link">&para;</a></h3>
 <h4 id="7-smart-injection-inject-relevant-memory-on-demand">7. Smart injection: inject relevant memory on demand<a class="headerlink" href="#7-smart-injection-inject-relevant-memory-on-demand" title="Permanent link">&para;</a></h4>
 <p>Instead of all-or-nothing, inject memory entries matching current conversation topics. The FTS5 index already supports this:</p>
-<pre><code class="language-typescript">// Pseudocode
-const recentTopics = extractTopics(last5Messages);
-const relevantMemory = await store.searchMemories(recentTopics, { limit: 5 });
-return relevantMemory.map(m =&gt; m.content).join(&quot;\n&quot;);
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1">// Pseudocode</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">recentTopics</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">extractTopics</span><span class="p">(</span><span class="nx">last5Messages</span><span class="p">);</span>
+<span class="kd">const</span><span class="w"> </span><span class="nx">relevantMemory</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">store</span><span class="p">.</span><span class="nx">searchMemories</span><span class="p">(</span><span class="nx">recentTopics</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">limit</span><span class="o">:</span><span class="w"> </span><span class="kt">5</span><span class="w"> </span><span class="p">});</span>
+<span class="k">return</span><span class="w"> </span><span class="nx">relevantMemory</span><span class="p">.</span><span class="nx">map</span><span class="p">(</span><span class="nx">m</span><span class="w"> </span><span class="p">=&gt;</span><span class="w"> </span><span class="nx">m</span><span class="p">.</span><span class="nx">content</span><span class="p">).</span><span class="nx">join</span><span class="p">(</span><span class="s2">&quot;\n&quot;</span><span class="p">);</span>
+</code></pre></div>
 <p><strong>Requires:</strong> Topic extraction logic + integration into <code>buildPromptContext</code>.</p>
 <h4 id="8-memory-summary-in-system-prompt">8. Memory summary in system prompt<a class="headerlink" href="#8-memory-summary-in-system-prompt" title="Permanent link">&para;</a></h4>
 <p>Instead of full entries, inject a bullet-point summary:</p>
-<pre><code>&lt;memory-summary&gt;
+<div class="highlight"><pre><span></span><code>&lt;memory-summary&gt;
 • User prefers subprocess transport for memory ops
 • User wants root-cause fixes, not band-aids
 • NPU model routing issue known (12 failure entries)
 • LocalPibox stack: 6 repos, single-source versioning
 • Pi extension requires /new to reload changes
 &lt;/memory-summary&gt;
-</code></pre>
+</code></pre></div>
 <p><strong>Requires:</strong> Summarization pass (can use NPU model).</p>
 <h4 id="9-failure-injection-on-relevant-triggers">9. Failure injection on relevant triggers<a class="headerlink" href="#9-failure-injection-on-relevant-triggers" title="Permanent link">&para;</a></h4>
 <p>Inject failures from <code>failures.md</code> when the AI makes similar mistakes. Pattern-match failure keywords against AI output:</p>
-<pre><code>AI says: &quot;let's merge these branches&quot;
+<div class="highlight"><pre><span></span><code>AI says: &quot;let&#39;s merge these branches&quot;
 → Inject: &quot;NEVER delete or modify branches without explicit confirmation&quot;
-</code></pre>
+</code></pre></div>
 <p><strong>Requires:</strong> Failure keyword indexing + trigger detection.</p>
 <hr />
 <h2 id="recommended-action-plan">Recommended Action Plan<a class="headerlink" href="#recommended-action-plan" title="Permanent link">&para;</a></h2>

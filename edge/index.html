@@ -1454,73 +1454,72 @@
 <p>AI-powered development environment with the Pi coding agent, VSCodium editor, and agent-browser automation — all containerized.</p>
 <h2 id="quick-start">Quick Start<a class="headerlink" href="#quick-start" title="Permanent link">&para;</a></h2>
 <h3 id="option-1-one-line-installer-recommended">Option 1: One-line installer (recommended)<a class="headerlink" href="#option-1-one-line-installer-recommended" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Install the `lpb` launcher (adds it to ~/.local/bin/)
-curl -fsSL https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh | bash
+<div class="highlight"><pre><span></span><code><span class="c1"># Install the `lpb` launcher (adds it to ~/.local/bin/)</span>
+curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
 
-# Run devstack for your project
-lpb /path/to/your/project
+<span class="c1"># Run devstack for your project</span>
+lpb<span class="w"> </span>/path/to/your/project
 
-# Or start VSCodium with a welcome screen (user picks project)
+<span class="c1"># Or start VSCodium with a welcome screen (user picks project)</span>
 lpb
 
-# Common commands
-lpb --stop      # Stop the container
-lpb --logs      # View logs
-lpb --remove    # Remove everything
-lpb --config    # Show config file
-lpb --help      # Full usage
-</code></pre>
+<span class="c1"># Common commands</span>
+lpb<span class="w"> </span>--stop<span class="w">      </span><span class="c1"># Stop the container</span>
+lpb<span class="w"> </span>--logs<span class="w">      </span><span class="c1"># View logs</span>
+lpb<span class="w"> </span>--remove<span class="w">    </span><span class="c1"># Remove everything</span>
+lpb<span class="w"> </span>--config<span class="w">    </span><span class="c1"># Show config file</span>
+lpb<span class="w"> </span>--help<span class="w">      </span><span class="c1"># Full usage</span>
+</code></pre></div>
 <h3 id="option-2-manual-podman-run">Option 2: Manual podman run<a class="headerlink" href="#option-2-manual-podman-run" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Pull the latest image
-podman pull ghcr.io/lpb-stack/devstack:latest
+<div class="highlight"><pre><span></span><code><span class="c1"># Pull the latest image</span>
+podman<span class="w"> </span>pull<span class="w"> </span>ghcr.io/lpb-stack/devstack:latest
 
-# Run with a project folder
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    -e ED_PORT=3000 \
-    ghcr.io/lpb-stack/devstack:latest
+<span class="c1"># Run with a project folder</span>
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/your/project:/home/lpb/workspace/myproject:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-e<span class="w"> </span><span class="nv">ED_PORT</span><span class="o">=</span><span class="m">3000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
 
-# Open browser to http://localhost:3000 (token: devsession)
-</code></pre>
+<span class="c1"># Open browser to http://localhost:3000 (token: devsession)</span>
+</code></pre></div>
 <h3 id="interactive-mode">Interactive mode<a class="headerlink" href="#interactive-mode" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Run and get a shell inside the container
-podman run -it --name lpb-stack --network host --userns keep-id \
-    -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    -e ED_PORT=3000 \
-    ghcr.io/lpb-stack/devstack:latest
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Run and get a shell inside the container</span>
+podman<span class="w"> </span>run<span class="w"> </span>-it<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/your/project:/home/lpb/workspace/myproject:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-e<span class="w"> </span><span class="nv">ED_PORT</span><span class="o">=</span><span class="m">3000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+</code></pre></div>
 <h3 id="update-extensions-no-rebuild">Update extensions (no rebuild)<a class="headerlink" href="#update-extensions-no-rebuild" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Inside the running container
-podman exec -it lpb-stack update --extensions
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Inside the running container</span>
+podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>update<span class="w"> </span>--extensions
+</code></pre></div>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h2>
-<pre><code class="language-mermaid">flowchart TB
+<pre class="mermaid"><code>flowchart TB
     subgraph Host
-        H1[&quot;~/projects/myproject/&quot;]
-        H2[&quot;~/.lpb-stack/state/&quot;]
-        H3[&quot;~/.lpb-stack/agent-browser/&quot;]
-        H4[&quot;Lemonade (:13305)&quot;]
+        H1["~/projects/myproject/"]
+        H2["~/.lpb-stack/state/"]
+        H3["~/.lpb-stack/agent-browser/"]
+        H4["Lemonade (:13305)"]
     end
 
-    subgraph Image[&quot;Image: ghcr.io/lpb-stack/devstack:latest&quot;]
+    subgraph Image["Image: ghcr.io/lpb-stack/devstack:latest"]
         direction TB
-        I1[&quot;Ubuntu 26.04 + Node.js 24&quot;]
-        I2[&quot;Pi monorepo (built, patched)&quot;]
-        I3[&quot;VSCodium server (headless, port 3000)&quot;]
-        I4[&quot;Chrome (agent-browser automation)&quot;]
-        I5[&quot;Extensions: lemonade, memory, mcp-adapter, subagents&quot;]
-        I6[&quot;Config: settings, mcp, skills, agents&quot;]
+        I1["Ubuntu 26.04 + Node.js 24"]
+        I2["Pi monorepo (built, patched)"]
+        I3["VSCodium server (headless, port 3000)"]
+        I4["Chrome (agent-browser automation)"]
+        I5["Extensions: lemonade, memory, mcp-adapter, subagents"]
+        I6["Config: settings, mcp, skills, agents"]
     end
 
     H1 --&gt;|bind mount| I1
     H2 --&gt;|bind mount| I2
     H3 --&gt;|bind mount| I3
-    H4 --&gt;|host network| I4
-</code></pre>
+    H4 --&gt;|host network| I4</code></pre>
 <p>Mount structure:
 - Host: <code>$PROJECT → /home/lpb/workspace/myproject/</code>
 - Host: <code>~/.lpb-stack/state → /home/lpb/.pi</code> (persistent agent state)
@@ -1555,70 +1554,69 @@ podman exec -it lpb-stack update --extensions
 </tbody>
 </table>
 <h3 id="update-examples">Update examples<a class="headerlink" href="#update-examples" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Update extensions to latest release
-podman exec -it lpb-stack update --extensions
+<div class="highlight"><pre><span></span><code><span class="c1"># Update extensions to latest release</span>
+podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>update<span class="w"> </span>--extensions
 
-# Patches are baked into the image — to update, rebuild the container
-# with updated fork branches in lpb.stack.env.
-</code></pre>
+<span class="c1"># Patches are baked into the image — to update, rebuild the container</span>
+<span class="c1"># with updated fork branches in lpb.stack.env.</span>
+</code></pre></div>
 <h2 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h2>
 <h3 id="single-project">Single project<a class="headerlink" href="#single-project" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Run with any project folder
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /home/user/projects/myproject:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Run with any project folder</span>
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/home/user/projects/myproject:/home/lpb/workspace/myproject:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+</code></pre></div>
 <p>The project mounts at <code>/workspace/myproject/</code> so tools see the correct project name (not "workspace").</p>
 <h3 id="multiple-projects">Multiple projects<a class="headerlink" href="#multiple-projects" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># First project
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=3000 \
-    -v /path/to/project-a:/home/lpb/workspace/project-a:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:3000
+<div class="highlight"><pre><span></span><code><span class="c1"># First project</span>
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-e<span class="w"> </span><span class="nv">ED_PORT</span><span class="o">=</span><span class="m">3000</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/project-a:/home/lpb/workspace/project-a:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+<span class="c1"># → http://localhost:3000</span>
 
-# Stop and run another
-podman stop lpb-stack
-podman rm lpb-stack
+<span class="c1"># Stop and run another</span>
+podman<span class="w"> </span>stop<span class="w"> </span>lpb-stack
+podman<span class="w"> </span>rm<span class="w"> </span>lpb-stack
 
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=3001 \
-    -v /path/to/project-b:/home/lpb/workspace/project-b:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:3001
-</code></pre>
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-e<span class="w"> </span><span class="nv">ED_PORT</span><span class="o">=</span><span class="m">3001</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/project-b:/home/lpb/workspace/project-b:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+<span class="c1"># → http://localhost:3001</span>
+</code></pre></div>
 <h2 id="update-flow">Update Flow<a class="headerlink" href="#update-flow" title="Permanent link">&para;</a></h2>
-<pre><code class="language-mermaid">flowchart LR
-    subgraph Source[&quot;Source&quot;]
-        G[&quot;GitHub\n(your code)&quot;]
+<pre class="mermaid"><code>flowchart LR
+    subgraph Source["Source"]
+        G["GitHub\n(your code)"]
     end
 
-    subgraph Pipeline[&quot;CI/CD Pipeline&quot;]
-        CI[&quot;GitHub Actions\n(push / weekly)&quot;]
+    subgraph Pipeline["CI/CD Pipeline"]
+        CI["GitHub Actions\n(push / weekly)"]
     end
 
-    subgraph Registry[&quot;Registry&quot;]
-        GHCR[&quot;GHCR\nghcr.io/lpb-stack/devstack:latest&quot;]
+    subgraph Registry["Registry"]
+        GHCR["GHCR\nghcr.io/lpb-stack/devstack:latest"]
     end
 
-    subgraph Runtime[&quot;Runtime (host)&quot;]
-        PODMAN_PULL[&quot;podman pull\n(image)&quot;]
-        PODMAN_RUN[&quot;podman run\n(launch)&quot;]
-        UPDATE[&quot;update\n--extensions\n(at boot)&quot;]
+    subgraph Runtime["Runtime (host)"]
+        PODMAN_PULL["podman pull\n(image)"]
+        PODMAN_RUN["podman run\n(launch)"]
+        UPDATE["update\n--extensions\n(at boot)"]
     end
 
     G --&gt;|push to main| CI
     CI --&gt;|build &amp; push| GHCR
     GHCR --&gt;|pull| PODMAN_PULL
     PODMAN_PULL --&gt; PODMAN_RUN
-    PODMAN_RUN --&gt; UPDATE
-</code></pre>
+    PODMAN_RUN --&gt; UPDATE</code></pre>
 <p><strong>What gets updated:</strong></p>
 <table>
 <thead>
@@ -1830,14 +1828,14 @@ LocalPibox originals.</p>
 <li>Clone <strong>this</strong> repo (devstack) and edit <code>lpb.stack.env</code> at the root to point
    at your forks:</li>
 </ol>
-<p><code>sh
-   export LPB_PI_FORK=https://github.com/&lt;you&gt;/pi.git
-   export LPB_PI_REF=main                 # your branch
-   export LPB_CONFIG_FORK=https://github.com/&lt;you&gt;/config.git
-   export LPB_CONFIG_REF=main             # your branch
-   export LPB_IMAGE_CLI=ghcr.io/&lt;you&gt;/devstack:dev-cli
-   export LPB_IMAGE_WEB=ghcr.io/&lt;you&gt;/devstack:dev-web
-   export LPB_CONTAINER_NAME=mybox        # avoid colliding with lpb-stack</code></p>
+<div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">LPB_PI_FORK</span><span class="o">=</span>https://github.com/&lt;you&gt;/pi.git
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_PI_REF</span><span class="o">=</span>main<span class="w">                 </span><span class="c1"># your branch</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_CONFIG_FORK</span><span class="o">=</span>https://github.com/&lt;you&gt;/config.git
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_CONFIG_REF</span><span class="o">=</span>main<span class="w">             </span><span class="c1"># your branch</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_IMAGE_CLI</span><span class="o">=</span>ghcr.io/&lt;you&gt;/devstack:dev-cli
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_IMAGE_WEB</span><span class="o">=</span>ghcr.io/&lt;you&gt;/devstack:dev-web
+<span class="nb">export</span><span class="w"> </span><span class="nv">LPB_CONTAINER_NAME</span><span class="o">=</span>mybox<span class="w">        </span><span class="c1"># avoid colliding with lpb-stack</span>
+</code></pre></div>
 <p>(Or pass them as <code>docker build --build-arg PI_FORK=... --build-arg
    CONFIG_FORK=...</code> without editing the file.)
 3. Build and push the image (locally, or via the GitHub Actions workflow,
@@ -1850,20 +1848,20 @@ LocalPibox originals.</p>
 <h3 id="repointing-the-config-preset-without-a-rebuild">Repointing the config preset without a rebuild<a class="headerlink" href="#repointing-the-config-preset-without-a-rebuild" title="Permanent link">&para;</a></h3>
 <p>The config preset is a git clone at <code>~/.pi/agent/</code> (container). After
 first boot you can repoint it live — no image rebuild needed:</p>
-<pre><code class="language-sh">podman exec -it lpb-stack bash
-cd ~/.pi/agent/
-git remote set-url origin https://github.com/&lt;you&gt;/config.git
-git pull --ff-only origin &lt;your-branch&gt;
-# re-seed the runtime copy from your preset
-# Config repo IS ~/.pi/ — managed by start.sh at container startup
-</code></pre>
+<div class="highlight"><pre><span></span><code>podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>bash
+<span class="nb">cd</span><span class="w"> </span>~/.pi/agent/
+git<span class="w"> </span>remote<span class="w"> </span>set-url<span class="w"> </span>origin<span class="w"> </span>https://github.com/&lt;you&gt;/config.git
+git<span class="w"> </span>pull<span class="w"> </span>--ff-only<span class="w"> </span>origin<span class="w"> </span>&lt;your-branch&gt;
+<span class="c1"># re-seed the runtime copy from your preset</span>
+<span class="c1"># Config repo IS ~/.pi/ — managed by start.sh at container startup</span>
+</code></pre></div>
 <h3 id="repointing-extensions-at-runtime-no-rebuild">Repointing extensions at runtime (no rebuild)<a class="headerlink" href="#repointing-extensions-at-runtime-no-rebuild" title="Permanent link">&para;</a></h3>
 <p>Extensions are not baked in; they are installed on first boot from
 <code>settings.json#packages</code>. Repoint them from the running container:</p>
-<pre><code class="language-sh">podman exec -it lpb-stack pi remove git:github.com/lpb-stack/lemonade-pi-plugin
-podman exec -it lpb-stack pi install git:github.com/&lt;you&gt;/lemonade-pi-plugin@&lt;your-branch&gt;
-podman exec -it lpb-stack pi update --extensions
-</code></pre>
+<div class="highlight"><pre><span></span><code>podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>pi<span class="w"> </span>remove<span class="w"> </span>git:github.com/lpb-stack/lemonade-pi-plugin
+podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>pi<span class="w"> </span>install<span class="w"> </span>git:github.com/&lt;you&gt;/lemonade-pi-plugin@&lt;your-branch&gt;
+podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>pi<span class="w"> </span>update<span class="w"> </span>--extensions
+</code></pre></div>
 <p>Changes apply at the <strong>next pi startup</strong> (or <code>/reload</code> in a running session
 for config).</p>
 <h2 id="cicd">CI/CD<a class="headerlink" href="#cicd" title="Permanent link">&para;</a></h2>
@@ -1883,42 +1881,42 @@ for config).</p>
 </ul>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Permanent link">&para;</a></h2>
 <h3 id="port-already-in-use">Port already in use<a class="headerlink" href="#port-already-in-use" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Check who's using the port
-lsof -i :3000
+<div class="highlight"><pre><span></span><code><span class="c1"># Check who&#39;s using the port</span>
+lsof<span class="w"> </span>-i<span class="w"> </span>:3000
 
-# Stop existing container
-podman stop lpb-stack
-podman rm lpb-stack
+<span class="c1"># Stop existing container</span>
+podman<span class="w"> </span>stop<span class="w"> </span>lpb-stack
+podman<span class="w"> </span>rm<span class="w"> </span>lpb-stack
 
-# Run with new port
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=8080 \
-    -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:8080
-</code></pre>
+<span class="c1"># Run with new port</span>
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-e<span class="w"> </span><span class="nv">ED_PORT</span><span class="o">=</span><span class="m">8080</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/project:/home/lpb/workspace/myproject:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+<span class="c1"># → http://localhost:8080</span>
+</code></pre></div>
 <h3 id="auth-token-expired">Auth token expired<a class="headerlink" href="#auth-token-expired" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Login in the editor (Ctrl+Shift+P → &quot;Pi: Login&quot;)
-# Or via CLI
-podman exec -it lpb-stack pi login
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Login in the editor (Ctrl+Shift+P → &quot;Pi: Login&quot;)</span>
+<span class="c1"># Or via CLI</span>
+podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>pi<span class="w"> </span>login
+</code></pre></div>
 <h3 id="outdated-extensions">Outdated extensions<a class="headerlink" href="#outdated-extensions" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash">podman exec -it lpb-stack update --extensions
-</code></pre>
+<div class="highlight"><pre><span></span><code>podman<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>lpb-stack<span class="w"> </span>update<span class="w"> </span>--extensions
+</code></pre></div>
 <h3 id="need-a-rebuild">Need a rebuild<a class="headerlink" href="#need-a-rebuild" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Pull from GHCR (newer build)
-podman pull ghcr.io/lpb-stack/devstack:latest
-podman stop lpb-stack &amp;&amp; podman rm lpb-stack
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Pull from GHCR (newer build)</span>
+podman<span class="w"> </span>pull<span class="w"> </span>ghcr.io/lpb-stack/devstack:latest
+podman<span class="w"> </span>stop<span class="w"> </span>lpb-stack<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>podman<span class="w"> </span>rm<span class="w"> </span>lpb-stack
+podman<span class="w"> </span>run<span class="w"> </span>-d<span class="w"> </span>--name<span class="w"> </span>lpb-stack<span class="w"> </span>--network<span class="w"> </span>host<span class="w"> </span>--userns<span class="w"> </span>keep-id<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>/path/to/project:/home/lpb/workspace/myproject:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/state:/home/lpb/.pi:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-v<span class="w"> </span>~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>ghcr.io/lpb-stack/devstack:latest
+</code></pre></div>
 <h2 id="directory-structure">Directory Structure<a class="headerlink" href="#directory-structure" title="Permanent link">&para;</a></h2>
-<pre><code class="language-mermaid">classDiagram
+<pre class="mermaid"><code>classDiagram
     class devstack {
         +Dockerfile
         +lpb.stack.env
@@ -1955,8 +1953,7 @@ podman run -d --name lpb-stack --network host --userns keep-id \
     devstack --&gt; scripts : contains
     devstack --&gt; doc : contains
     devstack --&gt; support : contains
-    devstack --&gt; workspace : contains
-</code></pre>
+    devstack --&gt; workspace : contains</code></pre>
 <h2 id="related-repositories">Related Repositories<a class="headerlink" href="#related-repositories" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="https://github.com/lpb-stack/pi">lpb-stack/pi</a> — Forked Pi monorepo with Qwen reasoning support</li>

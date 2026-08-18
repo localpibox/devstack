@@ -1012,10 +1012,10 @@ local version bumping.</p>
 <li>Using <code>lpb --version</code>, <code>lpb --tag</code>, <code>lpb.py</code>, <code>lpb-config</code></li>
 </ul>
 <h2 id="versioning-model-option-c">Versioning Model (Option C)<a class="headerlink" href="#versioning-model-option-c" title="Permanent link">&para;</a></h2>
-<pre><code>Single source: devstack/VERSION
+<div class="highlight"><pre><span></span><code>Single source: devstack/VERSION
 CI: tests pass → bump patch (branch-aware suffix) → commit to pushed branch
     → tag other 5 repos → build + publish images
-</code></pre>
+</code></pre></div>
 <ul>
 <li><strong>devstack/VERSION</strong> — the only VERSION file in the stack (e.g. <code>0.0.46-lpb-dev</code>)</li>
 <li><strong>Format:</strong> dev pipeline <code>0.0.x-lpb-dev</code>, main pipeline <code>0.0.x-lpb</code></li>
@@ -1083,7 +1083,7 @@ CI: tests pass → bump patch (branch-aware suffix) → commit to pushed branch
 the Python package name</strong> (<code>scripts/localpibox/</code>, <code>import localpibox</code>); only
 the GitHub org and GHCR paths use <code>lpb-stack</code>.</p>
 <h2 id="repository-layout">Repository Layout<a class="headerlink" href="#repository-layout" title="Permanent link">&para;</a></h2>
-<pre><code>Workspace:
+<div class="highlight"><pre><span></span><code>Workspace:
   /home/lpb/workspace/devstack            (real clone, single source)
   /home/lpb/workspace/pi                  (real clone, lpb-dev/lpb)
   /home/lpb/workspace/pi-subagents        (symlink → agent git clone)
@@ -1101,7 +1101,7 @@ Extension clones (pi loads these per settings.json pins):
    They are NOT baked into Docker images.
    CI clones pi into /opt/pi-src during the Docker build; workspace/pi is
    for local development only.
-</code></pre>
+</code></pre></div>
 <h2 id="branch-strategy">Branch Strategy<a class="headerlink" href="#branch-strategy" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong><code>dev</code></strong> (devstack, config, lpb-memory): primary development. Default on GitHub.</li>
@@ -1115,21 +1115,21 @@ Extension clones (pi loads these per settings.json pins):
 <p><strong>Rule:</strong> always work on the default branch (<code>dev</code> or <code>lpb-dev</code>).</p>
 <h2 id="commit-author-convention">Commit Author Convention<a class="headerlink" href="#commit-author-convention" title="Permanent link">&para;</a></h2>
 <p>The only available identity is:</p>
-<pre><code>localpibox &lt;localpibox@gmail.com&gt;
-</code></pre>
+<div class="highlight"><pre><span></span><code>localpibox &lt;localpibox@gmail.com&gt;
+</code></pre></div>
 <p>CI commits use <code>ci-localpibox &lt;ci@lpb-stack.dev&gt;</code>.</p>
 <h2 id="stable-release-procedure-dev-main">Stable Release Procedure (dev → main)<a class="headerlink" href="#stable-release-procedure-dev-main" title="Permanent link">&para;</a></h2>
 <p>There is no local version script — <strong><code>lpb-config release</code> is the tool</strong>
 (<code>support/version.sh</code> was removed as dead code).</p>
-<pre><code class="language-bash"># 1. Readiness check (all 6 repos, non-destructive, fetches first)
-lpb-config release status
+<div class="highlight"><pre><span></span><code><span class="c1"># 1. Readiness check (all 6 repos, non-destructive, fetches first)</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>status
 
-# 2. Inspect the exact plan without changing anything
-lpb-config release promote --dry-run
+<span class="c1"># 2. Inspect the exact plan without changing anything</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>promote<span class="w"> </span>--dry-run
 
-# 3. Promote (interactive confirmation)
-lpb-config release promote
-</code></pre>
+<span class="c1"># 3. Promote (interactive confirmation)</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>promote
+</code></pre></div>
 <p>What promote does per repo:
 - <strong>ff / clean 3-way:</strong> resets local stable branch to <code>origin/&lt;stable&gt;</code>,
   merges <code>origin/&lt;dev&gt;</code>, pushes
@@ -1147,29 +1147,29 @@ lpb-config release promote
 1. Bumps VERSION to <code>0.0.(x+1)-lpb</code> on <code>main</code>
 2. Tags the 5 repos on their stable branches (<code>lpb</code>/<code>main</code>)
 3. Builds <code>:{v}-cli/web</code>, <code>:main-cli/web</code>, <code>:latest-cli/web</code>, <code>:{sha}-cli/web</code></p>
-<p>Then align the runtime to the stable pipeline:</p>
-<pre><code class="language-bash">lpb-config --tag main workspace sync --extensions   # pins → stable tag
-pi update --extensions
-lpb --tag main validate                            # or lpb-config --tag main validate
-</code></pre>
+<p>Then align the runtime to the stable pipeline:
+<div class="highlight"><pre><span></span><code>lpb-config<span class="w"> </span>--tag<span class="w"> </span>main<span class="w"> </span>workspace<span class="w"> </span>sync<span class="w"> </span>--extensions<span class="w">   </span><span class="c1"># pins → stable tag</span>
+pi<span class="w"> </span>update<span class="w"> </span>--extensions
+lpb<span class="w"> </span>--tag<span class="w"> </span>main<span class="w"> </span>validate<span class="w">                            </span><span class="c1"># or lpb-config --tag main validate</span>
+</code></pre></div></p>
 <p>Flags: <code>--yes</code> (skip confirmation), <code>--dry-run</code> (plan only), <code>--rebase</code>
 (first-release mode for unrelated histories). Re-runs are safe: promoted
 repos fast-forward or no-op.</p>
 <h2 id="stack-validation-sync-lpb-config">Stack Validation &amp; Sync (lpb-config)<a class="headerlink" href="#stack-validation-sync-lpb-config" title="Permanent link">&para;</a></h2>
 <p><strong><code>lpb-config</code></strong> — single tool for config repo, workspace, and validation:</p>
-<pre><code class="language-bash">lpb-config validate                     # Validate entire stack alignment
-lpb-config workspace status             # Show branches + alignment
-lpb-config workspace sync               # Symlinks + git pull current branches
-lpb-config workspace sync --extensions  # Sync settings.json pins to stack version
-lpb-config workspace ensure [--fix]     # Check/fix branch alignment for pipeline
-lpb-config status | update | reset      # Config repo management
-lpb-config align                        # Update extension pins to latest GitHub tags
-lpb-config memory show | setup          # lpb-memory extension config wizard
-lpb-config release status | promote     # Stable release (see above)
+<div class="highlight"><pre><span></span><code>lpb-config<span class="w"> </span>validate<span class="w">                     </span><span class="c1"># Validate entire stack alignment</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>status<span class="w">             </span><span class="c1"># Show branches + alignment</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>sync<span class="w">               </span><span class="c1"># Symlinks + git pull current branches</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>sync<span class="w"> </span>--extensions<span class="w">  </span><span class="c1"># Sync settings.json pins to stack version</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>ensure<span class="w"> </span><span class="o">[</span>--fix<span class="o">]</span><span class="w">     </span><span class="c1"># Check/fix branch alignment for pipeline</span>
+lpb-config<span class="w"> </span>status<span class="w"> </span><span class="p">|</span><span class="w"> </span>update<span class="w"> </span><span class="p">|</span><span class="w"> </span>reset<span class="w">      </span><span class="c1"># Config repo management</span>
+lpb-config<span class="w"> </span>align<span class="w">                        </span><span class="c1"># Update extension pins to latest GitHub tags</span>
+lpb-config<span class="w"> </span>memory<span class="w"> </span>show<span class="w"> </span><span class="p">|</span><span class="w"> </span>setup<span class="w">          </span><span class="c1"># lpb-memory extension config wizard</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>status<span class="w"> </span><span class="p">|</span><span class="w"> </span>promote<span class="w">     </span><span class="c1"># Stable release (see above)</span>
 
-# Pipeline override (dev vs main) on any command:
-lpb-config --tag main validate
-</code></pre>
+<span class="c1"># Pipeline override (dev vs main) on any command:</span>
+lpb-config<span class="w"> </span>--tag<span class="w"> </span>main<span class="w"> </span>validate
+</code></pre></div>
 <h2 id="settingsjson-lifecycle">Settings.json Lifecycle<a class="headerlink" href="#settingsjson-lifecycle" title="Permanent link">&para;</a></h2>
 <p><strong>Template-driven generation</strong>, not git-tracked:</p>
 <ol>
@@ -1233,15 +1233,15 @@ old cross-repo bump model).</p>
   <code>~/.lpb-stack/devstack/</code> config + <code>lpb.stack.env</code>/<code>lpb.conf.env</code></li>
 </ul>
 <h2 id="creating-lpb-dev-with-an-upstream-base">Creating lpb-dev with an upstream base<a class="headerlink" href="#creating-lpb-dev-with-an-upstream-base" title="Permanent link">&para;</a></h2>
-<pre><code class="language-bash">cd /path/to/repo
-git remote add upstream &lt;upstream-url&gt; 2&gt;/dev/null; git fetch upstream
-git checkout -b lpb-dev &lt;upstream-tag&gt;      # e.g. v0.84.2
-git cherry-pick &lt;lpb-commits&gt;...            # or merge, keeping history clean
-git branch -f lpb lpb-dev                   # (or keep lpb behind until stable)
-git push origin lpb-dev
-git push origin lpb --force-with-lease      # explicit user confirmation required
-gh api repos/lpb-stack/&lt;repo&gt; --method PATCH -f default_branch=lpb-dev
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>/path/to/repo
+git<span class="w"> </span>remote<span class="w"> </span>add<span class="w"> </span>upstream<span class="w"> </span>&lt;upstream-url&gt;<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="p">;</span><span class="w"> </span>git<span class="w"> </span>fetch<span class="w"> </span>upstream
+git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>lpb-dev<span class="w"> </span>&lt;upstream-tag&gt;<span class="w">      </span><span class="c1"># e.g. v0.84.2</span>
+git<span class="w"> </span>cherry-pick<span class="w"> </span>&lt;lpb-commits&gt;...<span class="w">            </span><span class="c1"># or merge, keeping history clean</span>
+git<span class="w"> </span>branch<span class="w"> </span>-f<span class="w"> </span>lpb<span class="w"> </span>lpb-dev<span class="w">                   </span><span class="c1"># (or keep lpb behind until stable)</span>
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>lpb-dev
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>lpb<span class="w"> </span>--force-with-lease<span class="w">      </span><span class="c1"># explicit user confirmation required</span>
+gh<span class="w"> </span>api<span class="w"> </span>repos/lpb-stack/&lt;repo&gt;<span class="w"> </span>--method<span class="w"> </span>PATCH<span class="w"> </span>-f<span class="w"> </span><span class="nv">default_branch</span><span class="o">=</span>lpb-dev
+</code></pre></div>
 <h2 id="cleanup-checklist">Cleanup Checklist<a class="headerlink" href="#cleanup-checklist" title="Permanent link">&para;</a></h2>
 <p>Before declaring a repo clean:
 - [ ] Default branch set correctly (<code>dev</code> or <code>lpb-dev</code>)

@@ -1499,17 +1499,17 @@ Status: Complete — Qwen3.6 reasoning + vision fully operational</p>
 2. <code>model</code> field in agent <code>.md</code> frontmatter
 3. <strong><code>globalDefaultModel</code></strong> from <code>pi-defaults.json</code> / <code>subagents.json</code> (centralized registry)
 4. Parent session model (inherit)</p>
-<p><strong>Configuration for local-first:</strong></p>
-<pre><code class="language-json">{
-  &quot;extensions&quot;: {
-    &quot;@tintinweb/pi-subagents&quot;: {
-      &quot;globalDefaultModel&quot;: null,
-      &quot;disableDefaultAgents&quot;: true
-    }
-  }
-}
-</code></pre>
-<p><code>globalDefaultModel: null</code> means subagents inherit whatever model the parent session uses — <strong>zero Anthropic dependency</strong>.</p>
+<p><strong>Configuration for local-first:</strong>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;@tintinweb/pi-subagents&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;globalDefaultModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;disableDefaultAgents&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<code>globalDefaultModel: null</code> means subagents inherit whatever model the parent session uses — <strong>zero Anthropic dependency</strong>.</p>
 <p><strong>Verdict:</strong> This is the <strong>glue that makes the local-only stack work end-to-end</strong> — it ensures subagents (like <code>vision-analysis</code>, <code>researcher</code>, etc.) all use the session's local Qwen model instead of falling back to Anthropic.</p>
 <hr />
 <h2 id="lemonade-fork-lpb-stacklemonade-pi-plugin">Lemonade Fork (<code>lpb-stack/lemonade-pi-plugin</code>)<a class="headerlink" href="#lemonade-fork-lpb-stacklemonade-pi-plugin" title="Permanent link">&para;</a></h2>
@@ -1749,16 +1749,16 @@ Status: Complete — Qwen3.6 reasoning + vision fully operational</p>
 <h2 id="key-design-decisions">Key Design Decisions<a class="headerlink" href="#key-design-decisions" title="Permanent link">&para;</a></h2>
 <h3 id="patch-model">Patch Model<a class="headerlink" href="#patch-model" title="Permanent link">&para;</a></h3>
 <p>All LocalPibox changes are kept as a <strong>single squashed commit</strong> on top of upstream <code>main</code>. The delta is always one clean patch.</p>
-<pre><code>upstream main ──→ [latest] ──┐
+<div class="highlight"><pre><span></span><code>upstream main ──→ [latest] ──┐
                              │
 lpb-dev branch      ──→ [lpb patch]──┘
-</code></pre>
-<p>To update:</p>
-<pre><code class="language-bash">git fetch upstream main
-git checkout lpb-dev
-git rebase upstream/main
-git push --force-with-lease origin lpb-dev
-</code></pre>
+</code></pre></div>
+<p>To update:
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>fetch<span class="w"> </span>upstream<span class="w"> </span>main
+git<span class="w"> </span>checkout<span class="w"> </span>lpb-dev
+git<span class="w"> </span>rebase<span class="w"> </span>upstream/main
+git<span class="w"> </span>push<span class="w"> </span>--force-with-lease<span class="w"> </span>origin<span class="w"> </span>lpb-dev
+</code></pre></div></p>
 <h3 id="why-the-ratios-matter">Why the Ratios Matter<a class="headerlink" href="#why-the-ratios-matter" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1815,20 +1815,20 @@ git push --force-with-lease origin lpb-dev
 2. <code>mcp</code> → <code>agent-browser_screenshot</code> — capture screenshot
 3. <code>read</code> — pass image to session model for vision analysis
 4. <code>mcp</code> → <code>agent-browser_close</code> — close browser</p>
-<p><strong>Usage:</strong></p>
-<pre><code class="language-bash">Agent(description: &quot;Vision analysis of &lt;url&gt;&quot;, subagent_type: &quot;vision-analysis&quot;, prompt: &quot;Analyze this page: &lt;url&gt;&quot;)
-</code></pre>
+<p><strong>Usage:</strong>
+<div class="highlight"><pre><span></span><code>Agent<span class="o">(</span>description:<span class="w"> </span><span class="s2">&quot;Vision analysis of &lt;url&gt;&quot;</span>,<span class="w"> </span>subagent_type:<span class="w"> </span><span class="s2">&quot;vision-analysis&quot;</span>,<span class="w"> </span>prompt:<span class="w"> </span><span class="s2">&quot;Analyze this page: &lt;url&gt;&quot;</span><span class="o">)</span>
+</code></pre></div></p>
 <p>Runs in background, uses session model by default (can override with <code>model:</code> parameter).</p>
 <h3 id="manual-alternative">Manual Alternative<a class="headerlink" href="#manual-alternative" title="Permanent link">&para;</a></h3>
-<pre><code class="language-bash"># Open browser
-mcp({ tool: &quot;agent-browser_open&quot;, args: { url: &quot;...&quot; } })
-# Take screenshot
-mcp({ tool: &quot;agent-browser_screenshot&quot;, args: {} })
-# Read image (passes to session model)
-read(path: &quot;/home/lpb/.agent-browser/tmp/screenshots/screenshot-xxx.png&quot;)
-# Close browser
-mcp({ tool: &quot;agent-browser_close&quot;, args: { all: false } })
-</code></pre>
+<div class="highlight"><pre><span></span><code><span class="c1"># Open browser</span>
+mcp<span class="o">({</span><span class="w"> </span>tool:<span class="w"> </span><span class="s2">&quot;agent-browser_open&quot;</span>,<span class="w"> </span>args:<span class="w"> </span><span class="o">{</span><span class="w"> </span>url:<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span><span class="o">}</span><span class="w"> </span><span class="o">})</span>
+<span class="c1"># Take screenshot</span>
+mcp<span class="o">({</span><span class="w"> </span>tool:<span class="w"> </span><span class="s2">&quot;agent-browser_screenshot&quot;</span>,<span class="w"> </span>args:<span class="w"> </span><span class="o">{}</span><span class="w"> </span><span class="o">})</span>
+<span class="c1"># Read image (passes to session model)</span>
+read<span class="o">(</span>path:<span class="w"> </span><span class="s2">&quot;/home/lpb/.agent-browser/tmp/screenshots/screenshot-xxx.png&quot;</span><span class="o">)</span>
+<span class="c1"># Close browser</span>
+mcp<span class="o">({</span><span class="w"> </span>tool:<span class="w"> </span><span class="s2">&quot;agent-browser_close&quot;</span>,<span class="w"> </span>args:<span class="w"> </span><span class="o">{</span><span class="w"> </span>all:<span class="w"> </span><span class="nb">false</span><span class="w"> </span><span class="o">}</span><span class="w"> </span><span class="o">})</span>
+</code></pre></div>
 <hr />
 <h2 id="known-issues-mitigations">Known Issues &amp; Mitigations<a class="headerlink" href="#known-issues-mitigations" title="Permanent link">&para;</a></h2>
 <h3 id="qwen3-thinking-overflow-2026-08-02">Qwen3 Thinking Overflow (2026-08-02)<a class="headerlink" href="#qwen3-thinking-overflow-2026-08-02" title="Permanent link">&para;</a></h3>
