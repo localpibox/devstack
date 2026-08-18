@@ -3,5 +3,12 @@
     "version": "edge",
     "title": "edge",
     "aliases": []
+  },
+  {
+    "version": "0.0.54-lpb-dev",
+    "title": "0.0.54-lpb-dev",
+    "aliases": [
+      "dev"
+    ]
   }
 ]
