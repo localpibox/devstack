@@ -7,13 +7,15 @@ via `memory_search`.
 
 ## What It Does
 
-The extension performs four background operations using an NPU model
-(such as `qwen3.5-9b-FLM`), independent of the main session model:
+The extension performs four background operations. Reviews run in a
+**subprocess with a separate review model**: by default that's the main
+session model (so nothing extra to configure), or a small dedicated model
+(e.g. a local NPU model) if you set `llmModelOverride`.
 
 | Operation | When | What it does |
 |---|---|---|
 | **`review`** | Every 10 turns (configurable) | Scans recent conversation, extracts actionable memories |
-| **`flush`** | Session end | Final review pass, saves extracted memories to store |
+| **`flush`** | Session end / compaction | Final review pass, saves extracted memories to store |
 | **`correct`** | On user correction | Detects user corrections to AI behavior, records as lessons |
 | **`consolidate`** | Periodic | Merges similar entries (reduces duplication) |
 
@@ -26,7 +28,7 @@ Main Session (Qwen3.6-35B)
   │
   └─ System prompt contains memory policy (tells AI to search)
 
-Subprocess (NPU model, e.g. qwen3.5-9b-FLM)
+Subprocess (review model — main session model unless overridden)
   │
   ├─ review    → extracts memories every N turns
   ├─ flush     → final pass at session end
@@ -40,8 +42,8 @@ Subprocess (NPU model, e.g. qwen3.5-9b-FLM)
 
 | Mode | Behaviour |
 |---|---|
-| `policy-only` (default) | Injects memory **policy** into system prompt (40+ lines instructing AI to call `memory_search` when needed). Memory is NOT auto-injected. |
-| `legacy-inject` | Injects full memory content (MEMORY.md, USER.md, failures.md) into system prompt every turn. AI sees memory automatically. |
+| `legacy-inject` (ships in the devstack template) | Injects memory content (MEMORY.md, USER.md, failures.md, within char limits) into the system prompt. AI sees memory automatically. |
+| `policy-only` (extension default) | Injects a `<memory-policy>` block instructing the AI to call `memory_search` when needed. More context-efficient, but relies on the AI following the policy. |
 
 **Policy-only** is more context-efficient but requires the AI to trust the
 policy and call `memory_search` proactively. **legacy-inject** guarantees
@@ -69,19 +71,24 @@ container rebuilds.
 
 ## Configuration
 
-Configuration lives in `lpb-memory-config.json` (generated from template
-at boot, managed by `lpb-config memory setup`):
+Configuration lives in `~/.pi/agent/lpb-memory-config.json` (generated from
+the template at boot, managed by `lpb-config memory setup`):
 
-| Setting | Default | Description |
-|---|---|---|
-| `reviewTransport` | `subprocess` | Use NPU subprocess or direct |
-| `llmModelOverride` | `qwen3.5-9b-FLM` | Model to use for reviews |
-| `memoryMode` | `policy-only` | How memory is presented to AI |
-| `memoryPolicyStyle` | `full` | Policy verbosity: `full` (40 lines) or `compact` (15 lines) |
-| `nudgeInterval` | 10 | Extract memories every N turns |
-| `autoConsolidate` | `true` | Merge similar entries automatically |
-| `reviewTimeoutMs` | 300000 | Max time per review (5 min) |
-| `consolidationTimeoutMs` | 300000 | Max time per consolidation (5 min) |
+| Setting | Devstack template | Extension default | Description |
+|---|---|---|---|
+| `memoryMode` | `legacy-inject` | `policy-only` | How memory reaches the AI (see above) |
+| `memoryPolicyStyle` | `none` | `full` | Policy verbosity in `policy-only` mode: `full` or `compact` |
+| `reviewTransport` | `subprocess` | `subprocess` | Offload reviews to a subprocess, or `direct` (main session) |
+| `llmModelOverride` | *(unset)* | *(unset)* | Review model — **unset = main session model**; set e.g. a small local NPU model |
+| `memoryCharLimit` | `3000` | `5000` | Max chars of MEMORY.md injected per turn |
+| `userCharLimit` | `3000` | `5000` | Max chars of USER.md injected per turn |
+| `projectCharLimit` | `2000` | `5000` | Max chars of project-scoped memory |
+| `failureInjectionEnabled` | `true` | `true` | Inject recent failure lessons into the prompt |
+| `failureInjectionMaxEntries` | `3` | `5` | Max failure entries injected |
+| `failureInjectionMaxAgeDays` | `3` | `7` | Only inject failures newer than this |
+| `nudgeInterval` | *(unset)* | `10` | Review every N turns |
+| `autoConsolidate` | *(unset)* | `true` | Merge similar entries automatically |
+| `reviewTimeoutMs` / `consolidationTimeoutMs` | `300000` | `300000` | Max time per operation (5 min) |
 
 ### Configuring
 
@@ -103,8 +110,8 @@ nano ~/.pi/agent/lpb-memory-config.json
   ```bash
   tar czf ~/lpb-memory-backup.tar.gz ~/.pi/agent/lpb-memory/
   ```
-- Memory data is processed by the NPU model (runs locally). No data is
-  sent to external services.
+- Memory data is processed by the review model (a local model by default).
+  No memory data is sent to external services.
 - To reset memory: delete the `lpb-memory/` directory contents and run
   `lpb-config memory setup` to reset the config.
 

@@ -1,8 +1,9 @@
 # lpb-config Reference
 
 `lpb-config` is the single tool for managing the **config repo**, **workspace
-sync**, **validation**, and **stable releases**. It runs inside the devstack
-container at boot and provides the subcommands documented below.
+sync**, **validation**, and **stable releases**. It is installed in the
+devstack container as `~/.local/bin/lpb-config` (run it via
+`podman exec -it lpb-stack lpb-config …` from the host).
 
 ## Commands
 
@@ -48,14 +49,21 @@ lpb-config --tag dev workspace sync # sync dev pipeline repos
 | `lpb-config release promote --dry-run` | Inspect plan without making changes |
 | `lpb-config release promote` | Promote dev → main (interactive confirmation) |
 
-`promote` does per-repo:
-- **Fast-forward / clean merge**: resets local stable branch to `origin/main`,
-  merges `origin/dev`, pushes
+`promote` does per repo (dev branch → stable branch: `dev` → `main` for
+devstack/config/lpb-memory, `lpb-dev` → `lpb` for pi/pi-subagents/
+lemonade-pi-plugin):
+- **Fast-forward / clean merge**: resets the local stable branch to
+  `origin/<stable>`, merges `origin/<dev>`, pushes
 - **Unrelated histories** (first release): requires `--rebase` — replaces
-  stable branch with dev history and force-pushes
-- **Conflict**: leaves repo untouched, reports it
-- **Dirty local repo**: skipped, reported with guidance
-- **devstack only**: strips `-dev` VERSION suffix (e.g. `0.0.46-lpb-dev` → `0.0.46-lpb`)
+  the stable branch with the dev history and force-pushes
+  (`git push --force-with-lease`)
+- **Conflict**: leaves the repo untouched, reports it
+- **Dirty local repo**: skipped, reported
+- **Local stable branch ahead of origin** (unpushed commits): skipped with
+  guidance — delete the local branch (`git branch -D <stable>`, only with
+  explicit confirmation) and re-run
+- **devstack only**: strips the `-dev` VERSION suffix (e.g.
+  `0.0.46-lpb-dev` → `0.0.46-lpb`) and commits it
 
 Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
 (first-release mode).

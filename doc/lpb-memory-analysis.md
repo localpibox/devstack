@@ -1,5 +1,11 @@
 # lpb-memory Extension Analysis Report
 
+> ⚠️ **Point-in-time diagnostic** (2026-08-16). Settings have changed since:
+> the devstack template now ships `legacy-inject` mode (the "core issue" below
+> is no longer the default), and reviews run with the **main session model**
+> unless `llmModelOverride` is set. Read this as a historical root-cause
+> analysis, not the current configuration.
+
 **Date:** 2026-08-16
 **Extension:** pi-hermes-memory v0.9.1 (fork)
 **Status:** Memory writes OK, memory reads into main session rarely happen

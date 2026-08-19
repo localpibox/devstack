@@ -8,7 +8,7 @@
 # Usage:
 #   podman run -d --name lpb-stack --network host --userns keep-id \
 #     -v /path/to/project:/home/lpb/workspace/<project-name>:Z \
-#     ghcr.io/lpb-stack/devstack:web
+#     ghcr.io/lpb-stack/devstack:latest-web
 #
 # Environment variables:
 #   All LPB_* vars are handled by start.sh

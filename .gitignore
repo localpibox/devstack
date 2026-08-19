@@ -8,6 +8,7 @@ __pycache__/
 .env
 node_modules/
 
-# ── Docs site (docs branch: derived by scripts/generate.py) ───────────────
+# ── Docs site (derived trees — built by scripts/generate.py on the docs
+#    branch; the tracked content lives in doc/, README.md, ...) ───────────
 /docs/
 /site/
