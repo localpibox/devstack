@@ -51,6 +51,7 @@ CONTENT: list[tuple[str, str]] = [
     ("doc/env-vars.md", "reference/env-vars.md"),
     ("doc/config-repo.md", "reference/config-repo.md"),
     ("doc/lpb-memory-overview.md", "reference/lpb-memory-overview.md"),
+    ("doc/forking.md", "reference/forking.md"),
 ]
 
 # (name, path, role, dev_branch, stable_branch, tagged_by_ci)
@@ -212,7 +213,15 @@ def copy_content() -> list[str]:
             continue
         dest_path = DOCS_DIR / dest
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src_path, dest_path)
+        text = src_path.read_text()
+        # The README (site home) links to doc pages as `doc/<x>.md` — that
+        # path works on GitHub but not on the site, where the same files
+        # live under reference/. Rewrite the links for the derived copy.
+        if dest == "index.md":
+            for s, d in CONTENT:
+                if s.startswith("doc/") and d.startswith("reference/"):
+                    text = text.replace(f"({s})", f"({d})")
+        dest_path.write_text(text)
     return missing
 
 

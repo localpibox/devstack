@@ -64,13 +64,15 @@ nav:
   - Stack versions: versions.md
   - Operations:
     - Subagent spawning: operations/subagent-spawning-pattern.md
-  - Reference:
-    - Fork improvements: reference/fork-improvements.md
-    - lpb-memory analysis: reference/lpb-memory-analysis.md
-    - Repo workflow skill: reference/repo-workflow-skill.md
+  - "CLI & configuration":
     - lpb CLI: reference/lpb-cli.md
     - lpb-config: reference/lpb-config.md
     - Environment variables: reference/env-vars.md
     - Config repo: reference/config-repo.md
-    - lpb-memory overview: reference/lpb-memory-overview.md
-    - Contributing: contributing.md
+    - Forking & repointing: reference/forking.md
+  - "Stack internals":
+    - lpb-memory: reference/lpb-memory-overview.md
+    - lpb-memory analysis: reference/lpb-memory-analysis.md
+    - Fork improvements: reference/fork-improvements.md
+    - Repo workflow skill: reference/repo-workflow-skill.md
+  - Contributing: contributing.md
