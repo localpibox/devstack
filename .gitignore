@@ -7,3 +7,8 @@ __pycache__/
 *.pyo
 .env
 node_modules/
+
+# ── Docs site (derived trees — built by scripts/generate.py on the docs
+#    branch; the tracked content lives in doc/, README.md, ...) ───────────
+/docs/
+/site/

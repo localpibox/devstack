@@ -22,13 +22,11 @@ has its own scope:
 | [lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) | Qwen thinking + vision support (fork) |
 | [pi-subagents](https://github.com/lpb-stack/pi-subagents) | Centralized subagent model registry (fork) |
 | [lpb-memory](https://github.com/lpb-stack/lpb-memory) | Persistent memory / session search extension |
-| [lpb-stack](https://github.com/lpb-stack/lpb-stack) | Project overview & stack reference |
-| [lpb-stack.github.io](https://github.com/lpb-stack/lpb-stack.github.io) | GitHub Pages project site |
 
 ### Process
 
-1. Fork the repo and create a feature branch off its stable branch
-   (`main` for own repos, `lpb` for forks).
+1. Fork the repo and create a feature branch off its default branch
+   (`dev` for own repos, `lpb-dev` for forks).
 2. Make focused changes. **Prefer minimal, targeted patches** over broad
    rewrites.
 3. For forks, keep work as a **single squashed commit** on `lpb` so the delta
