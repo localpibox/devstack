@@ -90,10 +90,8 @@ jobs:
         if: ${{ inputs.tag == '' }}
         run: |
           mike deploy edge --push
-          # bootstrap: until the first tagged version exists, root → edge
-          if [ -z "$(mike list | grep -v '^edge')" ]; then
-            mike set-default edge --push
-          fi
+          # root → edge (always serve living docs)
+          mike set-default edge --push
 
       - name: Publish tagged version
         if: ${{ inputs.tag != '' }}
