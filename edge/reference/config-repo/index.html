@@ -16,7 +16,7 @@
         <link rel="prev" href="../env-vars/">
       
       
-        <link rel="next" href="../lpb-memory-overview/">
+        <link rel="next" href="../forking/">
       
       
         
@@ -435,7 +435,7 @@
   <span class="md-ellipsis">
     
   
-    Reference
+    CLI & configuration
   
 
     
@@ -451,95 +451,11 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Reference
+    CLI & configuration
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../fork-improvements/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Fork improvements
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../lpb-memory-analysis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    lpb-memory analysis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../repo-workflow-skill/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Repo workflow skill
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -812,6 +728,93 @@
   
   
     <li class="md-nav__item">
+      <a href="../forking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forking & repointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Stack internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lpb-memory-overview/" class="md-nav__link">
         
   
@@ -819,7 +822,7 @@
   <span class="md-ellipsis">
     
   
-    lpb-memory overview
+    lpb-memory
   
 
     
@@ -835,6 +838,97 @@
             
               
                 
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lpb-memory-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lpb-memory analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fork-improvements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fork improvements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repo-workflow-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo workflow skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
   
   
   
@@ -856,14 +950,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -1022,16 +1108,21 @@ is the single source of truth for agent configuration, settings, skills,
 and subagent definitions. It is installed into the devstack container at
 boot by <code>start.sh</code>.</p>
 <h2 id="directory-structure">Directory Structure<a class="headerlink" href="#directory-structure" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>~/.pi/agent/
+<div class="highlight"><pre><span></span><code>~/.pi/agent/                       (git clone of lpb-stack/config)
 ├── settings.json.template    → template (generated at boot → settings.json)
 ├── settings.json             → runtime config (NOT git-tracked, on host volume)
-├── AGENTS.md                 → agent presets (model config, MCP servers, skills)
-├── CONTRIBUTING.md           → contribution guidelines
-├── VALIDATION.md             → validation rules for the stack
+├── lpb-memory-config.json.template → memory config template (→ lpb-memory-config.json)
+├── AGENTS.md                 → agent instructions (model config, MCP servers, skills)
+├── README.md / CONTRIBUTING.md / VALIDATION.md
+├── pi-defaults.json          → local-first defaults (e.g. subagent model)
+├── mcp.json                  → MCP server configuration
+├── .env.example              → template for bare-name env vars (EXA_API_KEY, …)
+├── install.sh                → host install helper
+├── VERSION                   → config repo version
 ├── skills/
-│   └── localpibox-repo-workflow/
-│       ├── SKILL.md          → repository workflow skill
-│       └── ...
+│   ├── agent-browser-mcp-integration/
+│   ├── browser-validation/
+│   └── mcp-vision-analysis/
 ├── agents/
 │   ├── vision-analysis.md    → visual analysis subagent
 │   ├── browser-automation.md → browser automation subagent
@@ -1039,13 +1130,12 @@ boot by <code>start.sh</code>.</p>
 │   ├── researcher.md         → researcher subagent
 │   ├── README.md             → subagent registry
 │   └── _template.md          → template for new subagents
-├── mcp.json                  → MCP server configuration
-├── .env                      → environment variables (promoted at boot)
-├── .env.example              → template
-└── git/github.com/lpb-stack/
-    ├── lpb-memory/           → memory extension clone
-    ├── pi-subagents/         → subagents extension clone
-    └── lemonade-pi-plugin/   → lemonade provider extension clone
+└── (runtime, NOT git-tracked)
+    ├── git/github.com/lpb-stack/   → extension clones (lpb-memory, pi-subagents, lemonade-pi-plugin)
+    ├── npm/                        → npm package installs (pi-mcp-adapter, …)
+    ├── lpb-memory/                 → memory store (USER.md, MEMORY.md, failures.md)
+    ├── sessions/ · projects-memory/ → session history
+    └── models-store.json · auth.json · trust.json
 </code></pre></div>
 <h2 id="settingsjson-lifecycle">settings.json Lifecycle<a class="headerlink" href="#settingsjson-lifecycle" title="Permanent link">&para;</a></h2>
 <p>The settings file is <strong>template-driven</strong>, not git-tracked:</p>
@@ -1060,18 +1150,22 @@ boot by <code>start.sh</code>.</p>
    the current stack version</li>
 </ol>
 <h3 id="example-pin-format">Example pin format<a class="headerlink" href="#example-pin-format" title="Permanent link">&para;</a></h3>
+<p>Extensions are pinned in the <code>packages</code> array of <code>settings.json</code> as
+<code>git:&lt;owner&gt;/&lt;repo&gt;@&lt;stack-tag&gt;</code> strings:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;extensions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;@lpb-stack/pi-subagents&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;git&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;github.com/lpb-stack/pi-subagents@0.0.46-lpb-dev&quot;</span>
-<span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;@lpb-stack/lemonade-pi-plugin&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;git&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;github.com/lpb-stack/lemonade-pi-plugin@0.0.46-lpb-dev&quot;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">  </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">&quot;packages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;git:github.com/lpb-stack/lemonade-pi-plugin@0.0.55-lpb-dev&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;git:github.com/lpb-stack/lpb-memory@0.0.55-lpb-dev&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;npm:pi-mcp-adapter&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;git:github.com/lpb-stack/pi-subagents@0.0.55-lpb-dev&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;npm:pi-powerline-footer&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;@upstash/context7-mcp&quot;</span>
+<span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Pins are synced by <code>lpb-config workspace sync --extensions</code>.</p>
+<p>The <code>__LPB_VERSION__</code> placeholder in the template is replaced with the
+stack version at boot. Pins are synced to a new stack version by
+<code>lpb-config workspace sync --extensions</code>.</p>
 <h2 id="extension-clones">Extension Clones<a class="headerlink" href="#extension-clones" title="Permanent link">&para;</a></h2>
 <p>The <code>git/github.com/lpb-stack/</code> directory contains runtime clones of the
 Pi extensions. They are <strong>not baked into Docker images</strong> — they update at
@@ -1138,14 +1232,16 @@ system and persists across sessions. It is backed up with the host volume.</p>
 <p>For example, <code>vision-analysis.md</code> defines a subagent that uses the
 local Qwen3.6 vision model to analyze browser screenshots.</p>
 <h2 id="skills-directory">Skills Directory<a class="headerlink" href="#skills-directory" title="Permanent link">&para;</a></h2>
-<p>The <code>skills/</code> directory contains <strong>reusable procedures</strong> (Pi skills).
-Each skill is a directory with <code>SKILL.md</code> that defines:
-- When to use it
-- Step-by-step procedures
-- Pitfalls and verification</p>
-<p>The only skill shipped with the config repo is:
-- <code>localpibox-repo-workflow</code> — manage the 6 LocalPibox repos (versioning,
-  release, workspace sync)</p>
+<p>The <code>skills/</code> directory contains <strong>reusable procedures</strong> (Pi skills). Each
+skill is a directory with a <code>SKILL.md</code> defining when to use it, the steps,
+and the pitfalls. The config repo ships:</p>
+<ul>
+<li><code>agent-browser-mcp-integration</code> — browser automation with agent-browser MCP</li>
+<li><code>browser-validation</code> — automated browser validation pipeline with JSON reports</li>
+<li><code>mcp-vision-analysis</code> — visual page analysis with the local vision model</li>
+</ul>
+<p>(Workspace-level skills, such as <code>localpibox-repo-workflow</code>, live in the
+host workspace's <code>.pi/skills/</code>, not in the config repo.)</p>
 <h2 id="mcp-configuration">MCP Configuration<a class="headerlink" href="#mcp-configuration" title="Permanent link">&para;</a></h2>
 <p><code>mcp.json</code> configures MCP servers available to the agent. It references
 servers like <code>exa</code>, <code>agent-browser</code>, and <code>context7-mcp</code> with their

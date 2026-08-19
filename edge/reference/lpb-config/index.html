@@ -435,7 +435,7 @@
   <span class="md-ellipsis">
     
   
-    Reference
+    CLI & configuration
   
 
     
@@ -451,95 +451,11 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Reference
+    CLI & configuration
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../fork-improvements/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Fork improvements
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../lpb-memory-analysis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    lpb-memory analysis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../repo-workflow-skill/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Repo workflow skill
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -823,6 +739,93 @@
   
   
     <li class="md-nav__item">
+      <a href="../forking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forking & repointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Stack internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lpb-memory-overview/" class="md-nav__link">
         
   
@@ -830,7 +833,7 @@
   <span class="md-ellipsis">
     
   
-    lpb-memory overview
+    lpb-memory
   
 
     
@@ -846,6 +849,97 @@
             
               
                 
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lpb-memory-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lpb-memory analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fork-improvements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fork improvements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repo-workflow-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo workflow skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
   
   
   
@@ -867,14 +961,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -1040,8 +1126,9 @@
 
 <h1 id="lpb-config-reference">lpb-config Reference<a class="headerlink" href="#lpb-config-reference" title="Permanent link">&para;</a></h1>
 <p><code>lpb-config</code> is the single tool for managing the <strong>config repo</strong>, <strong>workspace
-sync</strong>, <strong>validation</strong>, and <strong>stable releases</strong>. It runs inside the devstack
-container at boot and provides the subcommands documented below.</p>
+sync</strong>, <strong>validation</strong>, and <strong>stable releases</strong>. It is installed in the
+devstack container as <code>~/.local/bin/lpb-config</code> (run it via
+<code>podman exec -it lpb-stack lpb-config …</code> from the host).</p>
 <h2 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h2>
 <h3 id="validation-workspace">Validation &amp; Workspace<a class="headerlink" href="#validation-workspace" title="Permanent link">&para;</a></h3>
 <table>
@@ -1144,14 +1231,21 @@ lpb-config<span class="w"> </span>--tag<span class="w"> </span>dev<span class="w
 </tr>
 </tbody>
 </table>
-<p><code>promote</code> does per-repo:
-- <strong>Fast-forward / clean merge</strong>: resets local stable branch to <code>origin/main</code>,
-  merges <code>origin/dev</code>, pushes
+<p><code>promote</code> does per repo (dev branch → stable branch: <code>dev</code> → <code>main</code> for
+devstack/config/lpb-memory, <code>lpb-dev</code> → <code>lpb</code> for pi/pi-subagents/
+lemonade-pi-plugin):
+- <strong>Fast-forward / clean merge</strong>: resets the local stable branch to
+  <code>origin/&lt;stable&gt;</code>, merges <code>origin/&lt;dev&gt;</code>, pushes
 - <strong>Unrelated histories</strong> (first release): requires <code>--rebase</code> — replaces
-  stable branch with dev history and force-pushes
-- <strong>Conflict</strong>: leaves repo untouched, reports it
-- <strong>Dirty local repo</strong>: skipped, reported with guidance
-- <strong>devstack only</strong>: strips <code>-dev</code> VERSION suffix (e.g. <code>0.0.46-lpb-dev</code> → <code>0.0.46-lpb</code>)</p>
+  the stable branch with the dev history and force-pushes
+  (<code>git push --force-with-lease</code>)
+- <strong>Conflict</strong>: leaves the repo untouched, reports it
+- <strong>Dirty local repo</strong>: skipped, reported
+- <strong>Local stable branch ahead of origin</strong> (unpushed commits): skipped with
+  guidance — delete the local branch (<code>git branch -D &lt;stable&gt;</code>, only with
+  explicit confirmation) and re-run
+- <strong>devstack only</strong>: strips the <code>-dev</code> VERSION suffix (e.g.
+  <code>0.0.46-lpb-dev</code> → <code>0.0.46-lpb</code>) and commits it</p>
 <p>Flags: <code>--yes</code> (skip confirmation), <code>--dry-run</code> (plan only), <code>--rebase</code>
 (first-release mode).</p>
 <h3 id="align">Align<a class="headerlink" href="#align" title="Permanent link">&para;</a></h3>

@@ -13,7 +13,7 @@
         <link rel="canonical" href="https://lpb-stack.github.io/devstack/edge/reference/lpb-cli/">
       
       
-        <link rel="prev" href="../repo-workflow-skill/">
+        <link rel="prev" href="../../operations/subagent-spawning-pattern/">
       
       
         <link rel="next" href="../lpb-config/">
@@ -435,7 +435,7 @@
   <span class="md-ellipsis">
     
   
-    Reference
+    CLI & configuration
   
 
     
@@ -451,95 +451,11 @@
             <span class="md-nav__icon md-icon"></span>
             
   
-    Reference
+    CLI & configuration
   
 
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../fork-improvements/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Fork improvements
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../lpb-memory-analysis/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    lpb-memory analysis
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../repo-workflow-skill/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Repo workflow skill
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
             
               
                 
@@ -627,6 +543,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pi-passthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi passthrough
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vscodium-options-web-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VSCodium options (--web mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -642,10 +586,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#image-resolution-flow" class="md-nav__link">
+  <a href="#selecting-a-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Image resolution flow
+        Selecting a pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolution rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolution example
       
     </span>
   </a>
@@ -684,17 +650,6 @@
     <span class="md-ellipsis">
       
         Self-Update
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#container-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Container Management
       
     </span>
   </a>
@@ -812,6 +767,93 @@
   
   
     <li class="md-nav__item">
+      <a href="../forking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Forking & repointing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stack internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Stack internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../lpb-memory-overview/" class="md-nav__link">
         
   
@@ -819,7 +861,7 @@
   <span class="md-ellipsis">
     
   
-    lpb-memory overview
+    lpb-memory
   
 
     
@@ -835,6 +877,97 @@
             
               
                 
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lpb-memory-analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lpb-memory analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fork-improvements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fork improvements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../repo-workflow-skill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Repo workflow skill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
   
   
   
@@ -856,14 +989,6 @@
   
 
       </a>
-    </li>
-  
-
-              
-            
-          </ul>
-        </nav>
-      
     </li>
   
 
@@ -914,6 +1039,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pi-passthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi passthrough
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vscodium-options-web-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VSCodium options (--web mode)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -929,10 +1082,32 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#image-resolution-flow" class="md-nav__link">
+  <a href="#selecting-a-pipeline" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Image resolution flow
+        Selecting a pipeline
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolution rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#resolution-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Resolution example
       
     </span>
   </a>
@@ -978,17 +1153,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#container-management" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Container Management
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#examples" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1017,15 +1181,20 @@
 
 
 <h1 id="lpb-cli-reference">lpb CLI Reference<a class="headerlink" href="#lpb-cli-reference" title="Permanent link">&para;</a></h1>
-<p>The <code>lpb</code> launcher is the user-facing CLI for the LocalPibox devstack.
-It wraps <strong>podman</strong> (or docker) to manage the devstack container lifecycle,
-image resolution, and self-update.</p>
+<p><code>lpb</code> is the user-facing launcher for the LocalPibox devstack. It wraps
+<strong>podman</strong> (or docker) to manage the container lifecycle, resolve image
+tags, and self-update. It is stdlib-only Python — no dependencies to install.</p>
 <h2 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>bash
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>bash
 </code></pre></div>
-<p>Installs two binaries to <code>/usr/local/bin/</code>:
-- <code>lpb</code> — bash wrapper
-- <code>lpb.py</code> — Python engine (stdlib-only, no external deps)</p>
+<p>Installs (no sudo required) into <code>~/.local/bin</code>:</p>
+<ul>
+<li><code>lpb</code> — bash wrapper</li>
+<li><code>lpb.py</code> — Python engine</li>
+</ul>
+<p>…and copies the stack config files (<code>lpb.stack.env</code>, <code>lpb.conf.env</code>,
+<code>VERSION</code>) to <code>~/.lpb-stack/devstack/</code>. Make sure <code>~/.local/bin</code> is on your
+<code>PATH</code>.</p>
 <h2 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1036,48 +1205,135 @@ image resolution, and self-update.</p>
 </thead>
 <tbody>
 <tr>
-<td><code>lpb /path/to/project</code></td>
-<td>Start devstack with project mounted at <code>/workspace</code></td>
+<td><code>lpb [/path/to/project]</code></td>
+<td>Start a <strong>Pi CLI session</strong> (foreground). No path → last project, or <code>~</code> if none yet</td>
 </tr>
 <tr>
-<td><code>lpb</code> (no args)</td>
-<td>Show welcome screen, user picks project</td>
+<td><code>lpb --web [/path]</code></td>
+<td>Start <strong>VSCodium</strong> (background), prints the connection URL</td>
 </tr>
 <tr>
-<td><code>lpb --help</code></td>
-<td>Show help</td>
+<td><code>lpb --shell [/path]</code></td>
+<td>Interactive bash shell inside the container</td>
+</tr>
+<tr>
+<td><code>lpb --ssh [pubkey\|path] [/path]</code></td>
+<td>Start an sshd server in the container for remote login</td>
+</tr>
+<tr>
+<td><code>lpb --stop</code></td>
+<td>Stop the container</td>
+</tr>
+<tr>
+<td><code>lpb --remove</code></td>
+<td>Stop + remove container + state dirs</td>
+</tr>
+<tr>
+<td><code>lpb --logs</code></td>
+<td>Stream container logs</td>
+</tr>
+<tr>
+<td><code>lpb --update</code></td>
+<td>Self-update the launcher + pull the latest image(s)</td>
+</tr>
+<tr>
+<td><code>lpb --config</code></td>
+<td>Show config file location</td>
 </tr>
 <tr>
 <td><code>lpb --version</code></td>
-<td>Show installed lpb version</td>
+<td>Show installed launcher version</td>
+</tr>
+<tr>
+<td><code>lpb --help</code></td>
+<td>Full usage</td>
 </tr>
 </tbody>
 </table>
+<p>Positional aliases (no <code>--</code> needed): <code>lpb logs</code>, <code>lpb stop</code>, <code>lpb update</code>,
+<code>lpb remove</code>, <code>lpb config</code>, <code>lpb version</code>, <code>lpb help</code>.</p>
+<h3 id="pi-passthrough">Pi passthrough<a class="headerlink" href="#pi-passthrough" title="Permanent link">&para;</a></h3>
+<p>Everything after <code>--</code> goes to Pi:</p>
+<div class="highlight"><pre><span></span><code>lpb<span class="w"> </span>/myproject<span class="w"> </span>--<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;summarize this repo&quot;</span><span class="w">   </span><span class="c1"># non-interactive run</span>
+lpb<span class="w"> </span>/myproject<span class="w"> </span>--<span class="w"> </span>--continue<span class="w">                 </span><span class="c1"># continue the last session</span>
+lpb<span class="w"> </span>/myproject<span class="w"> </span>--<span class="w"> </span>--thinking<span class="w"> </span>high<span class="w">            </span><span class="c1"># pass any pi flag</span>
+</code></pre></div>
+<h3 id="vscodium-options-web-mode">VSCodium options (<code>--web</code> mode)<a class="headerlink" href="#vscodium-options-web-mode" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>--host &lt;HOST&gt;          listen host (default: from .env or localhost)
+--port &lt;PORT&gt;          port (default: from .env or 3000)
+--token &lt;TOKEN&gt;        connection token (default: auto-generated)
+--new-token            generate a fresh token
+--without-token        hide the token in the printed URL
+</code></pre></div>
 <h2 id="image-selection">Image Selection<a class="headerlink" href="#image-selection" title="Permanent link">&para;</a></h2>
-<p>lpb resolves images in this order:</p>
+<p>Two image flavours are published to <code>ghcr.io/lpb-stack/devstack</code>:</p>
+<ul>
+<li><strong><code>…-cli</code></strong> — dev environment + Pi CLI</li>
+<li><strong><code>…-web</code></strong> — extends <code>-cli</code> with the VSCodium server</li>
+</ul>
+<h3 id="selecting-a-pipeline">Selecting a pipeline<a class="headerlink" href="#selecting-a-pipeline" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Selector</th>
+<th>Image</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--tag dev</code> (or <code>--dev</code>)</td>
+<td>latest dev-pipeline version (<code>0.0.x-lpb-dev-…</code>)</td>
+</tr>
+<tr>
+<td><code>--tag main</code> (or <code>--main</code>)</td>
+<td>latest stable version (<code>0.0.x-lpb-…</code>)</td>
+</tr>
+<tr>
+<td><code>--tag latest</code></td>
+<td>same as <code>main</code></td>
+</tr>
+<tr>
+<td><code>--tag 0.0.55-lpb-dev</code></td>
+<td>pin to an exact version</td>
+</tr>
+<tr>
+<td><code>LPB_IMAGE_TAG=…</code></td>
+<td>persistent env-var override</td>
+</tr>
+<tr>
+<td><em>(no tag)</em></td>
+<td>last-used version (pinned in <code>~/.lpb-stack/devstack/last-version</code>), else the dev pipeline</td>
+</tr>
+</tbody>
+</table>
+<h3 id="resolution-rules">Resolution rules<a class="headerlink" href="#resolution-rules" title="Permanent link">&para;</a></h3>
 <ol>
-<li><strong><code>--tag dev</code></strong> → <code>:dev-cli/web</code> (latest development build)</li>
-<li><strong><code>--tag main</code></strong> → <code>:main-cli/web</code> (latest stable build)</li>
-<li><strong><code>--tag &lt;version&gt;</code></strong> → <code>:0.0.x-cli/web</code> (pinned to a specific version)</li>
-<li><strong>Default</strong> → resolves from last-used version in <code>~/.lpb-stack/devstack/version</code></li>
+<li>With a versioned tag, <code>lpb</code> pulls <code>ghcr.io/lpb-stack/devstack:&lt;tag&gt;-cli</code>
+   and <code>:&lt;tag&gt;-web</code> (only what the selected mode needs).</li>
+<li>For <code>--tag dev|main</code>, it reads the remote <code>VERSION</code> file of that branch
+   to get the exact version; offline, it falls back to the cached
+   last-version, then to the floating tags <code>:dev-*</code> / <code>:main-*</code> /
+   <code>:latest-*</code>.</li>
+<li>The <strong>bare <code>:cli</code>/<code>:web</code>/<code>:latest</code> tags are never used</strong> — CI does not
+   publish them, so pulling them always fails with <code>manifest unknown</code>.</li>
 </ol>
-<p>Two image flavours:
-- <strong><code>:cli</code></strong> — dev environment + Pi CLI agent
-- <strong><code>:web</code></strong> — extends <code>:cli</code> with VSCodium server on port 3000</p>
-<h3 id="image-resolution-flow">Image resolution flow<a class="headerlink" href="#image-resolution-flow" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code>User calls:  lpb --tag main /project
+<p>Tags CI publishes: <code>:{v}-cli/web</code>, <code>:dev-cli/web</code>, <code>:main-cli/web</code>,
+<code>:latest-cli/web</code>, <code>:{sha}-cli/web</code>.</p>
+<h3 id="resolution-example">Resolution example<a class="headerlink" href="#resolution-example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code>User runs:  lpb --main /project
 
-Step 1: resolve_cli_image(&quot;main&quot;) → &quot;ghcr.io/lpb-stack/devstack:main-cli&quot;
-Step 2: resolve_web_image(&quot;main&quot;) → &quot;ghcr.io/lpb-stack/devstack:main-web&quot;
-Step 3: podman pull ghcr.io/lpb-stack/devstack:main-cli  (if not cached)
-Step 4: podman pull ghcr.io/lpb-stack/devstack:main-web  (if not cached)
-Step 5: podman run --name lpb-stack --network host \
-         -v /project:/workspace \
-         -v ~/.lpb-stack/agent:/home/lpb/.pi/agent \
-         ghcr.io/lpb-stack/devstack:main-web
+1. resolve_web_image(&quot;main&quot;) → reads remote main-branch VERSION (0.0.55-lpb)
+2. image = ghcr.io/lpb-stack/devstack:0.0.55-lpb-web
+3. podman pull (if not cached)
+4. podman run --name lpb-stack --network host \
+     -v /project:/home/lpb/workspace/project \
+     -v ~/.lpb-stack/state:/home/lpb/.pi \
+     -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser \
+     ghcr.io/lpb-stack/devstack:0.0.55-lpb-web
+5. pins 0.0.55-lpb in ~/.lpb-stack/devstack/last-version
 </code></pre></div>
 <h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
-<p>lpb reads config from <code>~/.lpb-stack/devstack/</code>:</p>
+<p><code>lpb</code> reads its own config from <code>~/.lpb-stack/devstack/</code>:</p>
 <table>
 <thead>
 <tr>
@@ -1087,21 +1343,42 @@ Step 5: podman run --name lpb-stack --network host \
 </thead>
 <tbody>
 <tr>
-<td><code>version</code></td>
-<td>Last-used version (auto-updated)</td>
+<td><code>config</code></td>
+<td>User overrides (shell-syntax env assignments)</td>
 </tr>
 <tr>
-<td><code>env</code></td>
-<td>User overrides (merged with lpb.conf.env)</td>
+<td><code>VERSION</code></td>
+<td>Launcher/stack version (kept in sync by <code>lpb --update</code>)</td>
+</tr>
+<tr>
+<td><code>last-version</code></td>
+<td>Last used stack version (pin for tag-less runs)</td>
+</tr>
+<tr>
+<td><code>last-project</code></td>
+<td>Last project dir (for bare <code>lpb</code>)</td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td>Persisted VSCodium token</td>
+</tr>
+<tr>
+<td><code>projects/</code></td>
+<td>Per-project state</td>
 </tr>
 </tbody>
 </table>
-<p>Config files (in priority order, highest → lowest):
-1. Shell environment (<code>export LPB_...</code>)
-2. <code>~/.lpb-stack/devstack/env</code> (user overrides)
-3. <code>lpb.stack.env</code> (per-pipeline: dev/main)
-4. <code>lpb.conf.env</code> (global defaults)</p>
+<p>Environment priority (highest → lowest):</p>
+<ol>
+<li>Shell environment (<code>export LPB_…</code>)</li>
+<li><code>~/.lpb-stack/devstack/config</code></li>
+<li><code>lpb.stack.env</code> / pipeline profile (<code>lpb.stack.dev.env</code> / <code>lpb.stack.main.env</code>)</li>
+<li><code>lpb.conf.env</code> (baked into the image)</li>
+<li>Hardcoded fallbacks</li>
+</ol>
 <h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>Launcher-level variables (see <a href="../env-vars/">Environment variables</a> for the
+full reference including the <code>LPB_</code> bridge and in-container vars):</p>
 <table>
 <thead>
 <tr>
@@ -1112,66 +1389,53 @@ Step 5: podman run --name lpb-stack --network host \
 </thead>
 <tbody>
 <tr>
-<td><code>LPB_VERSION</code></td>
-<td>from <code>version</code> file</td>
-<td>Stack version to run</td>
+<td><code>LPB_IMAGE_TAG</code></td>
+<td>—</td>
+<td>Persistent pipeline/version override (<code>dev</code>, <code>main</code>, <code>latest</code>, or a version)</td>
 </tr>
 <tr>
-<td><code>LPB_TAG</code></td>
-<td><code>dev</code> or <code>main</code></td>
-<td>Pipeline selector</td>
+<td><code>LPB_STATE_DIR</code></td>
+<td><code>~/.lpb-stack/state</code></td>
+<td>Host dir mounted to <code>/home/lpb/.pi</code></td>
+</tr>
+<tr>
+<td><code>LPB_BROWSER_DIR</code></td>
+<td><code>~/.lpb-stack/agent-browser</code></td>
+<td>Host dir for browser sessions</td>
 </tr>
 <tr>
 <td><code>LPB_CONTAINER_NAME</code></td>
 <td><code>lpb-stack</code></td>
-<td>Podman container name</td>
+<td>Container name</td>
 </tr>
 <tr>
-<td><code>LPB_MODE</code></td>
-<td><code>web</code></td>
-<td>Image flavour: <code>cli</code> or <code>web</code></td>
+<td><code>LPB_IMAGE_CLI</code> / <code>LPB_IMAGE_WEB</code></td>
+<td>lpb-stack images</td>
+<td>Last-resort fallback image names (forks)</td>
 </tr>
 <tr>
-<td><code>LPB_RUNTIME</code></td>
-<td><code>podman</code></td>
-<td>Container runtime: <code>podman</code> or <code>docker</code></td>
+<td><code>GHCR_USERNAME</code></td>
+<td><code>lpb-stack</code></td>
+<td>Registry user for pulls</td>
 </tr>
 </tbody>
 </table>
 <h2 id="self-update">Self-Update<a class="headerlink" href="#self-update" title="Permanent link">&para;</a></h2>
-<p>Running <code>lpb</code> with a newer version available on GitHub automatically fetches
-the latest <code>lpb.py</code> and <code>lpb</code> wrapper from the <code>main</code> branch.</p>
-<p>To update manually:
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-fsSL<span class="w"> </span>https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sudo<span class="w"> </span>bash
-</code></pre></div></p>
-<h2 id="container-management">Container Management<a class="headerlink" href="#container-management" title="Permanent link">&para;</a></h2>
-<p>Under the hood, lpb uses podman to manage a single container named <code>lpb-stack</code>:</p>
-<ul>
-<li><strong><code>lpb run</code></strong> — creates and starts the container</li>
-<li><strong><code>lpb stop</code></strong> — stops the container</li>
-<li><strong><code>lpb remove</code></strong> — removes the stopped container</li>
-<li><strong><code>lpb logs</code></strong> — follow container logs</li>
-<li><strong><code>lpb exec</code></strong> — execute commands inside the running container</li>
-</ul>
-<p>Container lifecycle:
-1. First run: pulls images, starts container, shows welcome
-2. Subsequent runs: checks container exists → stops it (if running) → starts fresh
-3. Use <code>lpb stop</code> to stop without removing; use <code>lpb remove</code> to clean up</p>
+<p><code>lpb --update</code> re-fetches <code>lpb</code> + <code>lpb.py</code> from GitHub and pulls the latest
+image(s) for the selected pipeline. The source branch follows the tag:
+<code>*-dev</code> tags pull from the <code>dev</code> branch, everything else from <code>main</code> — so a
+launcher installed from <code>main</code> can track <code>dev</code> simply by choosing the tag.
+(Install from <code>main</code> via <code>install.sh</code> — that's why <code>main</code> must stay a
+working stable tree.)</p>
 <h2 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="c1"># Start with a project (picks latest dev image)</span>
-lpb<span class="w"> </span>~/projects/myapp
-
-<span class="c1"># Pin to a specific version</span>
-lpb<span class="w"> </span>--tag<span class="w"> </span><span class="m">0</span>.0.54-lpb-dev<span class="w"> </span>~/projects/myapp
-
-<span class="c1"># Use stable (main) pipeline</span>
-lpb<span class="w"> </span>--tag<span class="w"> </span>main<span class="w"> </span>~/projects/myapp
-
-<span class="c1"># Run CLI mode only (no VSCodium)</span>
-<span class="nv">LPB_MODE</span><span class="o">=</span>cli<span class="w"> </span>lpb<span class="w"> </span>~/projects/myapp
-
-<span class="c1"># Check what image version is resolved</span>
-lpb<span class="w"> </span>--version
+<div class="highlight"><pre><span></span><code>lpb<span class="w"> </span>~/projects/myapp<span class="w">                        </span><span class="c1"># Pi CLI, dev pipeline (or last pin)</span>
+lpb<span class="w"> </span>--main<span class="w"> </span>~/projects/myapp<span class="w">                 </span><span class="c1"># stable pipeline</span>
+lpb<span class="w"> </span>--tag<span class="w"> </span><span class="m">0</span>.0.55-lpb-dev<span class="w"> </span>~/projects/myapp<span class="w">   </span><span class="c1"># pin to an exact version</span>
+lpb<span class="w"> </span>--web<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span><span class="w"> </span>~/projects/myapp<span class="w">      </span><span class="c1"># VSCodium on port 8080</span>
+lpb<span class="w"> </span>--shell<span class="w"> </span>~/projects/myapp<span class="w">                </span><span class="c1"># bash inside the container</span>
+lpb<span class="w"> </span>~/projects/myapp<span class="w"> </span>--<span class="w"> </span>-p<span class="w"> </span><span class="s2">&quot;fix the bug&quot;</span><span class="w">    </span><span class="c1"># one-shot pi run</span>
+lpb<span class="w"> </span>update<span class="w">                                  </span><span class="c1"># self-update + pull images</span>
+lpb<span class="w"> </span>logs<span class="w">                                    </span><span class="c1"># stream logs</span>
 </code></pre></div>
 
 
