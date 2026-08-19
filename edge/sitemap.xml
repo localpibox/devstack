@@ -2,34 +2,54 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/contributing/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/repo-map/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/versions/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/operations/subagent-spawning-pattern/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lpb-stack.github.io/devstack/edge/reference/config-repo/</loc>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lpb-stack.github.io/devstack/edge/reference/env-vars/</loc>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/reference/fork-improvements/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lpb-stack.github.io/devstack/edge/reference/lpb-cli/</loc>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lpb-stack.github.io/devstack/edge/reference/lpb-config/</loc>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/reference/lpb-memory-analysis/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
+    </url>
+    <url>
+         <loc>https://lpb-stack.github.io/devstack/edge/reference/lpb-memory-overview/</loc>
+         <lastmod>2026-08-19</lastmod>
     </url>
     <url>
          <loc>https://lpb-stack.github.io/devstack/edge/reference/repo-workflow-skill/</loc>
-         <lastmod>2026-08-18</lastmod>
+         <lastmod>2026-08-19</lastmod>
     </url>
 </urlset>

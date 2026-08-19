@@ -700,7 +700,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/lpb-cli.md" class="md-nav__link">
+      <a href="../../reference/lpb-cli/" class="md-nav__link">
         
   
   
@@ -728,7 +728,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/lpb-config.md" class="md-nav__link">
+      <a href="../../reference/lpb-config/" class="md-nav__link">
         
   
   
@@ -756,7 +756,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/env-vars.md" class="md-nav__link">
+      <a href="../../reference/env-vars/" class="md-nav__link">
         
   
   
@@ -784,7 +784,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/config-repo.md" class="md-nav__link">
+      <a href="../../reference/config-repo/" class="md-nav__link">
         
   
   
@@ -812,7 +812,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/lpb-memory-overview.md" class="md-nav__link">
+      <a href="../../reference/lpb-memory-overview/" class="md-nav__link">
         
   
   
@@ -1018,92 +1018,83 @@
 
 <h1 id="subagent-spawning-pattern-browser-testing">Subagent Spawning Pattern — Browser Testing<a class="headerlink" href="#subagent-spawning-pattern-browser-testing" title="Permanent link">&para;</a></h1>
 <h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
-<p>When spawning subagents for browser testing, use the following pattern to ensure isolated sessions and structured JSON output.</p>
+<p>When spawning subagents for browser testing, use the following pattern to ensure
+isolated sessions and structured JSON output.</p>
 <h2 id="steps">Steps<a class="headerlink" href="#steps" title="Permanent link">&para;</a></h2>
 <h3 id="1-generate-a-unique-session-id">1. Generate a Unique Session ID<a class="headerlink" href="#1-generate-a-unique-session-id" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="nv">SESSION_ID</span><span class="o">=</span><span class="k">$(</span>npx<span class="w"> </span>tsx<span class="w"> </span>bin/session-uuid.ts<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PI_WORKTREE_ID</span><span class="si">}</span><span class="s2">-&lt;test-name&gt;&quot;</span><span class="k">)</span>
+<div class="highlight"><pre><span></span><code><span class="nv">SESSION_ID</span><span class="o">=</span><span class="k">$(</span>session-uuid<span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">PI_WORKTREE_ID</span><span class="si">}</span><span class="s2">-&lt;test-name&gt;&quot;</span><span class="k">)</span>
 </code></pre></div>
 <p>Example output: <code>pi-main-abc123-login-flow-7f3a9b2c</code></p>
 <h3 id="2-load-the-system-prompt-template">2. Load the System Prompt Template<a class="headerlink" href="#2-load-the-system-prompt-template" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="nv">PROMPT</span><span class="o">=</span><span class="k">$(</span>cat<span class="w"> </span>subagent-browser-prompt.txt<span class="k">)</span>
+<div class="highlight"><pre><span></span><code><span class="nv">PROMPT</span><span class="o">=</span><span class="k">$(</span>cat<span class="w"> </span>/opt/pi-support/config/subagent-browser-prompt.txt<span class="k">)</span>
 </code></pre></div>
-<p>The template at <code>subagent-browser-prompt.txt</code> includes:
+<p>The template at <code>/opt/pi-support/config/subagent-browser-prompt.txt</code> includes:
 - The JSON schema the subagent must produce
 - Instructions for using agent-browser with bundled Chrome
 - Metrics collection steps (vitals, a11y, snapshot)</p>
 <h3 id="3-spawn-the-subagent">3. Spawn the Subagent<a class="headerlink" href="#3-spawn-the-subagent" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="c1">// Via the subagent tool in Pi:</span>
-<span class="nx">subagent</span><span class="p">({</span>
-<span class="w">  </span><span class="nx">agent</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;researcher&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nx">task</span><span class="o">:</span><span class="w"> </span><span class="sb">`Run browser test on https://example.com:</span>
+<p>Use the Pi <code>Agent</code> tool with <code>subagent_type: "browser-automation"</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nx">Agent</span><span class="p">(</span>
+<span class="w">  </span><span class="nx">description</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;Browser test on https://example.com&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">subagent_type</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;browser-automation&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">prompt</span><span class="o">:</span><span class="w"> </span><span class="sb">`Run browser test on https://example.com:</span>
 <span class="sb">    1. Navigate to the URL</span>
 <span class="sb">    2. Verify the page loads correctly</span>
 <span class="sb">    3. Check for accessibility issues</span>
 <span class="sb">    4. Measure performance metrics</span>
 
-<span class="sb">    Session ID: </span><span class="si">${</span><span class="nx">SESSION_ID</span><span class="si">}</span>
-<span class="sb">    Prompt: </span><span class="si">${</span><span class="nx">PROMPT</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span>
-<span class="w">  </span><span class="nx">outputSchema</span><span class="o">:</span><span class="w"> </span><span class="nb">JSON</span><span class="p">.</span><span class="nx">parse</span><span class="p">(</span><span class="nx">readFileSync</span><span class="p">(</span><span class="s2">&quot;subagent-browser-schema.json&quot;</span><span class="p">)),</span>
-<span class="p">});</span>
+<span class="sb">    Session ID: </span><span class="si">${</span><span class="nx">SESSION_ID</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">thinking</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;low&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nx">isolation</span><span class="o">:</span><span class="w"> </span><span class="s2">&quot;worktree&quot;</span>
+<span class="p">)</span>
 </code></pre></div>
 <h3 id="4-collect-and-validate-the-result">4. Collect and Validate the Result<a class="headerlink" href="#4-collect-and-validate-the-result" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="c1"># Pipe subagent output to the validator</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">SUBAGENT_OUTPUT</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>npx<span class="w"> </span>tsx<span class="w"> </span>bin/validate-subagent-output.ts
-
-<span class="c1"># Close the browser session to prevent zombie processes</span>
-agent-browser<span class="w"> </span>--session<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SESSION_ID</span><span class="s2">&quot;</span><span class="w"> </span>close
+<p>The subagent returns structured output directly via its completion. Close the
+browser session when done:</p>
+<div class="highlight"><pre><span></span><code>agent-browser<span class="w"> </span>--session<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SESSION_ID</span><span class="s2">&quot;</span><span class="w"> </span>close
 </code></pre></div>
 <h3 id="5-retry-on-failure-max-3-attempts">5. Retry on Failure (Max 3 Attempts)<a class="headerlink" href="#5-retry-on-failure-max-3-attempts" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="k">import</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">validate</span><span class="p">,</span><span class="w"> </span><span class="nx">buildRepairPrompt</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="kr">from</span><span class="w"> </span><span class="s2">&quot;./bin/validate-subagent-output&quot;</span><span class="p">;</span>
-
-<span class="kd">let</span><span class="w"> </span><span class="nx">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">spawnSubagent</span><span class="p">(</span><span class="nx">task</span><span class="p">);</span>
-<span class="kd">let</span><span class="w"> </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">validate</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
-<span class="kd">let</span><span class="w"> </span><span class="nx">attempts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1</span><span class="p">;</span>
-
-<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">result</span><span class="p">.</span><span class="nx">success</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">attempts</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mf">3</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="kd">const</span><span class="w"> </span><span class="nx">repairPrompt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">buildRepairPrompt</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">error</span><span class="o">!</span><span class="p">,</span><span class="w"> </span><span class="nx">originalTask</span><span class="p">);</span>
-<span class="w">  </span><span class="nx">output</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">await</span><span class="w"> </span><span class="nx">spawnSubagent</span><span class="p">(</span><span class="nx">repairPrompt</span><span class="p">);</span>
-<span class="w">  </span><span class="nx">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">validate</span><span class="p">(</span><span class="nx">output</span><span class="p">);</span>
-<span class="w">  </span><span class="nx">attempts</span><span class="o">++</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="nx">result</span><span class="p">.</span><span class="nx">success</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-<span class="w">  </span><span class="nx">console</span><span class="p">.</span><span class="nx">error</span><span class="p">(</span><span class="sb">`Test failed after </span><span class="si">${</span><span class="nx">attempts</span><span class="si">}</span><span class="sb"> attempts: </span><span class="si">${</span><span class="nx">result</span><span class="p">.</span><span class="nx">error</span><span class="si">}</span><span class="sb">`</span><span class="p">);</span>
-<span class="p">}</span>
+<p>If the output needs validation, use the support utility:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="si">${</span><span class="nv">SUBAGENT_OUTPUT</span><span class="si">}</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tsx<span class="w"> </span>/opt/pi-support/validate-subagent-output.ts
+agent-browser<span class="w"> </span>--session<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$SESSION_ID</span><span class="s2">&quot;</span><span class="w"> </span>close
 </code></pre></div>
 <h2 id="key-points">Key Points<a class="headerlink" href="#key-points" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>Always use bundled Chrome</strong> (not CDP) for subagents</li>
 <li><strong>Always set <code>AGENT_BROWSER_SESSION</code></strong> to a unique value</li>
-<li><strong>Always pass the JSON schema</strong> in the subagent's prompt</li>
 <li><strong>Always validate</strong> the output on the parent side</li>
 <li><strong>Always retry</strong> with a repair prompt if validation fails</li>
 <li><strong>Cap at 3 attempts</strong> to avoid infinite loops</li>
+<li><strong>Close browser sessions</strong> — without it, Chrome processes become zombies</li>
 </ul>
 <h2 id="file-reference">File Reference<a class="headerlink" href="#file-reference" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
-<th>File</th>
+<th>Path</th>
 <th>Purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>bin/session-uuid.ts</code></td>
+<td><code>session-uuid</code> (installed at <code>/opt/pi-support/bin/</code>)</td>
 <td>Generate unique session IDs</td>
 </tr>
 <tr>
-<td><code>subagent-browser-schema.json</code></td>
+<td><code>/opt/pi-support/schemas/browser-validation-schema.json</code></td>
 <td>Unified JSON schema (all fields)</td>
 </tr>
 <tr>
-<td><code>subagent-browser-prompt.txt</code></td>
+<td><code>/opt/pi-support/config/subagent-browser-prompt.txt</code></td>
 <td>System prompt template</td>
 </tr>
 <tr>
-<td><code>bin/validate-subagent-output.ts</code></td>
+<td><code>/opt/pi-support/validate-subagent-output.ts</code></td>
 <td>Parent-side validation utility</td>
+</tr>
+<tr>
+<td><code>/opt/pi-support/browser-validate.ts</code></td>
+<td>Browser validation entry point</td>
 </tr>
 </tbody>
 </table>

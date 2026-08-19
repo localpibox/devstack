@@ -10,29 +10,31 @@
       
       
       
-        <link rel="canonical" href="https://lpb-stack.github.io/devstack/edge/contributing/">
+        <link rel="canonical" href="https://lpb-stack.github.io/devstack/edge/reference/lpb-config/">
       
       
-        <link rel="prev" href="../reference/lpb-memory-overview/">
+        <link rel="prev" href="../lpb-cli/">
       
+      
+        <link rel="next" href="../env-vars/">
       
       
         
       
       
-      <link rel="icon" href="../assets/images/favicon.png">
+      <link rel="icon" href="../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
     
     
       
-        <title>Contributing - LocalPibox Stack</title>
+        <title>lpb-config - LocalPibox Stack</title>
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
       
         
-        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,7 +53,7 @@
       
     
     
-    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -76,7 +78,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#contributing-to-localpibox" class="md-skip">
+        <a href="#lpb-config-reference" class="md-skip">
           Skip to content
         </a>
       
@@ -96,7 +98,7 @@
 
 <header class="md-header md-header--shadow" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href=".." title="LocalPibox Stack" class="md-header__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
+    <a href="../.." title="LocalPibox Stack" class="md-header__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -116,7 +118,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Contributing
+              lpb-config
             
           </span>
         </div>
@@ -222,7 +224,7 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href=".." title="LocalPibox Stack" class="md-nav__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
+    <a href="../.." title="LocalPibox Stack" class="md-nav__button md-logo" aria-label="LocalPibox Stack" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -240,7 +242,7 @@
   
   
     <li class="md-nav__item">
-      <a href=".." class="md-nav__link">
+      <a href="../.." class="md-nav__link">
         
   
   
@@ -267,7 +269,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../repo-map/" class="md-nav__link">
+      <a href="../../repo-map/" class="md-nav__link">
         
   
   
@@ -294,7 +296,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../versions/" class="md-nav__link">
+      <a href="../../versions/" class="md-nav__link">
         
   
   
@@ -373,7 +375,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../operations/subagent-spawning-pattern/" class="md-nav__link">
+      <a href="../../operations/subagent-spawning-pattern/" class="md-nav__link">
         
   
   
@@ -462,7 +464,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/fork-improvements/" class="md-nav__link">
+      <a href="../fork-improvements/" class="md-nav__link">
         
   
   
@@ -490,7 +492,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/lpb-memory-analysis/" class="md-nav__link">
+      <a href="../lpb-memory-analysis/" class="md-nav__link">
         
   
   
@@ -518,7 +520,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/repo-workflow-skill/" class="md-nav__link">
+      <a href="../repo-workflow-skill/" class="md-nav__link">
         
   
   
@@ -546,7 +548,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../reference/lpb-cli/" class="md-nav__link">
+      <a href="../lpb-cli/" class="md-nav__link">
         
   
   
@@ -554,118 +556,6 @@
     
   
     lpb CLI
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference/lpb-config/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    lpb-config
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference/env-vars/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Environment variables
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference/config-repo/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Config repo
-  
-
-    
-  </span>
-  
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../reference/lpb-memory-overview/" class="md-nav__link">
-        
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    lpb-memory overview
   
 
     
@@ -702,7 +592,7 @@
   <span class="md-ellipsis">
     
   
-    Contributing
+    lpb-config
   
 
     
@@ -720,7 +610,7 @@
   <span class="md-ellipsis">
     
   
-    Contributing
+    lpb-config
   
 
     
@@ -746,22 +636,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-contribute-directly" class="md-nav__link">
+  <a href="#commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Contribute directly
+        Commands
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="1. Contribute directly">
+    <nav class="md-nav" aria-label="Commands">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#process" class="md-nav__link">
+  <a href="#validation-workspace" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Process
+        Validation &amp; Workspace
       
     </span>
   </a>
@@ -769,10 +659,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#policy-notes" class="md-nav__link">
+  <a href="#pipeline-override" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Policy notes
+        Pipeline Override
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config-repo-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Repo Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#release-promote-dev-main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release (promote dev → main)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#align" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Align
       
     </span>
   </a>
@@ -785,10 +719,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-fork-for-your-stack" class="md-nav__link">
+  <a href="#settingsjson-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Fork for your stack
+        Settings.json Lifecycle
       
     </span>
   </a>
@@ -796,10 +730,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-feed-back-experiences" class="md-nav__link">
+  <a href="#lpb-memory-config-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Feed back experiences
+        lpb-memory Config Lifecycle
       
     </span>
   </a>
@@ -807,21 +741,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#reporting-issues" class="md-nav__link">
+  <a href="#quick-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reporting issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#code-of-conduct" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Code of conduct
+        Quick Reference
       
     </span>
   </a>
@@ -832,6 +755,118 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../env-vars/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config-repo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Config repo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../lpb-memory-overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    lpb-memory overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -871,22 +906,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-contribute-directly" class="md-nav__link">
+  <a href="#commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Contribute directly
+        Commands
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="1. Contribute directly">
+    <nav class="md-nav" aria-label="Commands">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#process" class="md-nav__link">
+  <a href="#validation-workspace" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Process
+        Validation &amp; Workspace
       
     </span>
   </a>
@@ -894,10 +929,54 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#policy-notes" class="md-nav__link">
+  <a href="#pipeline-override" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Policy notes
+        Pipeline Override
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config-repo-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config Repo Management
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#release-promote-dev-main" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Release (promote dev → main)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#align" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Align
       
     </span>
   </a>
@@ -910,10 +989,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-fork-for-your-stack" class="md-nav__link">
+  <a href="#settingsjson-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Fork for your stack
+        Settings.json Lifecycle
       
     </span>
   </a>
@@ -921,10 +1000,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-feed-back-experiences" class="md-nav__link">
+  <a href="#lpb-memory-config-lifecycle" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Feed back experiences
+        lpb-memory Config Lifecycle
       
     </span>
   </a>
@@ -932,21 +1011,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#reporting-issues" class="md-nav__link">
+  <a href="#quick-reference" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reporting issues
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#code-of-conduct" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Code of conduct
+        Quick Reference
       
     </span>
   </a>
@@ -970,107 +1038,185 @@
 
 
 
-<h1 id="contributing-to-localpibox">Contributing to LocalPibox<a class="headerlink" href="#contributing-to-localpibox" title="Permanent link">&para;</a></h1>
-<p>LocalPibox is a personal, local-first AI devstack on
-<a href="https://pi.dev">Pi.dev</a>. The stack is designed to be <strong>forked and
-personalized</strong> — you are welcome to contribute directly, fork it for your own
-stack, or share what works on your hardware.</p>
-<p>There are <strong>three ways to get involved</strong>:</p>
-<hr />
-<h2 id="1-contribute-directly">1. Contribute directly<a class="headerlink" href="#1-contribute-directly" title="Permanent link">&para;</a></h2>
-<p>Improve patches, add features, or fix bugs in any of the repos. Each repository
-has its own scope:</p>
+<h1 id="lpb-config-reference">lpb-config Reference<a class="headerlink" href="#lpb-config-reference" title="Permanent link">&para;</a></h1>
+<p><code>lpb-config</code> is the single tool for managing the <strong>config repo</strong>, <strong>workspace
+sync</strong>, <strong>validation</strong>, and <strong>stable releases</strong>. It runs inside the devstack
+container at boot and provides the subcommands documented below.</p>
+<h2 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h2>
+<h3 id="validation-workspace">Validation &amp; Workspace<a class="headerlink" href="#validation-workspace" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
-<th>Repo</th>
-<th>What to work on</th>
+<th>Command</th>
+<th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://github.com/lpb-stack/devstack">devstack</a></td>
-<td>Container image (<code>Dockerfile</code>), <code>lpb</code> launcher (<code>scripts/</code>), entrypoints (<code>support/</code>), CI</td>
+<td><code>lpb-config validate</code></td>
+<td>Validate entire stack alignment (repos, branches, pins)</td>
 </tr>
 <tr>
-<td><a href="https://github.com/lpb-stack/config">config</a></td>
-<td>Pi settings, MCP servers, custom skills, subagents presets</td>
+<td><code>lpb-config workspace status</code></td>
+<td>Show branches + alignment for all repos</td>
 </tr>
 <tr>
-<td><a href="https://github.com/lpb-stack/pi">pi</a></td>
-<td>Qwen <code>reasoning_effort</code> + context-overflow patches (fork)</td>
+<td><code>lpb-config workspace sync</code></td>
+<td>Sync git repos (clone/fetch/merge) to current branches</td>
 </tr>
 <tr>
-<td><a href="https://github.com/lpb-stack/lemonade-pi-plugin">lemonade-pi-plugin</a></td>
-<td>Qwen thinking + vision support (fork)</td>
+<td><code>lpb-config workspace sync --extensions</code></td>
+<td>Sync settings.json pins to stack version</td>
 </tr>
 <tr>
-<td><a href="https://github.com/lpb-stack/pi-subagents">pi-subagents</a></td>
-<td>Centralized subagent model registry (fork)</td>
-</tr>
-<tr>
-<td><a href="https://github.com/lpb-stack/lpb-memory">lpb-memory</a></td>
-<td>Persistent memory / session search extension</td>
-</tr>
-<tr>
-<td><a href="https://github.com/lpb-stack/lpb-stack">lpb-stack</a></td>
-<td>Project overview &amp; stack reference</td>
-</tr>
-<tr>
-<td><a href="https://github.com/lpb-stack/lpb-stack.github.io">lpb-stack.github.io</a></td>
-<td>GitHub Pages project site</td>
+<td><code>lpb-config workspace ensure [--fix]</code></td>
+<td>Check/fix branch alignment for pipelines</td>
 </tr>
 </tbody>
 </table>
-<h3 id="process">Process<a class="headerlink" href="#process" title="Permanent link">&para;</a></h3>
+<h3 id="pipeline-override">Pipeline Override<a class="headerlink" href="#pipeline-override" title="Permanent link">&para;</a></h3>
+<p>Every command above accepts a pipeline flag:</p>
+<div class="highlight"><pre><span></span><code>lpb-config<span class="w"> </span>--tag<span class="w"> </span>main<span class="w"> </span>validate<span class="w">      </span><span class="c1"># validate against stable pipeline</span>
+lpb-config<span class="w"> </span>--tag<span class="w"> </span>dev<span class="w"> </span>workspace<span class="w"> </span>sync<span class="w"> </span><span class="c1"># sync dev pipeline repos</span>
+</code></pre></div>
+<h3 id="memory-management">Memory Management<a class="headerlink" href="#memory-management" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lpb-config memory show</code></td>
+<td>Display current lpb-memory configuration</td>
+</tr>
+<tr>
+<td><code>lpb-config memory setup</code></td>
+<td>Interactive wizard to configure lpb-memory</td>
+</tr>
+</tbody>
+</table>
+<h3 id="config-repo-management">Config Repo Management<a class="headerlink" href="#config-repo-management" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lpb-config status</code></td>
+<td>Show config repo state</td>
+</tr>
+<tr>
+<td><code>lpb-config update</code></td>
+<td>Pull latest config repo changes</td>
+</tr>
+<tr>
+<td><code>lpb-config reset</code></td>
+<td>Reset config repo to clean state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="release-promote-dev-main">Release (promote dev → main)<a class="headerlink" href="#release-promote-dev-main" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lpb-config release status</code></td>
+<td>Pre-flight check: all 6 repos, non-destructive</td>
+</tr>
+<tr>
+<td><code>lpb-config release promote --dry-run</code></td>
+<td>Inspect plan without making changes</td>
+</tr>
+<tr>
+<td><code>lpb-config release promote</code></td>
+<td>Promote dev → main (interactive confirmation)</td>
+</tr>
+</tbody>
+</table>
+<p><code>promote</code> does per-repo:
+- <strong>Fast-forward / clean merge</strong>: resets local stable branch to <code>origin/main</code>,
+  merges <code>origin/dev</code>, pushes
+- <strong>Unrelated histories</strong> (first release): requires <code>--rebase</code> — replaces
+  stable branch with dev history and force-pushes
+- <strong>Conflict</strong>: leaves repo untouched, reports it
+- <strong>Dirty local repo</strong>: skipped, reported with guidance
+- <strong>devstack only</strong>: strips <code>-dev</code> VERSION suffix (e.g. <code>0.0.46-lpb-dev</code> → <code>0.0.46-lpb</code>)</p>
+<p>Flags: <code>--yes</code> (skip confirmation), <code>--dry-run</code> (plan only), <code>--rebase</code>
+(first-release mode).</p>
+<h3 id="align">Align<a class="headerlink" href="#align" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>lpb-config align</code></td>
+<td>Update extension pins in settings.json to latest GitHub tags</td>
+</tr>
+</tbody>
+</table>
+<h2 id="settingsjson-lifecycle">Settings.json Lifecycle<a class="headerlink" href="#settingsjson-lifecycle" title="Permanent link">&para;</a></h2>
+<p>Settings.json is <strong>template-driven</strong>, not git-tracked:</p>
 <ol>
-<li>Fork the repo and create a feature branch off its stable branch
-   (<code>main</code> for own repos, <code>lpb</code> for forks).</li>
-<li>Make focused changes. <strong>Prefer minimal, targeted patches</strong> over broad
-   rewrites.</li>
-<li>For forks, keep work as a <strong>single squashed commit</strong> on <code>lpb</code> so the delta
-   vs upstream stays one clean patch.</li>
-<li>Open a PR. Describe what changed, why, and how you tested it.</li>
+<li>Config repo ships <code>settings.json.template</code> with <code>__LPB_VERSION__</code> placeholders</li>
+<li>First boot: <code>start.sh</code> generates <code>settings.json</code> (replaces placeholders)</li>
+<li>No model/provider preconfigured — user runs <code>/login lemonade</code></li>
+<li>Pin sync: <code>lpb-config workspace sync --extensions</code> (main pipeline reads
+   stable version from devstack <code>origin/main</code>)</li>
+<li><code>lpb-config validate</code> checks pins match the current stack version</li>
+<li>Settings.json persists on the host volume — survives container rebuilds</li>
 </ol>
-<h3 id="policy-notes">Policy notes<a class="headerlink" href="#policy-notes" title="Permanent link">&para;</a></h3>
-<ul>
-<li><strong>Never hardcode model names in agent defaults</strong> — use <code>model: parent</code> so
-  agents inherit the session model. See the config repo's <code>agents/</code> templates.</li>
-<li><strong>Anthropic models are not used</strong> in this stack; Qwen (via Lemonade) is the
-  default.</li>
-<li>Forks carry candidate <strong>upstream contributions</strong>: ship a patch upstream when
-  it's generally useful and not too opinionated for this stack.</li>
-</ul>
-<h2 id="2-fork-for-your-stack">2. Fork for your stack<a class="headerlink" href="#2-fork-for-your-stack" title="Permanent link">&para;</a></h2>
+<p>Example pin: <code>git:github.com/lpb-stack/pi-subagents@0.0.46-lpb-dev</code></p>
+<h2 id="lpb-memory-config-lifecycle">lpb-memory Config Lifecycle<a class="headerlink" href="#lpb-memory-config-lifecycle" title="Permanent link">&para;</a></h2>
+<p>Same template-driven pattern:</p>
 <ol>
-<li>Fork the repos you care about.</li>
-<li>Clone devstack and edit <code>lpb.stack.env</code> to point at your forks (see
-   <a href="https://github.com/lpb-stack/devstack#forking--repointing">Forking &amp; Repointing</a>).</li>
-<li>Build &amp; push your image, then run <code>lpb</code>.</li>
+<li>First boot: <code>start.sh</code> copies <code>lpb-memory-config.json.template</code> → config</li>
+<li>No model override — uses the main model until user configures</li>
+<li>Tune: <code>lpb-config memory setup</code> (interactive wizard)</li>
+<li>Review: <code>lpb-config memory show</code></li>
 </ol>
-<p>You own your variant — change anything: image names, container name, branch
-refs, config preset.</p>
-<h2 id="3-feed-back-experiences">3. Feed back experiences<a class="headerlink" href="#3-feed-back-experiences" title="Permanent link">&para;</a></h2>
-<p>Share what works reliably on <strong>your hardware with your models</strong>. Configuration
-like context-window ratios, thinking levels, and model detection depends
-heavily on the actual host (CPU/APU, RAM, model size). Your findings help
-everyone converge on robust local setups.</p>
-<p>Open an issue or PR with:
-- Your hardware (e.g. "Ryzen AI Max+ 395, 128 GB").
-- The model + provider + Pi version.
-- What worked, what overflowed, and any tuning you discovered.</p>
-<hr />
-<h2 id="reporting-issues">Reporting issues<a class="headerlink" href="#reporting-issues" title="Permanent link">&para;</a></h2>
-<p>Open an issue in the relevant repo (usually <code>devstack</code>). Include:</p>
-<ul>
-<li>What you were doing.</li>
-<li>Exact command(s) and output.</li>
-<li>Host OS, container engine (podman/docker), and stack version (from
-  <code>VERSION</code> / <code>lpb.conf.env</code>).</li>
-</ul>
-<h2 id="code-of-conduct">Code of conduct<a class="headerlink" href="#code-of-conduct" title="Permanent link">&para;</a></h2>
-<p>Keep it friendly and constructive — this is a personal stack shared in public.
-Respect other people's hardware, models, and workflows.</p>
+<h2 id="quick-reference">Quick Reference<a class="headerlink" href="#quick-reference" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># Check stack health</span>
+lpb-config<span class="w"> </span>validate
+
+<span class="c1"># See where repos stand</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>status
+
+<span class="c1"># Fix branch alignment</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>ensure<span class="w"> </span>--fix
+
+<span class="c1"># Update extension pins</span>
+lpb-config<span class="w"> </span>workspace<span class="w"> </span>sync<span class="w"> </span>--extensions
+
+<span class="c1"># Check memory config</span>
+lpb-config<span class="w"> </span>memory<span class="w"> </span>show
+
+<span class="c1"># Configure memory</span>
+lpb-config<span class="w"> </span>memory<span class="w"> </span>setup
+
+<span class="c1"># Check if ready to promote</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>status
+
+<span class="c1"># Preview the promote plan</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>promote<span class="w"> </span>--dry-run
+
+<span class="c1"># Actually promote</span>
+lpb-config<span class="w"> </span>release<span class="w"> </span>promote
+</code></pre></div>
 
 
 
@@ -1126,10 +1272,10 @@ Respect other people's hardware, models, and workflows.</p>
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.top", "content.code.copy", "search.suggest", "search.highlight"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"default": "latest", "provider": "mike"}}</script>
     
     
-      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
       
     
   </body>
