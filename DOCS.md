@@ -31,6 +31,26 @@ mike serve                           # live preview at http://localhost:8000
 ## Cutting a version (after a code release)
 
 1. Merge `dev` into `docs` (content up to date), push.
-2. GitHub → Actions → **docs** → Run workflow → `tag: 0.0.X-lpb[-dev]`,
-   `alias: latest` (stable) or `dev` (dev pipeline).
-3. Result: `https://lpb-stack.github.io/devstack/0.0.X-lpb[-dev]/`
+2. Cut the version. The `docs` workflow's `workflow_dispatch` is unreachable
+   from the GitHub UI/API (the workflow file only exists on the `docs`
+   branch, and dispatch resolves from the default branch `dev`) — so cut it
+   locally with mike (this is exactly what the workflow does):
+
+   ```bash
+   git checkout docs && git pull
+   git config user.name lpb-docs && git config user.email ci@lpb-stack.dev
+   python3 scripts/generate.py --tag 0.0.X-lpb[-dev]
+   mike deploy 0.0.X-lpb[-dev] latest --push --update-aliases   # stable
+   # (or: alias dev for a dev-pipeline tag, no stable release yet)
+   mike set-default latest --push
+   ```
+
+   If mike reports `gh-pages has diverged`, the local branch is stale from
+   an earlier local session — reset it: `git fetch origin gh-pages &&
+   git update-ref refs/heads/gh-pages origin/gh-pages`.
+3. Result: `https://lpb-stack.github.io/devstack/0.0.X-lpb[-dev]/` and the
+   alias (`latest` = stable, `dev` = dev pipeline) points at it.
+
+Note: while no fully-aligned stable release exists, cut the newest
+`*-lpb-dev` tag with alias `latest` so the root serves the newest docs;
+re-cut with the first `0.0.X-lpb` stable tag when it ships.
