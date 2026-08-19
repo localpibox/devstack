@@ -5,6 +5,13 @@
     "aliases": []
   },
   {
+    "version": "0.0.56-lpb-dev",
+    "title": "0.0.56-lpb-dev",
+    "aliases": [
+      "latest"
+    ]
+  },
+  {
     "version": "0.0.54-lpb-dev",
     "title": "0.0.54-lpb-dev",
     "aliases": [
