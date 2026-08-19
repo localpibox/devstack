@@ -222,10 +222,16 @@ Jobs:
    - main push: `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
    - manual with `publish_latest`: `:latest-cli/web`
 4. **tag-repos** — after successful builds: tags the 5 repos on the pipeline's
-   branches (dev: `lpb-dev`/`dev`, main: `lpb`/`main`) using `LPB_STACK_PAT`
+   branches (dev: `lpb-dev`/`dev`, main: `lpb`/`main`) using `LPB_STACK_PAT`.
+   Retries transient 5xx with backoff and **fails the run if any repo's tag
+   fails** (a partially-tagged stack is a release bug — re-running the job is
+   idempotent, 422 = already tagged). A missing branch aborts immediately.
 
-Images: `ghcr.io/lpb-stack/devstack:cli` (base dev env + Pi CLI),
-`:web` (extends cli + VSCodium server).
+Images: `ghcr.io/lpb-stack/devstack` in two flavours per tag — `…-cli`
+(base dev env + Pi CLI) and `…-web` (extends cli + VSCodium server). The bare
+`:cli`/`:web` tags do NOT exist — CI only publishes versioned plus
+`:dev-*`/`:main-*`/`:latest-*`/`:sha-*` (pulling a bare tag fails with
+`manifest unknown`).
 
 CI does NOT use `workspace/pi` — it clones pi from `LPB_PI_FORK`
 (`lpb-stack/pi`) into `/opt/pi-src` during the Docker build.

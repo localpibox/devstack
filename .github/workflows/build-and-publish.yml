@@ -326,26 +326,47 @@ jobs:
               ["lpb-stack/lpb-memory"]="dev"
             )
           fi
+          FAILURES=0
           for repo in "${!REPO_BRANCHS[@]}"; do
             branch="${REPO_BRANCHS[$repo]}"
             echo "Tagging $repo@$VERSION (from $branch)"
             sha=$(git ls-remote "https://github.com/$repo.git" "refs/heads/$branch" | awk '{print $1}')
-            if [ -n "$sha" ]; then
-              # POST to /git/refs with {ref, sha} body (NOT /git/refs/tags/{tagname})
+            if [ -z "$sha" ]; then
+              # A missing branch means the repo map or branch name is wrong —
+              # a partial tag set would desync the stack, so fail loudly.
+              echo "  ❌ $repo:$branch not found — aborting (fail fast)"
+              exit 1
+            fi
+            # POST to /git/refs with {ref, sha} body (NOT /git/refs/tags/{tagname})
+            # 201 = created, 422 = already exists (idempotent re-run) = success.
+            # Anything else (503/429/...) is retried with backoff — transient
+            # GitHub API outages must not produce a partially-tagged stack.
+            status=""
+            for attempt in 1 2 3 4; do
               status=$(curl -s -o /dev/null -w '%{http_code}' \
                 -X POST "https://api.github.com/repos/$repo/git/refs" \
                 -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github+json" \
                 -d "{\"ref\": \"refs/tags/$VERSION\", \"sha\": \"$sha\"}")
               if [ "$status" = "201" ] || [ "$status" = "422" ]; then
-                echo "  ✅ $repo@$VERSION"
-              else
-                echo "  ⚠️  $repo tag creation failed (HTTP $status)"
+                break
               fi
+              if [ "$attempt" -lt 4 ]; then
+                sleep $((attempt * 15))
+                echo "  ⚠️  $repo HTTP $status — retry $((attempt + 1))/4"
+              fi
+            done
+            if [ "$status" = "201" ] || [ "$status" = "422" ]; then
+              echo "  ✅ $repo@$VERSION"
             else
-              echo "  ⚠️  $repo:$branch not found, skipping tag"
+              echo "  ❌ $repo tag creation failed (HTTP $status after 4 attempts)"
+              FAILURES=$((FAILURES + 1))
             fi
           done
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "::error::Tag creation failed for $FAILURES repo(s) at $VERSION — the stack is now misaligned; re-run this job to complete tagging"
+            exit 1
+          fi
 
   status:
     name: Build status
