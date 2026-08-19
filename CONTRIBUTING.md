@@ -46,7 +46,7 @@ has its own scope:
 
 1. Fork the repos you care about.
 2. Clone devstack and edit `lpb.stack.env` to point at your forks (see
-   [Forking & Repointing](https://github.com/lpb-stack/devstack#forking--repointing)).
+   [Forking & Repointing](https://github.com/lpb-stack/devstack/blob/dev/doc/forking.md)).
 3. Build & push your image, then run `lpb`.
 
 You own your variant — change anything: image names, container name, branch
