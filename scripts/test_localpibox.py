@@ -6,15 +6,20 @@ Covers:
   - lpb-stack.log    — leveled, colored output to configurable streams
   - lpb-stack.run    — subprocess helpers, tool discovery, container detection
   - lpb-stack.cli    — prompts, common flags, fatal-error helper
+  - lpb-stack._stack_lib — pipeline detection, VERSION bumping, workspace sync
   - support/build.py  — env loading, build-arg mapping, docker command
   - browser-state-cleanup — session pruning (age + count)
+  - support/lpb-config — config repo manager (update/reset/status/merge/migrate)
+  - support/lpb-devstack — DevOps tool (bump, tag-repos)
 
 Runs with plain Python (no third-party deps), mirroring scripts/test_lpb.py.
 """
 
 from __future__ import annotations
 
-import importlib  # noqa: E402
+import importlib
+import importlib.machinery
+import importlib.util  # noqa: E402
 import datetime
 import io
 import os
@@ -38,9 +43,23 @@ from localpibox import env as env_mod  # noqa: E402
 from localpibox import log as log_mod  # noqa: E402
 from localpibox import run as run_mod  # noqa: E402
 from localpibox import cli as cli_mod  # noqa: E402
+from localpibox import _stack_lib as sl  # noqa: E402
 import build  # noqa: E402
 bsc = importlib.import_module('browser-state-cleanup')
-lc = importlib.import_module('lpb-config')
+
+
+def _load_script(name: str, path: Path):
+    """Load an (extensionless) script file as a module for testing."""
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+lc = _load_script('lpb_config', SUPPORT_DIR / 'lpb-config')
+ld = _load_script('lpb_devstack', SUPPORT_DIR / 'lpb-devstack')
 validate = importlib.import_module('validate')
 ib = importlib.import_module('install-browser')
 iospec = importlib.import_module('install-openspec')
@@ -589,7 +608,7 @@ def _workspace_patch(tmpdir, repos, config_branch="dev", config_repo=True):
         subprocess.run(["git", "-C", str(agent), "commit", "-qm", "gitignore"], check=True)
         subprocess.run(["git", "-C", str(agent), "push", "-q", "origin", config_branch], check=True)
     return mock.patch.multiple(
-        lc,
+        sl,
         WORKSPACE_REPOS=repos,
         WORKSPACE_ROOT=tmpdir / "workspace",
         AGENT_GIT=agent / "git" / "github.com" / "lpb-stack",
@@ -613,7 +632,7 @@ def test_lpb_config_sync_detached_head(tmpdir):
     subprocess.run(["git", "-C", str(clone), "checkout", "-q", "0.0.1"], check=True)
     _push_branch(src, "dev")
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
-        code = lc.cmd_workspace_sync("dev", _quiet_console())
+        code = sl.cmd_workspace_sync("dev", _quiet_console())
     ws = tmpdir / "workspace"
     assert code == 0
     assert (ws / "repo-a").is_symlink()
@@ -629,7 +648,7 @@ def test_lpb_config_sync_clones_missing(tmpdir):
     _bare_remote(tmpdir, "repo-b", "dev")
     with mock.patch.dict(os.environ, {"LPB_STACK_REMOTE_BASE": str(tmpdir / "remotes")}), \
          _workspace_patch(tmpdir, repos):
-        code = lc.cmd_workspace_sync("dev", _quiet_console())
+        code = sl.cmd_workspace_sync("dev", _quiet_console())
     ws = tmpdir / "workspace"
     ag = tmpdir / "agent" / "git" / "github.com" / "lpb-stack"
     assert code == 0
@@ -649,7 +668,7 @@ def test_lpb_config_sync_dirty_skipped(tmpdir):
     out, err = io.StringIO(), io.StringIO()
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
         cons = log_mod.Console(color=False, out=out, err=err)
-        code = lc.cmd_workspace_sync("dev", cons)
+        code = sl.cmd_workspace_sync("dev", cons)
     assert code == 1
     assert _branch(clone) == "dev"
     assert (clone / "f").read_text() == "local edit"  # untouched
@@ -666,7 +685,7 @@ def test_lpb_config_sync_wrong_branch(tmpdir):
     subprocess.run(["git", "-C", str(clone), "checkout", "-q", "feature"], check=True)
     _push_branch(src, "dev")
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
-        code = lc.cmd_workspace_sync("dev", _quiet_console())
+        code = sl.cmd_workspace_sync("dev", _quiet_console())
     assert code == 0
     assert _branch(clone) == "dev"
     assert (clone / "f").read_text() == "two"
@@ -680,7 +699,7 @@ def test_lpb_config_sync_missing_config(tmpdir):
     out, err = io.StringIO(), io.StringIO()
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")], config_repo=False):
         cons = log_mod.Console(color=False, out=out, err=err)
-        code = lc.cmd_workspace_sync("dev", cons)
+        code = sl.cmd_workspace_sync("dev", cons)
     assert code == 1
     assert "config" in (out.getvalue() + err.getvalue())
 
@@ -695,10 +714,152 @@ def test_lpb_config_sync_main_pipeline(tmpdir):
     clone = tmpdir / "agent" / "git" / "github.com" / "lpb-stack" / "repo-a"
     subprocess.run(["git", "clone", "-q", "--branch", "main", str(remote), str(clone)], check=True)
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")], config_branch="main"):
-        code = lc.cmd_workspace_sync("main", _quiet_console())
+        code = sl.cmd_workspace_sync("main", _quiet_console())
     assert code == 0
     assert _branch(clone) == "main"
     assert (clone / "f").read_text() == "stable"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# _stack_lib: pipeline detection + VERSION math
+# ═══════════════════════════════════════════════════════════════════════════
+
+def test_stack_lib_detect_pipeline_tag_override():
+    assert sl.detect_pipeline("dev") == "dev"
+    assert sl.detect_pipeline("main") == "main"
+    assert sl.detect_pipeline(None) in ("dev", "main")
+
+
+def test_stack_lib_detect_pipeline_env_tag():
+    with mock.patch.dict(os.environ, {"LPB_IMAGE_TAG": "main"}, clear=False):
+        assert sl.detect_pipeline(None) == "main"
+
+
+def test_stack_lib_expected_branch():
+    assert sl.expected_branch("pi", "dev") == "lpb-dev"
+    assert sl.expected_branch("pi", "main") == "lpb"
+    assert sl.expected_branch("devstack", "dev") == "dev"
+    assert sl.expected_branch("devstack", "main") == "main"
+    assert sl.expected_branch("nope", "dev") == ""  # not a workspace repo
+
+
+def test_stack_lib_parse_version():
+    assert sl.parse_version("0.0.57-lpb-dev") == (0, 0, 57, "-lpb-dev")
+    assert sl.parse_version("1.2.3-lpb") == (1, 2, 3, "-lpb")
+    assert sl.parse_version("garbage") is None
+    assert sl.parse_version("0.0.57") is None  # suffix required
+
+
+def test_stack_lib_bump_version():
+    assert sl.bump_version("0.0.57-lpb-dev") == "0.0.58-lpb-dev"
+    assert sl.bump_version("0.0.57-lpb") == "0.0.58-lpb"          # suffix preserved
+    assert sl.bump_version("0.0.9-lpb-dev", "minor") == "0.1.0-lpb-dev"
+    assert sl.bump_version("0.9.9-lpb", "major") == "1.0.0-lpb"
+    for bad, kind in (("nope", "patch"), ("0.0.57", "patch"), ("0.0.1-lpb-dev", "bogus")):
+        try:
+            sl.bump_version(bad, kind)
+            assert False, f"expected ValueError for {bad!r}"
+        except ValueError:
+            pass
+
+
+# ─── lpb-devstack: VERSION bumping ────────────────────────────────────────
+
+def _devstack_root_patch(root, tmpdir):
+    """Point _stack_lib version discovery at *root* (context manager)."""
+    return mock.patch.multiple(
+        sl,
+        _DEVSTACK_ROOT=root,
+        WORKSPACE_ROOT=tmpdir / "nowhere",
+        _VERSION_FILE=None,
+    )
+
+
+def test_devstack_bump_patch(tmpdir):
+    root = tmpdir / "devstack"
+    root.mkdir()
+    (root / "VERSION").write_text("0.0.57-lpb-dev\n")
+    with _devstack_root_patch(root, tmpdir):
+        code = ld.cmd_bump(_quiet_console(), no_commit=True)
+    assert code == 0
+    assert (root / "VERSION").read_text().strip() == "0.0.58-lpb-dev"
+
+
+def test_devstack_bump_minor_and_set(tmpdir):
+    root = tmpdir / "devstack"
+    root.mkdir()
+    (root / "VERSION").write_text("0.0.9-lpb-dev\n")
+    with _devstack_root_patch(root, tmpdir):
+        assert ld.cmd_bump(_quiet_console(), minor=True, no_commit=True) == 0
+        assert (root / "VERSION").read_text().strip() == "0.1.0-lpb-dev"
+        # explicit --set (same value → no-op, still 0)
+        assert ld.cmd_bump(_quiet_console(), set_version="0.1.0-lpb-dev", no_commit=True) == 0
+        assert (root / "VERSION").read_text().strip() == "0.1.0-lpb-dev"
+        # invalid --set rejected
+        assert ld.cmd_bump(_quiet_console(), set_version="1.2.3", no_commit=True) == 1
+        assert (root / "VERSION").read_text().strip() == "0.1.0-lpb-dev"
+
+
+def test_devstack_bump_commits(tmpdir):
+    root = tmpdir / "devstack"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "t@t"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "t"], check=True)
+    (root / "VERSION").write_text("0.0.57-lpb-dev\n")
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "init"], check=True)
+    with _devstack_root_patch(root, tmpdir):
+        code = ld.cmd_bump(_quiet_console())  # commit (no push)
+    assert code == 0
+    r = subprocess.run(
+        ["git", "-C", str(root), "show", "HEAD:VERSION"],
+        capture_output=True, text=True)
+    assert r.stdout.strip() == "0.0.58-lpb-dev"
+
+
+def test_devstack_bump_missing_version(tmpdir):
+    with mock.patch.object(sl, "_VERSION_FILE", None), \
+         mock.patch.object(sl, "_DEVSTACK_ROOT", tmpdir / "nope"), \
+         mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "nope2"):
+        assert ld.cmd_bump(_quiet_console(), no_commit=True) == 1
+
+
+# ─── lpb-devstack: repo tagging ───────────────────────────────────────────
+
+def test_devstack_tag_repos(tmpdir):
+    remote, _src = _bare_remote(tmpdir, "pi", "lpb-dev")
+    # Local workspace clone (cmd_tag_repos tags via the workspace repos)
+    ws = tmpdir / "workspace" / "pi"
+    ws.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "clone", "-q", "--branch", "lpb-dev", str(remote), str(ws)], check=True)
+    env = mock.patch.dict(os.environ, {"LPB_STACK_REMOTE_BASE": str(tmpdir / "remotes")})
+    patch_repos = mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")])
+    patch_ws = mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "workspace")
+    for p in (env, patch_repos, patch_ws):
+        p.start()
+    try:
+        code = ld.cmd_tag_repos(_quiet_console(), pipeline="dev", version="0.0.58-lpb-dev")
+        assert code == 0
+        r = subprocess.run(
+            ["git", "ls-remote", str(remote), "refs/tags/0.0.58-lpb-dev"],
+            capture_output=True, text=True)
+        assert "0.0.58-lpb-dev" in r.stdout
+        # idempotent: second run reports "already exists" and succeeds
+        assert ld.cmd_tag_repos(_quiet_console(), pipeline="dev", version="0.0.58-lpb-dev") == 0
+        # main pipeline targets the 'lpb' branch (absent on this remote → fail fast)
+        assert ld.cmd_tag_repos(_quiet_console(), pipeline="main", version="0.0.58-lpb") == 1
+    finally:
+        for p in (env, patch_repos, patch_ws):
+            p.stop()
+
+
+def test_devstack_tag_repos_missing_clone(tmpdir):
+    with mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")]), \
+         mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "empty-ws"):
+        cons = _quiet_console()
+        assert ld.cmd_tag_repos(cons, pipeline="dev", version="0.0.58-lpb-dev") == 1
+        assert "workspace sync" in cons.err.getvalue()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

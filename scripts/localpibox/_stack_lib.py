@@ -1,59 +1,41 @@
-#!/usr/bin/env python3
-"""lpb-config — Manage the LocalPibox stack config, workspace, and validation.
+"""Shared LocalPibox stack operations library.
 
-Usage:
-  lpb-config status    — Show config repo commit, remote HEAD, local changes
-  lpb-config update    — Fetch + fast-forward config repo (safe: refuses on local changes)
-  lpb-config reset     — Re-clone config repo, destroy local changes (with confirmation)
-  lpb-config merge     — Open git merge flow for advanced users
-  lpb-config align     — Align settings.json extension pins to latest tags
+Used by the two CLI tools:
 
-  lpb-config workspace status   — Show workspace repo branches + alignment
-  lpb-config workspace sync     — Clone missing repos, create symlinks, align branches, pull latest
-  lpb-config workspace ensure   — Switch repos to correct branches for pipeline
+  support/lpb-config   — config repo manager (status/update/reset/merge/align/memory)
+  support/lpb-devstack — DevOps workspace tool (bump/tag-repos/workspace/validate/release)
 
-  lpb-config validate           — Validate entire stack alignment to current pipeline
+Contains everything stack-related so both tools stay thin:
 
-  lpb-config release status     — Show stable-release readiness across all 6 repos
-  lpb-config release promote    — Promote dev → stable (--dry-run, --rebase, --yes)
-
-Pipeline detection:
-  Reads VERSION file to determine pipeline (dev vs main). Override with --tag.
-
-Environment:
-  AGENT_DIR         — Config repo path (default: /home/lpb/.pi/agent)
-  CONFIG_REMOTE     — Git remote URL (default: https://github.com/lpb-stack/config.git)
-  CONFIG_REF        — Branch to track (default: main)
-  LPB_GITHUB_TOKEN  — GitHub token for authenticated operations
-  LPB_WORKSPACE_ROOT    — Workspace root (default: /home/lpb/workspace)
-  LPB_AGENT_GIT         — Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)
-  LPB_STACK_REMOTE_BASE — Stack remote base (default: https://github.com/lpb-stack)
+  - git helpers (plain + GitHub-auth aware, repo-scoped and remote-only)
+  - workspace repo definitions (WORKSPACE_REPOS / TAG_REPOS) and path constants
+  - pipeline detection (dev vs main) and VERSION reading/bumping
+  - workspace operations (status / sync / ensure / sync --extensions)
+  - full stack validation (cmd_validate)
+  - stable-release promotion engine (cmd_release_status / cmd_release_promote)
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
 
-_SELF_DIR = Path(__file__).resolve().parent
-for _c in (_SELF_DIR.parent / "scripts", _SELF_DIR, Path("/opt/pi-support")):
-    if (_c / "localpibox").is_dir():
-        sys.path.insert(0, str(_c))
-        break
-
-from localpibox.cli import confirm, install_sigpipe_handler  # noqa: E402
-from localpibox.env import parse_env_file  # noqa: E402
-from localpibox.log import Console  # noqa: E402
-from localpibox.run import run_cmd  # noqa: E402
+from .cli import confirm
+from .env import parse_env_file
+from .log import Console
+from .run import run_cmd
 
 # ─── Constants ──────────────────────────────────────────────────────────────
+
+# Devstack repo root (this file lives in <devstack>/scripts/localpibox/).
+# In the Docker image this resolves to /opt — harmless, the candidates below
+# fall through to /opt/devstack and the workspace.
+_DEVSTACK_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_AGENT_DIR = os.environ.get("AGENT_DIR", "/home/lpb/.pi/agent")
 DEFAULT_REMOTE = os.environ.get("CONFIG_REMOTE", "https://github.com/lpb-stack/config.git")
@@ -65,12 +47,15 @@ AGENT_GIT = Path(os.environ.get(
 
 MIGRATE_KEEP = {".initialized", "ssh-host-keys", "gh-config", "agent"}
 
+# Canonical stack VERSION format (0.x.y-lpb[-dev]) — must match the
+# devstack pre-commit hook.
+VERSION_RE = re.compile(r"^0\.[0-9]+\.[0-9]+-lpb(-dev)?$")
+
 # ─── Workspace repo definitions ───────────────────────────────────────────
-# Each repo: (name, is_symlink, is_extension, dev_branch, main_branch, fork_remote)
+# Each repo: (name, is_symlink, is_extension, dev_branch, main_branch)
 #   is_symlink: workspace repo is a symlink → .pi/agent/git/...
 #   is_extension: repo is installed as a Pi extension
 #   dev_branch / main_branch: expected branch for each pipeline
-#   fork_remote: GitHub fork URL (for cloning)
 
 WORKSPACE_REPOS = [
     # (name, is_symlink, is_extension, dev_branch, main_branch)
@@ -83,6 +68,24 @@ WORKSPACE_REPOS = [
 
 EXTENSION_REPOS = [r for r in WORKSPACE_REPOS if r[2]]  # is_extension
 
+# Repos tagged per release — the 5 stack repos excluding devstack (devstack
+# is tracked by its VERSION file, never tagged). Mirrors the CI tag-repos job.
+TAG_REPOS = [
+    # (name, dev_branch, main_branch)
+    ("pi", "lpb-dev", "lpb"),
+    ("pi-subagents", "lpb-dev", "lpb"),
+    ("lemonade-pi-plugin", "lpb-dev", "lpb"),
+    ("config", "dev", "main"),
+    ("lpb-memory", "dev", "main"),
+]
+
+LPB_EXTENSION_REPOS = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
+
+MEMORY_CONFIG_PATH = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json"
+MEMORY_CONFIG_TEMPLATE = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json.template"
+
+
+# ─── Git helpers ───────────────────────────────────────────────────────────
 
 def _github_token() -> str:
     """Return GitHub token from environment."""
@@ -113,6 +116,11 @@ def git_auth(dir_: str | Path, *args: str, timeout: int = 120) -> tuple[str, str
     """
     cmd = _git_authenticated(["-C", str(dir_), *args])
     return run_cmd(cmd, timeout=timeout)
+
+
+def git_remote(*args: str, timeout: int = 120) -> tuple[str, str, int]:
+    """Run a git command not scoped to a local repo (ls-remote, push <url> ...)."""
+    return run_cmd(_git_authenticated(list(args)), timeout=timeout)
 
 
 # ─── Pipeline detection ───────────────────────────────────────────────────
@@ -152,13 +160,9 @@ def detect_pipeline(tag_override: str | None = None) -> str:
 
 def get_version() -> str:
     """Read the current stack VERSION."""
-    for candidate in (
-        _SELF_DIR.parent / "VERSION",
-        Path("/opt/devstack/VERSION"),
-        WORKSPACE_ROOT / "devstack" / "VERSION",
-    ):
-        if candidate.is_file():
-            return candidate.read_text().strip()
+    vf = _find_version_file()
+    if vf is not None:
+        return vf.read_text().strip()
     return os.environ.get("LPB_VERSION", "unknown")
 
 
@@ -170,7 +174,7 @@ def _find_version_file() -> Path | None:
     if _VERSION_FILE is not None:
         return _VERSION_FILE
     for candidate in (
-        _SELF_DIR.parent / "VERSION",
+        _DEVSTACK_ROOT / "VERSION",
         Path("/opt/devstack/VERSION"),
         WORKSPACE_ROOT / "devstack" / "VERSION",
     ):
@@ -185,10 +189,9 @@ def get_stack_env(pipeline: str) -> dict[str, str]:
 
     Returns LPB_PI_REF, LPB_CONFIG_REF, etc.
     """
-    # Load base lpb.stack.env
-    base_env = {}
+    base_env: dict[str, str] = {}
     for candidate in (
-        _SELF_DIR.parent / "lpb.stack.env",
+        _DEVSTACK_ROOT / "lpb.stack.env",
         Path("/opt/devstack/lpb.stack.env"),
         WORKSPACE_ROOT / "devstack" / "lpb.stack.env",
     ):
@@ -198,8 +201,8 @@ def get_stack_env(pipeline: str) -> dict[str, str]:
 
     # Overlay pipeline-specific env
     for candidate in (
-        _SELF_DIR.parent / f"lpb.stack.{pipeline}.env",
-        Path("/opt/devstack/lpb.stack.") / f"{pipeline}.env",
+        _DEVSTACK_ROOT / f"lpb.stack.{pipeline}.env",
+        Path("/opt/devstack") / f"lpb.stack.{pipeline}.env",
         WORKSPACE_ROOT / "devstack" / f"lpb.stack.{pipeline}.env",
     ):
         if candidate.is_file():
@@ -215,6 +218,40 @@ def expected_branch(repo_name: str, pipeline: str) -> str:
         if name == repo_name:
             return dev_branch if pipeline == "dev" else main_branch
     return ""
+
+
+# ─── VERSION bumping (pure logic) ─────────────────────────────────────────
+
+def parse_version(version: str) -> tuple[int, int, int, str] | None:
+    """Parse a stack version string → ``(major, minor, patch, suffix)``.
+
+    ``suffix`` is ``-lpb`` or ``-lpb-dev``. Returns None when invalid.
+    """
+    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(-lpb(-dev)?)", version.strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
+
+
+def bump_version(version: str, kind: str = "patch") -> str:
+    """Bump a stack version (patch/minor/major), preserving the -lpb[-dev] suffix."""
+    parsed = parse_version(version)
+    if parsed is None:
+        raise ValueError(
+            f"invalid version format: {version!r} (expected 0.x.y-lpb[-dev])")
+    major, minor, patch, suffix = parsed
+    if kind == "patch":
+        patch += 1
+    elif kind == "minor":
+        minor += 1
+        patch = 0
+    elif kind == "major":
+        major += 1
+        minor = 0
+        patch = 0
+    else:
+        raise ValueError(f"unknown bump kind: {kind!r} (patch|minor|major)")
+    return f"{major}.{minor}.{patch}{suffix}"
 
 
 # ─── Legacy layout migration ──────────────────────────────────────────────
@@ -235,266 +272,7 @@ def migrate_legacy_layout(pi_root: str | Path, agent_dir: str | Path, cons: Cons
         cons.info(f"Legacy config layout migrated to {agent_dir}.")
 
 
-# ─── Config repo commands ─────────────────────────────────────────────────
-
-def clone_or_init(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> bool:
-    """Clone the config repo, or initialize it in place when the target is
-    non-empty (stale runtime state). Mirrors the logic in start.sh."""
-    agent_dir = Path(agent_dir)
-    if agent_dir.is_dir() and any(agent_dir.iterdir()):
-        cons.warn("Config area not empty — initializing config repo in place...")
-        git(agent_dir, "init", "-q")
-        git(agent_dir, "remote", "add", "origin", remote)
-        out, err, code = git(agent_dir, "fetch", "--depth=1", "origin", ref)
-        if code:
-            cons.error(f"Failed to fetch config repo: {err.strip() or out.strip()}")
-            return False
-        git(agent_dir, "reset", "-q", "--hard", f"origin/{ref}")
-        return True
-    out, err, code = run_cmd(
-        ["git", "clone", "--depth=1", "--branch", ref, remote, str(agent_dir)],
-        timeout=300,
-    )
-    if code:
-        cons.error(f"Failed to clone config repo: {err.strip() or out.strip()}")
-        return False
-    return True
-
-
-def head_short(dir_: str | Path) -> str:
-    out, _, _ = git(dir_, "rev-parse", "HEAD")
-    return out.strip()[:8] or "?"
-
-
-def cmd_status(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
-    if not (Path(agent_dir) / ".git").is_dir():
-        cons.warn(f"No config repo at {agent_dir}")
-        cons.info("  Run 'lpb-config update' to clone it.")
-        return 0
-
-    cur = head_short(agent_dir)
-    log = git(agent_dir, "log", "--oneline", "-1")[0].strip() or "?"
-    cons.info(f"Current:     {cur} ({log})")
-
-    out, _, code = git(agent_dir, "remote", "get-url", "origin")
-    if code or not out.strip():
-        cons.warn("No remote configured")
-        return 0
-
-    remote_head = git(agent_dir, "rev-parse", f"origin/{ref}")[0].strip()
-    if remote_head:
-        cons.info(f"Remote:      {remote_head[:8]} origin/{ref}")
-
-    changes = git(agent_dir, "status", "--porcelain")[0]
-    if changes.strip():
-        cons.warn(f"Uncommitted changes detected ({len(changes.splitlines())} lines):")
-        for line in changes.splitlines()[:10]:
-            cons.raw(line)
-    else:
-        cons.info("Working tree: clean")
-
-    if remote_head:
-        _, _, code = git(agent_dir, "merge-base", "--is-ancestor", cur, remote_head)
-        if code == 0:
-            cons.info("Status:      up to date (or ahead)")
-        else:
-            cons.warn("Status:      behind remote — run 'lpb-config update' to fetch")
-    return 0
-
-
-def cmd_update(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
-    if not (Path(agent_dir) / ".git").is_dir():
-        cons.info(f"Cloning config repo from {remote}...")
-        if not clone_or_init(agent_dir, remote, ref, cons):
-            return 1
-        cons.info("Done. Run 'lpb-config status' to verify.")
-        return 0
-
-    cons.info(f"Fetching updates from {remote}...")
-    out, err, code = git(agent_dir, "fetch", "origin", ref)
-    if code:
-        cons.error(f"Failed to fetch from {remote}: {err.strip() or out.strip()}")
-        return 1
-
-    remote_head = git(agent_dir, "rev-parse", f"origin/{ref}")[0].strip()
-    cur_head = git(agent_dir, "rev-parse", "HEAD")[0].strip()
-    if remote_head == cur_head:
-        cons.info("Already up to date.")
-        return 0
-
-    changes = git(agent_dir, "status", "--porcelain")[0]
-    if changes.strip():
-        cons.warn("Uncommitted changes detected:")
-        cons.raw(changes)
-        cons.warn("Aborting — local changes would be lost.")
-        cons.info("")
-        cons.info("Options:")
-        cons.info("  1. Commit your changes first, then re-run 'lpb-config update'")
-        cons.info("  2. Use 'lpb-config reset' to discard local changes (destructive)")
-        cons.info("  3. Use 'lpb-config merge' for an interactive git merge")
-        return 1
-
-    _, _, code = git(agent_dir, "merge-base", "--is-ancestor", cur_head, remote_head)
-    if code == 0:
-        git(agent_dir, "reset", "--hard", f"origin/{ref}")
-        log = git(agent_dir, "log", "--oneline", "-1")[0].strip()
-        cons.info(f"Updated to {log}")
-        return 0
-
-    cons.warn("Cannot fast-forward — conflicts detected.")
-    cons.info("")
-    cons.info("Run 'lpb-config merge' for an interactive merge, or")
-    cons.info("use 'lpb-config reset' to discard local changes (destructive).")
-    return 1
-
-
-def cmd_reset(
-    agent_dir: str | Path,
-    remote: str,
-    ref: str,
-    cons: Console,
-    *,
-    force: bool = False,
-    inp=None,
-) -> int:
-    if not (Path(agent_dir) / ".git").is_dir():
-        cons.info(f"Cloning config repo from {remote}...")
-        if not clone_or_init(agent_dir, remote, ref, cons):
-            return 1
-        cons.info("Done.")
-        return 0
-
-    cons.warn(f"This will destroy ALL local changes in {agent_dir}.")
-    cons.raw(f"  Current: {head_short(agent_dir)}")
-    remote_head = git(agent_dir, "rev-parse", f"origin/{ref}")[0].strip()[:8]
-    cons.raw(f"  Remote:  {remote_head}")
-
-    if not force and not confirm("  Continue?", default=False, inp=inp):
-        cons.info("Aborted.")
-        return 0
-
-    shutil.rmtree(agent_dir, ignore_errors=True)
-    if not clone_or_init(agent_dir, remote, ref, cons):
-        return 1
-    cons.info("Reset complete. Re-run Pi to apply the new config.")
-    return 0
-
-
-def cmd_merge(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
-    if not (Path(agent_dir) / ".git").is_dir():
-        cons.error(f"No config repo at {agent_dir}. Run 'lpb-config update' first.")
-        return 1
-
-    cons.info(f"Fetching latest from {remote}...")
-    git(agent_dir, "fetch", "origin", ref)
-
-    remote_head = git(agent_dir, "rev-parse", f"origin/{ref}")[0].strip()
-    cur_head = git(agent_dir, "rev-parse", "HEAD")[0].strip()
-    if remote_head == cur_head:
-        cons.info("Already up to date.")
-        return 0
-
-    cons.info(f"Starting merge: {cur_head[:8]} -> {remote_head[:8]}")
-    out, err, code = git(agent_dir, "merge", "--no-edit", f"origin/{ref}")
-    if code == 0:
-        cons.info("Merge complete.")
-        return 0
-
-    cons.warn("Merge conflicts detected. Resolve them with git, then:")
-    cons.info(f"  cd {agent_dir}")
-    cons.info("  git add <resolved-files>")
-    cons.info("  git commit")
-    cons.info("  lpb-config status")
-    return 1
-
-
-def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
-    """Align settings.json extension pins to latest available tags."""
-    settings_path = Path(agent_dir) / "settings.json"
-    if not settings_path.is_file():
-        cons.error(f"settings.json not found: {settings_path}")
-        return 1
-
-    with open(settings_path) as f:
-        settings = json.load(f)
-
-    packages = settings.get("packages", [])
-    lpb_repos = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
-
-    current_pins = {}
-    for pkg in packages:
-        if isinstance(pkg, str) and "@" in pkg:
-            for name in lpb_repos:
-                if f"lpb-stack/{name}@" in pkg:
-                    current_pins[name] = pkg.split("@")[-1]
-
-    cons.info("Current extension pins:")
-    for name in lpb_repos:
-        cons.info(f"  {name}: {current_pins.get(name, '(not pinned)')}")
-
-    cons.info("\nChecking latest tags...")
-    latest_tags = {}
-    for name in lpb_repos:
-        try:
-            token = _github_token()
-            url = f"https://api.github.com/repos/lpb-stack/{name}/tags"
-            headers = {"Accept": "application/vnd.github+json"}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                tags = json.loads(resp.read())
-                if tags:
-                    latest_tags[name] = tags[0]["name"]
-        except Exception as e:
-            cons.warn(f"  {name}: could not fetch ({e})")
-
-    mismatches = []
-    for name in lpb_repos:
-        cur = current_pins.get(name)
-        lat = latest_tags.get(name)
-        if cur and lat and cur != lat:
-            mismatches.append((name, cur, lat))
-
-    if mismatches:
-        cons.warn(f"\nVersion mismatch ({len(mismatches)} extension(s)):")
-        for name, cur, lat in mismatches:
-            cons.warn(f"  {name}: {cur} → {lat}")
-
-        if confirm("\nUpdate settings.json to latest?"):
-            for name, cur, lat in mismatches:
-                old = f"git:github.com/lpb-stack/{name}@{cur}"
-                new = f"git:github.com/lpb-stack/{name}@{lat}"
-                idx = packages.index(old) if old in packages else -1
-                if idx >= 0:
-                    packages[idx] = new
-                    cons.info(f"  {name}: {cur} → {lat}")
-            settings["packages"] = packages
-            with open(settings_path, "w") as f:
-                json.dump(settings, f, indent=2)
-                f.write("\n")
-            cons.info(f"\nUpdated {settings_path}")
-            cons.info("Run 'pi update --extensions' to apply")
-        else:
-            cons.info("Skipped. Run 'lpb-config align' when ready.")
-    else:
-        cons.info("\nAll extensions up to date")
-
-    cons.info("\nConfig repo status:")
-    out, err, code = git(agent_dir, "status", "--porcelain")
-    if code == 0 and out.strip():
-        cons.warn("Local changes detected:")
-        for line in out.strip().split("\n")[:5]:
-            cons.info(f"  {line}")
-        cons.info("Use 'lpb-config update' to sync (if safe)")
-        cons.info("Use 'lpb-config merge' for manual merge")
-    else:
-        cons.info("  Clean (no local changes)")
-
-    return 0
-
-
-# ─── Workspace commands ───────────────────────────────────────────────────
+# ─── Workspace helpers ────────────────────────────────────────────────────
 
 def _resolve_repo_path(repo_name: str) -> Path | None:
     """Resolve the actual path of a workspace repo (follow symlinks)."""
@@ -636,6 +414,8 @@ def _sync_repo(name: str, path: Path, expected: str, cons: Console) -> bool:
     return True
 
 
+# ─── Workspace commands ───────────────────────────────────────────────────
+
 def cmd_workspace_status(pipeline: str, cons: Console) -> int:
     """Show workspace repo branches and alignment."""
     cons.info(f"Pipeline: {pipeline} (VERSION: {get_version()})")
@@ -681,7 +461,7 @@ def cmd_workspace_status(pipeline: str, cons: Console) -> int:
     if all_aligned:
         cons.done("All repos aligned with pipeline.")
     else:
-        cons.warn("Some repos are misaligned. Run 'lpb-config workspace ensure' to fix.")
+        cons.warn("Some repos are misaligned. Run 'lpb-devstack workspace ensure' to fix.")
 
     return 0 if all_aligned else 1
 
@@ -859,7 +639,7 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
         for action in actions:
             cons.raw(action)
         cons.info("")
-        cons.info("Run 'lpb-config workspace ensure --fix' to auto-fix.")
+        cons.info("Run 'lpb-devstack workspace ensure --fix' to auto-fix.")
 
     # ── Generate settings.json from template if missing ────────────────
     if fix:
@@ -879,9 +659,6 @@ def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> 
 
 
 # ─── Settings.json helpers ──────────────────────────────────────────────
-
-LPB_EXTENSION_REPOS = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
-
 
 def _read_settings(agent_dir: str | Path) -> dict | None:
     """Read settings.json from agent dir."""
@@ -942,7 +719,7 @@ def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
 
     if settings is None:
         cons.error(f"settings.json not found: {agent_dir}")
-        cons.info("  Run 'lpb-config workspace ensure' to generate from template.")
+        cons.info("  Run 'lpb-devstack workspace ensure' to generate from template.")
         return 1
 
     # Determine target version
@@ -992,7 +769,7 @@ def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
         cons.info("")
         cons.done("Extension pins updated. Run 'pi update --extensions' to apply.")
     else:
-        cons.info("Skipped. Run 'lpb-config workspace sync --extensions' when ready.")
+        cons.info("Skipped. Run 'lpb-devstack workspace sync --extensions' when ready.")
 
     return 0 if not mismatches else 1
 
@@ -1051,7 +828,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
         )
     else:
         check("VERSION file exists", False,
-              f"checked {_SELF_DIR.parent}, /opt/devstack, {WORKSPACE_ROOT / 'devstack'}",
+              f"checked {_DEVSTACK_ROOT}, /opt/devstack, {WORKSPACE_ROOT / 'devstack'}",
               "Ensure devstack/VERSION exists")
         check("VERSION matches pipeline", False,
               "no VERSION file found", "Ensure devstack/VERSION exists")
@@ -1062,10 +839,10 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
         config_branch = _repo_branch(config_path)
         config_expected = "dev" if pipeline == "dev" else "main"
         check(
-            f"Config repo on correct branch",
+            "Config repo on correct branch",
             config_branch == config_expected,
             f"current={config_branch}, expected={config_expected}",
-            "lpb-config reset (or git checkout {config_expected})",
+            "lpb-config reset (or git checkout <expected>)",
         )
     else:
         check("Config repo exists", False, f"{config_path} not found",
@@ -1082,7 +859,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
         if path is None:
             check(f"  {name} exists", False,
                   f"{WORKSPACE_ROOT / name} not found",
-                  f"Clone or create symlink")
+                  "Clone or create symlink")
             continue
 
         branch = _repo_branch(path)
@@ -1094,7 +871,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
             symlink_ok = ws_path.is_symlink()
             check(f"  {name} symlink", symlink_ok,
                   f"{ws_path} → {ws_path.resolve() if symlink_ok else 'broken'}")
-            details = f"symlink ✅" if symlink_ok else f"symlink ❌"
+            details = "symlink ✅" if symlink_ok else "symlink ❌"
 
         check(f"  {name} branch", branch == expected, details,
               f"cd {path} && git checkout {expected}")
@@ -1136,13 +913,13 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     config_ref_expected = "dev" if pipeline == "dev" else "main"
 
     check(
-        f"LPB_PI_REF correct",
+        "LPB_PI_REF correct",
         pi_ref == pi_ref_expected,
         f"current={pi_ref}, expected={pi_ref_expected}",
         f"Edit lpb.stack.{pipeline}.env or lpb.stack.env",
     )
     check(
-        f"LPB_CONFIG_REF correct",
+        "LPB_CONFIG_REF correct",
         config_ref == config_ref_expected,
         f"current={config_ref}, expected={config_ref_expected}",
         f"Edit lpb.stack.{pipeline}.env or lpb.stack.env",
@@ -1176,12 +953,12 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
                         f"  {pkg_name} pinned",
                         False,
                         f"@{pinned_tag} (expected: {target_version})",
-                        "lpb-config workspace sync --extensions",
+                        "lpb-devstack workspace sync --extensions",
                     )
             else:
                 check(f"  {pkg_name} pinned", False,
                       "not found in settings.json",
-                      "lpb-config workspace sync --extensions")
+                      "lpb-devstack workspace sync --extensions")
     else:
         check("settings.json exists", False,
               f"{settings_path} not found",
@@ -1238,114 +1015,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     return 0 if passed_checks == total_checks else 1
 
 
-# ─── Memory config commands ──────────────────────────────────────────────
-
-MEMORY_CONFIG_PATH = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json"
-MEMORY_CONFIG_TEMPLATE = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json.template"
-
-
-def cmd_memory_show(cons: Console) -> int:
-    """Show current lpb-memory config."""
-    if MEMORY_CONFIG_PATH.is_file():
-        data = json.loads(MEMORY_CONFIG_PATH.read_text())
-        cons.info("lpb-memory config:")
-        cons.info(f"  File: {MEMORY_CONFIG_PATH}")
-        cons.info("")
-        for key, val in data.items():
-            cons.info(f"  {key}: {val}")
-    else:
-        cons.warn(f"Config not found: {MEMORY_CONFIG_PATH}")
-        if MEMORY_CONFIG_TEMPLATE.is_file():
-            cons.info("")
-            cons.info("Template available, run to generate:")
-            cons.info("  lpb-config memory setup --non-interactive")
-        else:
-            cons.info("")
-            cons.info("Extension will use built-in defaults.")
-    return 0
-
-
-def cmd_memory_setup(*, non_interactive: bool = False, cons: Console) -> int:
-    """Interactive memory config wizard."""
-    if not MEMORY_CONFIG_TEMPLATE.is_file():
-        cons.error("Template not found:")
-        cons.error(f"  {MEMORY_CONFIG_TEMPLATE}")
-        cons.info("Run 'lpb-config update' to fetch latest config repo.")
-        return 1
-
-    base = json.loads(MEMORY_CONFIG_TEMPLATE.read_text())
-
-    if non_interactive:
-        MEMORY_CONFIG_PATH.write_text(json.dumps(base, indent=2) + "\n")
-        cons.info(f"Generated {MEMORY_CONFIG_PATH} from template.")
-        cons.info("Run 'lpb-config memory setup' to customize.")
-        cons.info("Restart Pi session (/new) to apply.")
-        return 0
-
-    cons.info("=" * 50)
-    cons.info("  lpb-memory Configuration")
-    cons.info("=" * 50)
-    cons.info("")
-
-    modes = [
-        ("legacy-inject", "Inject memory into every prompt (~4KB, recommended)"),
-        ("policy-only", "AI must search memory proactively (saves context)"),
-    ]
-    cons.info("[1] Memory mode:")
-    for i, (mode, desc) in enumerate(modes, 1):
-        marker = " ← current" if base.get("memoryMode") == mode else ""
-        cons.info(f"  {i}. {mode:<15} {desc}{marker}")
-    choice = input("\n  Choice [1]: ").strip() or "1"
-    if choice == "2":
-        base["memoryMode"] = "policy-only"
-        base["memoryPolicyStyle"] = "compact"
-    cons.info("")
-
-    transports = [
-        ("subprocess", "Offload to separate model (free main session, recommended)"),
-        ("direct", "Use main model (faster, blocks main session)"),
-    ]
-    cons.info("[2] Review transport:")
-    for i, (t, desc) in enumerate(transports, 1):
-        marker = " ← current" if base.get("reviewTransport") == t else ""
-        cons.info(f"  {i}. {t:<15} {desc}{marker}")
-    choice = input("\n  Choice [1]: ").strip() or "1"
-    if choice == "2":
-        base["reviewTransport"] = "direct"
-    cons.info("")
-
-    cons.info("[3] Model for background operations:")
-    cons.info("  (Leave empty to use main model)")
-    cons.info("  Example: qwen3.5-9b-FLM (NPU model)")
-    model = input("  Model: ").strip()
-    if model:
-        base["llmModelOverride"] = model
-        base["llmThinkingOverride"] = "low"
-    cons.info("")
-
-    cons.info("[4] Context limits (press Enter for defaults):")
-    val = input(f"  Memory entries [{base.get('memoryCharLimit', 3000)}]: ").strip()
-    if val:
-        base["memoryCharLimit"] = int(val)
-    val = input(f"  User preferences [{base.get('userCharLimit', 3000)}]: ").strip()
-    if val:
-        base["userCharLimit"] = int(val)
-    val = input(f"  Max failures [{base.get('failureInjectionMaxEntries', 3)}]: ").strip()
-    if val:
-        base["failureInjectionMaxEntries"] = int(val)
-    cons.info("")
-
-    MEMORY_CONFIG_PATH.write_text(json.dumps(base, indent=2) + "\n")
-    cons.done(f"Config written to {MEMORY_CONFIG_PATH}")
-    cons.info("")
-    cons.info("Apply: restart Pi session with /new")
-    cons.info("Review: lpb-config memory show")
-
-    return 0
-
-
 # ─── Release (stable promotion) ────────────────────────────────────────────
-
 
 def _release_repos() -> list[tuple[str, Path, str, str, str]]:
     """All 6 stack repos: (label, path, dev_branch, main_branch, github_repo)."""
@@ -1505,8 +1175,10 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
     with --rebase, replace stable with the dev history (force-push) — the
     first-release mode. On conflict: leave the repo untouched, report.
     devstack only: strip the -dev VERSION suffix on the stable branch.
-    Then push all successfully promoted repos. CI (main pipeline) then bumps
-    VERSION, tags stable branches, builds :{v}-* / :main-* / :latest-*.
+    Then push all successfully promoted repos. CI (main pipeline) then
+    builds/tags once VERSION changes on main (manual tagging — CI never
+    bumps; if main's VERSION already matches, re-tag with
+    `lpb-devstack tag-repos --branch main`).
     """
     _set_commit_author()
     version = get_version()
@@ -1618,7 +1290,7 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
             out, err, code = git(path, "commit", "-m",
                                  f"release: {stable} — stable branch promoted "
                                  f"from dev",
-                                 timeout=300)
+                                 timeout=600)
             if code != 0:
                 detail = err.strip() or out.strip() or "unknown error"
                 cons.error(f"  devstack: VERSION commit failed: {detail}")
@@ -1673,161 +1345,51 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
         cons.error(f"Failed: {', '.join(failures)}")
         cons.error("Stable release INCOMPLETE — complete the failing repo "
                    "(recovery steps above), then re-run "
-                   "'lpb-config release promote' (already-promoted repos "
+                   "'lpb-devstack release promote' (already-promoted repos "
                    "fast-forward or no-op).")
         return 1
     stable_version = (version[:-len("-dev")] if version.endswith("-dev") else version)
-    cons.done(f"Promoted all 6 repos. CI (main pipeline) will bump to "
-              f"{stable_version.split('-lpb')[0]}-lpb (patch+1), tag stable "
-              f"branches and build :{{v}}-* / :main-* / :latest-* images.")
+    cons.done(f"Promoted all 6 repos. main's VERSION is now {stable_version}.")
+    cons.info(f"CI (main pipeline) now builds :{stable_version}-* / :main-* / :latest-*")
+    cons.info("and tags the 5 repos at the stable branches.")
     cons.info("After CI passes:")
-    cons.info("  1. lpb-config --tag main workspace sync --extensions")
+    cons.info("  1. lpb-devstack --tag main workspace sync --extensions")
     cons.info("  2. pi update --extensions")
+    cons.info(f"  (If CI's tag-repos didn't run: lpb-devstack tag-repos --branch main --version {stable_version})")
     return 0
 
 
-# ─── CLI ──────────────────────────────────────────────────────────────────
-
-def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
-    p = sub.add_parser(name, help=help_)
-    return p
-
-
-def main(argv: list[str] | None = None) -> int:
-    install_sigpipe_handler()
-    parser = argparse.ArgumentParser(
-        prog="lpb-config",
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Environment:\n"
-            "  AGENT_DIR         Config repo path (default: /home/lpb/.pi/agent)\n"
-            "  CONFIG_REMOTE     Git remote URL (default: https://github.com/lpb-stack/config.git)\n"
-            "  CONFIG_REF        Branch to track (default: main)\n"
-            "  LPB_GITHUB_TOKEN  GitHub token for authenticated git operations\n"
-            "  LPB_WORKSPACE_ROOT    Workspace root (default: /home/lpb/workspace)\n"
-            "  LPB_AGENT_GIT         Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)\n"
-            "  LPB_STACK_REMOTE_BASE Stack remote base (default: https://github.com/lpb-stack)\n\n"
-            "Pipeline:\n"
-            "  Detected from VERSION file or LPB_IMAGE_TAG env var.\n"
-            "  Override with --tag dev|main on any command."
-        ),
-    )
-    parser.add_argument(
-        "--tag", default=None,
-        help="Override pipeline detection (dev|main)",
-    )
-
-    sub = parser.add_subparsers(dest="command")
-
-    # Config repo commands
-    _add_subparser(sub, "status", "Show config repo commit, remote HEAD, local changes")
-    _add_subparser(sub, "update", "Fetch + fast-forward config repo")
-    p_reset = _add_subparser(sub, "reset", "Re-clone config repo (with confirmation)")
-    p_reset.add_argument("--force", action="store_true", help="skip confirmation")
-    _add_subparser(sub, "merge", "Open git merge flow for config repo")
-    _add_subparser(sub, "align", "Align settings.json extension pins to latest tags")
-
-    # Memory config subcommand
-    p_mem = sub.add_parser("memory", help="Manage lpb-memory extension config")
-    mem_sub = p_mem.add_subparsers(dest="memory_command")
-    _add_subparser(mem_sub, "show", "Show current lpb-memory config")
-    p_mem_setup = _add_subparser(mem_sub, "setup", "Interactive memory config wizard")
-    p_mem_setup.add_argument("--non-interactive", action="store_true",
-                             help="generate from template without prompts")
-
-    # Validate command
-    _add_subparser(sub, "validate", "Validate entire stack alignment to current pipeline")
-
-    # Release subcommand group
-    p_rel = sub.add_parser("release", help="Stable release: promote dev branches to stable")
-    rel_sub = p_rel.add_subparsers(dest="release_command")
-    _add_subparser(rel_sub, "status", "Show stable-release readiness across all repos")
-    p_rel_promote = _add_subparser(rel_sub, "promote",
-                                   "Merge dev branches into stable branches + push")
-    p_rel_promote.add_argument("--yes", action="store_true", help="skip confirmation")
-    p_rel_promote.add_argument("--dry-run", action="store_true",
-                               help="show plan + feasibility, change nothing")
-    p_rel_promote.add_argument("--rebase", action="store_true",
-                               help="first-release mode: for repos with unrelated "
-                                    "histories, replace stable with dev history "
-                                    "(force-push)")
-
-    # Workspace subcommand group
-    p_ws = sub.add_parser("workspace", help="Manage workspace repos")
-    ws_sub = p_ws.add_subparsers(dest="workspace_command")
-    _add_subparser(ws_sub, "status", "Show workspace repo branches + alignment")
-    p_ws_sync = _add_subparser(ws_sub, "sync", "Prepare workspace: clone missing repos, create symlinks, align branches, pull latest")
-    p_ws_sync.add_argument("--extensions", action="store_true",
-                           help="sync settings.json extension pins to LPB_VERSION")
-    p_ws_ensure = _add_subparser(ws_sub, "ensure", "Switch repos to correct branches for pipeline")
-    p_ws_ensure.add_argument("--fix", action="store_true", help="auto-fix misaligned repos")
-
-    args = parser.parse_args(argv)
-
-    agent_dir = os.environ.get("AGENT_DIR", DEFAULT_AGENT_DIR)
-    remote = os.environ.get("CONFIG_REMOTE", DEFAULT_REMOTE)
-    ref = os.environ.get("CONFIG_REF", DEFAULT_REF)
-    cons = Console()
-
-    if agent_dir == DEFAULT_AGENT_DIR:
-        migrate_legacy_layout("/home/lpb/.pi", DEFAULT_AGENT_DIR, cons)
-
-    # Determine pipeline
-    pipeline = detect_pipeline(args.tag)
-
-    force = getattr(args, "force", False) or os.environ.get("FORCE") == "1"
-
-    if args.command == "status":
-        return cmd_status(agent_dir, remote, ref, cons)
-    if args.command == "update":
-        return cmd_update(agent_dir, remote, ref, cons)
-    if args.command == "reset":
-        return cmd_reset(agent_dir, remote, ref, cons, force=force)
-    if args.command == "merge":
-        return cmd_merge(agent_dir, remote, ref, cons)
-    if args.command == "align":
-        return cmd_align(agent_dir, remote, ref, cons)
-    if args.command == "validate":
-        return cmd_validate(pipeline, cons)
-    if args.command == "memory":
-        if not args.memory_command:
-            p_mem.print_help()
-            return 1
-        if args.memory_command == "show":
-            return cmd_memory_show(cons)
-        if args.memory_command == "setup":
-            non_int = getattr(args, "non_interactive", False)
-            return cmd_memory_setup(non_interactive=non_int, cons=cons)
-    if args.command == "release":
-        if not args.release_command:
-            p_rel.print_help()
-            return 1
-        if args.release_command == "status":
-            return cmd_release_status(cons)
-        if args.release_command == "promote":
-            return cmd_release_promote(assume_yes=getattr(args, "yes", False),
-                                       dry_run=getattr(args, "dry_run", False),
-                                       rebase=getattr(args, "rebase", False),
-                                       cons=cons)
-    if args.command == "workspace":
-        if not args.workspace_command:
-            p_ws.print_help()
-            return 1
-        if args.workspace_command == "status":
-            return cmd_workspace_status(pipeline, cons)
-        if args.workspace_command == "sync":
-            sync_ext = getattr(args, "extensions", False)
-            if sync_ext:
-                return cmd_workspace_sync_extensions(pipeline, cons)
-            return cmd_workspace_sync(pipeline, cons)
-        if args.workspace_command == "ensure":
-            fix = getattr(args, "fix", False)
-            return cmd_workspace_ensure(pipeline, fix=fix, cons=cons)
-
-    parser.print_help()
-    return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+__all__ = [
+    "AGENT_GIT",
+    "DEFAULT_AGENT_DIR",
+    "DEFAULT_REMOTE",
+    "DEFAULT_REF",
+    "EXTENSION_REPOS",
+    "LPB_EXTENSION_REPOS",
+    "MIGRATE_KEEP",
+    "MEMORY_CONFIG_PATH",
+    "MEMORY_CONFIG_TEMPLATE",
+    "TAG_REPOS",
+    "VERSION_RE",
+    "WORKSPACE_REPOS",
+    "WORKSPACE_ROOT",
+    "bump_version",
+    "cmd_release_promote",
+    "cmd_release_status",
+    "cmd_validate",
+    "cmd_workspace_ensure",
+    "cmd_workspace_status",
+    "cmd_workspace_sync",
+    "cmd_workspace_sync_extensions",
+    "detect_pipeline",
+    "expected_branch",
+    "get_stack_env",
+    "get_version",
+    "git",
+    "git_auth",
+    "git_remote",
+    "migrate_legacy_layout",
+    "parse_version",
+    "_find_version_file",
+    "_github_token",
+]

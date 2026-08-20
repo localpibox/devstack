@@ -48,7 +48,7 @@ The settings file is **template-driven**, not git-tracked:
 3. **No model preconfigured**: user runs `/login lemonade` to set up the provider
 4. **Persistence**: `settings.json` lives on the host volume — it survives
    container rebuilds
-5. **Validation**: `lpb-config validate` checks settings.json pins match
+5. **Validation**: `lpb-devstack validate` checks settings.json pins match
    the current stack version
 
 ### Example pin format
@@ -71,7 +71,7 @@ Extensions are pinned in the `packages` array of `settings.json` as
 
 The `__LPB_VERSION__` placeholder in the template is replaced with the
 stack version at boot. Pins are synced to a new stack version by
-`lpb-config workspace sync --extensions`.
+`lpb-devstack workspace sync --extensions`.
 
 ## Extension Clones
 
@@ -139,10 +139,10 @@ lpb-config status
 lpb-config update
 
 # Validate settings.json pins
-lpb-config validate
+lpb-devstack validate
 
 # Sync extension pins to stack version
-lpb-config workspace sync --extensions
+lpb-devstack workspace sync --extensions
 
 # Reset config repo
 lpb-config reset

@@ -1,30 +1,31 @@
 # lpb-config Reference
 
-`lpb-config` is the single tool for managing the **config repo**, **workspace
-sync**, **validation**, and **stable releases**. It is installed in the
-devstack container as `~/.local/bin/lpb-config` (run it via
+`lpb-config` is the **config repo manager** for the LocalPibox stack. It
+manages the config repo (`~/.pi/agent/`) that ships inside the devstack
+image and lives on the host volume. It is installed in the container as
+`~/.local/bin/lpb-config` (run it via
 `podman exec -it lpb-stack lpb-config …` from the host).
+
+Dev-time stack operations (VERSION bumping, repo tagging, workspace
+maintenance, validation, stable releases) live in **`lpb-devstack`** —
+see [lpb-devstack reference](lpb-devstack.md).
 
 ## Commands
 
-### Validation & Workspace
+### Config Repo Management
 
 | Command | Description |
 |---|---|
-| `lpb-config validate` | Validate entire stack alignment (repos, branches, pins) |
-| `lpb-config workspace status` | Show branches + alignment for all repos |
-| `lpb-config workspace sync` | Sync git repos (clone/fetch/merge) to current branches |
-| `lpb-config workspace sync --extensions` | Sync settings.json pins to stack version |
-| `lpb-config workspace ensure [--fix]` | Check/fix branch alignment for pipelines |
+| `lpb-config status` | Show config repo HEAD, remote, local changes |
+| `lpb-config update` | Fetch + fast-forward config repo (safe: refuses on local changes) |
+| `lpb-config reset [--force]` | Re-clone config repo, destroy local changes (with confirmation) |
+| `lpb-config merge` | Open git merge flow for advanced users (conflict resolution) |
 
-### Pipeline Override
+### Align
 
-Every command above accepts a pipeline flag:
-
-```bash
-lpb-config --tag main validate      # validate against stable pipeline
-lpb-config --tag dev workspace sync # sync dev pipeline repos
-```
+| Command | Description |
+|---|---|
+| `lpb-config align` | Update extension pins in settings.json to latest GitHub tags |
 
 ### Memory Management
 
@@ -33,46 +34,11 @@ lpb-config --tag dev workspace sync # sync dev pipeline repos
 | `lpb-config memory show` | Display current lpb-memory configuration |
 | `lpb-config memory setup` | Interactive wizard to configure lpb-memory |
 
-### Config Repo Management
+### Pipeline Override
 
-| Command | Description |
-|---|---|
-| `lpb-config status` | Show config repo state |
-| `lpb-config update` | Pull latest config repo changes |
-| `lpb-config reset` | Reset config repo to clean state |
-
-### Release (promote dev → main)
-
-| Command | Description |
-|---|---|
-| `lpb-config release status` | Pre-flight check: all 6 repos, non-destructive |
-| `lpb-config release promote --dry-run` | Inspect plan without making changes |
-| `lpb-config release promote` | Promote dev → main (interactive confirmation) |
-
-`promote` does per repo (dev branch → stable branch: `dev` → `main` for
-devstack/config/lpb-memory, `lpb-dev` → `lpb` for pi/pi-subagents/
-lemonade-pi-plugin):
-- **Fast-forward / clean merge**: resets the local stable branch to
-  `origin/<stable>`, merges `origin/<dev>`, pushes
-- **Unrelated histories** (first release): requires `--rebase` — replaces
-  the stable branch with the dev history and force-pushes
-  (`git push --force-with-lease`)
-- **Conflict**: leaves the repo untouched, reports it
-- **Dirty local repo**: skipped, reported
-- **Local stable branch ahead of origin** (unpushed commits): skipped with
-  guidance — delete the local branch (`git branch -D <stable>`, only with
-  explicit confirmation) and re-run
-- **devstack only**: strips the `-dev` VERSION suffix (e.g.
-  `0.0.46-lpb-dev` → `0.0.46-lpb`) and commits it
-
-Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
-(first-release mode).
-
-### Align
-
-| Command | Description |
-|---|---|
-| `lpb-config align` | Update extension pins in settings.json to latest GitHub tags |
+`--tag dev|main` is accepted on any command (validates the value) for
+compatibility; the remaining commands operate on the config repo
+regardless of pipeline.
 
 ## Settings.json Lifecycle
 
@@ -81,12 +47,12 @@ Settings.json is **template-driven**, not git-tracked:
 1. Config repo ships `settings.json.template` with `__LPB_VERSION__` placeholders
 2. First boot: `start.sh` generates `settings.json` (replaces placeholders)
 3. No model/provider preconfigured — user runs `/login lemonade`
-4. Pin sync: `lpb-config workspace sync --extensions` (main pipeline reads
+4. Pin sync: `lpb-devstack workspace sync --extensions` (main pipeline reads
    stable version from devstack `origin/main`)
-5. `lpb-config validate` checks pins match the current stack version
+5. `lpb-devstack validate` checks pins match the current stack version
 6. Settings.json persists on the host volume — survives container rebuilds
 
-Example pin: `git:github.com/lpb-stack/pi-subagents@0.0.46-lpb-dev`
+Example pin: `git:github.com/lpb-stack/pi-subagents@0.0.57-lpb-dev`
 
 ## lpb-memory Config Lifecycle
 
@@ -100,30 +66,22 @@ Same template-driven pattern:
 ## Quick Reference
 
 ```bash
-# Check stack health
-lpb-config validate
+# Check config repo state
+lpb-config status
 
-# See where repos stand
-lpb-config workspace status
+# Pull latest config changes (safe fast-forward)
+lpb-config update
 
-# Fix branch alignment
-lpb-config workspace ensure --fix
+# Discard local config changes (destructive)
+lpb-config reset
 
-# Update extension pins
-lpb-config workspace sync --extensions
+# Resolve a config repo merge conflict
+lpb-config merge
 
-# Check memory config
+# Update extension pins to latest GitHub tags
+lpb-config align
+
+# Check / configure the memory extension
 lpb-config memory show
-
-# Configure memory
 lpb-config memory setup
-
-# Check if ready to promote
-lpb-config release status
-
-# Preview the promote plan
-lpb-config release promote --dry-run
-
-# Actually promote
-lpb-config release promote
 ```

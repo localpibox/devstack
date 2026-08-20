@@ -151,7 +151,8 @@ podman exec -it lpb-stack bash
 |---|---|
 | `pi` | Start the Pi CLI |
 | `pi update --extensions` | Update unpinned packages (tag-pinned packages are skipped — move a pin with `pi install git:github.com/lpb-stack/<repo>@<new-tag>`) |
-| `lpb-config validate` | Validate stack alignment (repos, branches, pins) |
+| `lpb-devstack validate` | Validate stack alignment (repos, branches, pins) |
+| `lpb-devstack bump` | Bump VERSION + commit (the release trigger for CI build/tag) |
 | `lpb-config memory setup` | Interactive wizard for the memory extension |
 
 Inside the Pi TUI: `/login <provider>`, `/model`, `/settings` (thinking
@@ -220,16 +221,17 @@ rebuild) to a full image rebuild (Pi core). Full procedure in
 
 GitHub Actions (`.github/workflows/build-and-publish.yml`) runs on:
 
-- push to `dev` or `main` (Dockerfile, `support/`, `scripts/`, workflow
-  changes — VERSION auto-bumps are excluded so they don't re-trigger)
+- push to `dev` or `main` (Dockerfile, `VERSION`, `support/`, `scripts/`,
+  workflow changes)
 - pull requests to `main` (tests only)
-- weekly cron (Monday 03:00 UTC)
-- manual dispatch (`publish_latest`, `no_cache`)
+- weekly cron (Monday 03:00 UTC) and manual dispatch (always build)
 
-Pipeline jobs: **test** → **bump version** (commits the new `VERSION` to the
-pushed branch) → **build & publish images** → **tag repos** (CI tags the
-other 5 stack repos on their pipeline branches). Devstack itself is tracked
-by its `VERSION` file and is never tagged.
+Versioning is **manual**: `lpb-devstack bump` commits a new `VERSION`, and CI
+builds + tags only when VERSION changed in the pushed commit. Pipeline jobs:
+**VERSION check** → **test** (always) → **build & publish images** →
+**tag repos** (CI tags the other 5 stack repos on their pipeline branches) →
+**status**. Devstack itself is tracked by its `VERSION` file and is never
+tagged.
 
 ## Troubleshooting
 
@@ -282,12 +284,13 @@ devstack/
 ├── scripts/
 │   ├── lpb               # bash wrapper
 │   ├── lpb.py            # launcher engine (stdlib-only Python)
-│   ├── install.sh        # host installer for lpb
-│   └── localpibox/       # shared Python helpers
+│   ├── install.sh        # host installer (lpb + stack tools)
+│   └── localpibox/       # shared Python helpers (incl. _stack_lib)
 ├── support/
 │   ├── start.sh          # container bootstrap (config, .env, extensions)
 │   ├── entrypoint-*.sh   # cli / web entrypoints
-│   ├── lpb-config.py     # stack management tool (in-container)
+│   ├── lpb-config        # config repo manager (in-container)
+│   ├── lpb-devstack      # DevOps tool (bump/tag/workspace/validate/release)
 │   └── docs/             # operational docs (e.g. subagent spawning)
 └── doc/                  # reference docs (mirrored to the docs site)
 ```

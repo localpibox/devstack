@@ -41,6 +41,18 @@ curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/lpb.conf.env" -
 # Installed VERSION file (source for `lpb --version`; refreshed by self-update)
 curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/VERSION" -o "${CONFIG_DIR}/VERSION"
 
+# 3b. Stack tools (config repo manager + devstack DevOps tool) and the shared
+#     localpibox package they import (resolved via ~/.lpb-stack/devstack/).
+echo "Installing lpb-config + lpb-devstack..."
+for tool in lpb-config lpb-devstack; do
+    curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/support/${tool}" -o "${INSTALL_DIR}/${tool}"
+    chmod +x "${INSTALL_DIR}/${tool}"
+done
+mkdir -p "${CONFIG_DIR}/localpibox"
+for f in __init__.py cli.py env.py log.py run.py _stack_lib.py; do
+    curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/scripts/localpibox/${f}" -o "${CONFIG_DIR}/localpibox/${f}"
+done
+
 # 4. Add to PATH if needed (warn only, don't modify shell configs)
 case ":${PATH}:" in
     *:"${INSTALL_DIR}":*)
@@ -82,6 +94,7 @@ fi
 
 echo ""
 echo "✓ lpb installed to ${INSTALL_DIR}/lpb"
+echo "✓ lpb-config + lpb-devstack installed to ${INSTALL_DIR}/"
 echo ""
 echo "Usage examples:"
 echo "  lpb                              — Start VSCodium at ~ (pick project)"
@@ -89,8 +102,12 @@ echo "  lpb /path/to/project              — Start VSCodium at project"
 echo "  lpb /path/to/project --port 8080  — Custom port"
 echo "  lpb --without-token               — No auth (localhost only!)"
 echo "  lpb --stop                        — Stop container"
-echo "  lpb --logs                        — View logs"
+echo "  lpb --logs                        — View container logs"
 echo "  lpb --remove                      — Remove everything"
+echo ""
+echo "Stack tools:"
+echo "  lpb-config status | update | reset | memory setup   — config repo (container/host)"
+echo "  lpb-devstack bump | tag-repos | workspace | validate | release — DevOps"
 echo ""
 echo "Config: ${CONFIG_FILE}"
 echo "Docs:   lpb --help"

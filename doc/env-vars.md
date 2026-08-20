@@ -81,14 +81,14 @@ So setting `LPB_EXA_API_KEY` in your project `.env` is sufficient —
 | `LPB_CONFIG_REF` | `dev` | `main` | Config preset branch baked into the image |
 
 These select **what goes into the image** (build time) and which pipeline
-`lpb-config` validates against. At runtime you pick the pipeline with
+`lpb-devstack validate` checks against. At runtime you pick the pipeline with
 `lpb --tag dev|main`, not with these vars.
 
 ## In-Container Variables (read by Pi, extensions, and tooling)
 
 | Variable | Purpose |
 |---|---|
-| `LPB_VERSION` | Stack version baked at build time — stamps `settings.json` pins and selects the `lpb-config` pipeline |
+| `LPB_VERSION` | Stack version baked at build time — stamps `settings.json` pins and selects the `lpb-config` / `lpb-devstack` pipeline |
 | `AGENT_DIR` | Config repo directory (`~/.pi/agent`) |
 | `PI_CODING_AGENT_DIR` | Same dir, as Pi expects it |
 | `LPB_AGENT_GIT` | Extension clones dir (default `$AGENT_DIR/git/github.com/lpb-stack`) |
