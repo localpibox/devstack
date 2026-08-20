@@ -1151,13 +1151,14 @@ def _build_url():
     return f"http://{check_host}:{port}/{token_part}"
 
 
-def cmd_run():
-    """Resolve the project, decide the mode (cli/web/shell/ssh), and launch the
-    container. Foreground modes attach interactively; web/ssh run detached.
-    Includes recovery prompts when a Pi session is already active."""
-    ensure_container_cmd()
-    c = client()
+def _resolve_project() -> tuple[str, str]:
+    """Resolve the project directory, validate the project name, and compute
+    the in-container mount path.
 
+    Returns (project_dir, mount_path). Side effects: sets cfg.open_home when
+    no project was given (falls back to home) and always sets
+    cfg.project_name. Raises DevstackError on a missing dir or invalid name.
+    """
     # ── 1. Resolve project directory ─────────────────────────────────────
     project_dir = cfg.project_dir
     if not project_dir:
@@ -1189,8 +1190,12 @@ def cmd_run():
         mount_path = "/home/lpb/workspace"
     else:
         mount_path = f"/home/lpb/workspace/{cfg.project_name}"
+    return project_dir, mount_path
 
-    # ── 4. Determine image and mode ──────────────────────────────────────
+
+def _resolve_image_and_mode() -> str:
+    """Pick the image for the active mode (web → web image, else CLI image)
+    and set cfg.image_name. Returns the mode label for the summary line."""
     tag = cfg.image_tag
     if cfg.web_mode:
         cfg.image_name = resolve_web_image(tag)
@@ -1201,69 +1206,68 @@ def cmd_run():
     else:
         cfg.image_name = resolve_cli_image(tag)
         mode_label = "cli (Pi CLI)"
+    return mode_label
 
-    # ── 5. Show summary ─────────────────────────────────────────────────
-    info(f"Devstack: {cfg.project_name} ({mode_label})")
-    info(f"  Image:    {cfg.image_name}")
-    info(f"  Project:  {project_dir} \u2192 {mount_path}")
-    info("")
 
-    # ── 6. Resolve & ensure state dirs ───────────────────────────────────
-    resolved_state = resolve_path(cfg.state_dir)
-    dir_browser = resolve_path(cfg.browser_dir)
-    os.makedirs(resolved_state, exist_ok=True)
-    os.makedirs(dir_browser, exist_ok=True)
+def _shell_attach_or_start(c: ContainerClient) -> None:
+    """Shell mode: attach to an existing container when one exists.
 
-    # ── 7. Shell mode: attach to existing container ─────────────────────
-    # (SSH mode skips this — it always does a fresh detached server)
-    if cfg.shell_mode and not cfg.ssh_mode:
-        if c.container_running(cfg.container_name):
-            pi_active = c.pi_running(cfg.container_name)
-            if pi_active:
-                info(f"Container '{cfg.container_name}' running (Pi session active).")
-                info("\nOptions:")
-                print("  1) Attach to Pi session  (foreground)")
-                print("  2) Open bash shell      (interactive shell)")
-                print("  3) Stop container and restart")
-                try:
-                    choice = input("\nSelect [1-3] (default: 1): ").strip() or "1"
-                except (EOFError, KeyboardInterrupt):
-                    choice = "1"
-                if choice == "2":
-                    info(f"Opening bash shell in '{cfg.container_name}'...")
-                    ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
-                    sys.exit(ret)
-                elif choice == "3":
-                    info(f"Stopping '{cfg.container_name}'...")
-                    c.containers_stop(cfg.container_name)
-                else:
-                    # Reconnect to Pi session via exec
-                    info(f"Reconnecting to Pi session in '{cfg.container_name}'...")
-                    ret = c.containers_exec(
-                        cfg.container_name,
-                        ["pi", "--continue"],
-                        tty=True, interactive=True
-                    )
-                    sys.exit(ret)
-            else:
-                info(f"Attaching to running container '{cfg.container_name}'...")
+    Terminates (sys.exit) or raises DevstackError whenever a container is
+    found; returns normally only when no container exists, in which case
+    cmd_run() continues with the full startup flow. SSH mode never calls
+    this — it always does a fresh detached server.
+    """
+    if c.container_running(cfg.container_name):
+        pi_active = c.pi_running(cfg.container_name)
+        if pi_active:
+            info(f"Container '{cfg.container_name}' running (Pi session active).")
+            info("\nOptions:")
+            print("  1) Attach to Pi session  (foreground)")
+            print("  2) Open bash shell      (interactive shell)")
+            print("  3) Stop container and restart")
+            try:
+                choice = input("\nSelect [1-3] (default: 1): ").strip() or "1"
+            except (EOFError, KeyboardInterrupt):
+                choice = "1"
+            if choice == "2":
+                info(f"Opening bash shell in '{cfg.container_name}'...")
                 ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
                 sys.exit(ret)
-        elif c.container_exists(cfg.container_name):
-            info(f"Container '{cfg.container_name}' is stopped — starting it...")
-            _, _, rc = run_cmd([cfg.container_cmd, "start", cfg.container_name])
-            if rc != 0:
-                err("Failed to start container", "Try 'lpb --remove' then 'lpb --shell'.")
-                raise DevstackError
-
-            info(f"Attaching to container '{cfg.container_name}'...")
+            elif choice == "3":
+                info(f"Stopping '{cfg.container_name}'...")
+                c.containers_stop(cfg.container_name)
+            else:
+                # Reconnect to Pi session via exec
+                info(f"Reconnecting to Pi session in '{cfg.container_name}'...")
+                ret = c.containers_exec(
+                    cfg.container_name,
+                    ["pi", "--continue"],
+                    tty=True, interactive=True
+                )
+                sys.exit(ret)
+        else:
+            info(f"Attaching to running container '{cfg.container_name}'...")
             ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
             sys.exit(ret)
-        else:
-            info("No running container — starting a fresh devstack session...")
-            # fall through to full startup flow (steps 8+)
+    elif c.container_exists(cfg.container_name):
+        info(f"Container '{cfg.container_name}' is stopped — starting it...")
+        _, _, rc = run_cmd([cfg.container_cmd, "start", cfg.container_name])
+        if rc != 0:
+            err("Failed to start container", "Try 'lpb --remove' then 'lpb --shell'.")
+            raise DevstackError
 
-    # ── 8. Check for running Pi session ──────────────────────────────────
+        info(f"Attaching to container '{cfg.container_name}'...")
+        ret = c.containers_exec(cfg.container_name, ["bash"], tty=True, interactive=True)
+        sys.exit(ret)
+    else:
+        info("No running container — starting a fresh devstack session...")
+        # Fall through to full startup flow (next sections in cmd_run).
+
+
+def _check_existing_session(c: ContainerClient) -> None:
+    """Handle a container that already exists before the fresh run:
+    web/ssh modes stop it (the server must restart); cli mode offers to
+    reconnect to an active Pi session (recovery prompt)."""
     if cfg.web_mode or cfg.ssh_mode:
         # Web/SSH mode: stop existing container (server must restart)
         if c.container_running(cfg.container_name):
@@ -1295,7 +1299,9 @@ def cmd_run():
                 )
                 sys.exit(ret)
 
-    # ── 9. Pull image if needed ──────────────────────────────────────────
+
+def _ensure_image(c: ContainerClient) -> None:
+    """Pull the image if it is not present locally."""
     if not c.images_exists(cfg.image_name):
         info(f"Pulling {cfg.image_name}...")
         rc = c.images_pull(cfg.image_name)
@@ -1303,19 +1309,23 @@ def cmd_run():
             err("Failed to pull image")
             raise DevstackError
 
-    # ── 10. Detect SELinux mount flags ────────────────────────────────────
-    mount_flags = detect_mount_flags(project_dir)
 
-    # ── 11. Remove stale stopped containers ───────────────────────────────
+def _remove_stale_container(c: ContainerClient) -> None:
+    """Remove a stale stopped container before the fresh run."""
     if c.container_exists(cfg.container_name):
         info(f"Removing stale container '{cfg.container_name}'...")
         c.containers_remove(cfg.container_name)
 
-    # ── 12. Build env vars and volumes ───────────────────────────────────
-    # Resolve a stable connection token (generate+persist if unset) so the URL
-    # lpb prints matches the token the VSCodium server actually enforces.
+
+def _build_run_env(mount_path: str) -> list[str]:
+    """Build the container environment variable list.
+
+    Resolves the connection token first (generate+persist if unset) so the
+    URL lpb prints matches the token the VSCodium server actually enforces.
+    For --shell/--ssh fresh starts, appends the shell start-mode vars.
+    """
     ensure_token()
-    
+
     env_vars = [
         f"LPB_ED_PORT={cfg.port}",
         f"ED_PORT={cfg.port}",
@@ -1349,7 +1359,7 @@ def cmd_run():
         elif k in _conf_cfg:
             env_vars.append(f"{k}={_conf_cfg[k]}")
 
-    # ── 12b. Shell / SSH start mode ─────────────────────────────────────
+    # Shell / SSH start mode:
     # When starting a container for --shell/--ssh (no existing container),
     # override the CLI entrypoint to the shell sshd mode so we get a bare
     # shell (or sshd) instead of a Pi session.
@@ -1358,202 +1368,293 @@ def cmd_run():
         if cfg.ssh_pubkey:
             env_vars.append(f"LPB_SSH_PUBKEY={cfg.ssh_pubkey}")
             env_vars.append(f"LPB_SSH_PORT={cfg.ssh_port}")
+    return env_vars
 
+
+def _build_run_volumes(project_dir: str, mount_path: str, mount_flags: str,
+                       resolved_state: str, dir_browser: str) -> list[str]:
+    """Build the volume mount list: project, state (.pi), agent-browser,
+    gh config (persisted across restarts), and host timezone (read-only;
+    no relabel needed)."""
     volumes = [
         f"{project_dir}:{mount_path}{mount_flags}",
         f"{resolved_state}:/home/lpb/.pi{mount_flags}",
         f"{dir_browser}:/home/lpb/.agent-browser{mount_flags}",
     ]
-    # ── 13. Mount gh config (persisted across restarts) ──────────────────
+    # Mount gh config (persisted across restarts)
     gh_config = resolve_path(str(Path(cfg.state_dir) / "gh-config"))
     Path(gh_config).mkdir(parents=True, exist_ok=True)
     volumes.append(f"{gh_config}:/home/lpb/.config/gh{mount_flags}")
-    # ── 13b. Sync timezone with host (read-only; no relabel needed) ──────
+    # Sync timezone with host (read-only; no relabel needed)
     # Bind-mount the host's /etc/localtime (and /etc/timezone if present) so
     # the container time always matches the host. Read-only, no Z/z relabel.
     if Path("/etc/localtime").is_file():
         volumes.append("/etc/localtime:/etc/localtime:ro")
     if Path("/etc/timezone").is_file():
         volumes.append("/etc/timezone:/etc/timezone:ro")
+    return volumes
+
+
+def _save_last_project(project_dir: str) -> None:
+    """Persist the project dir so a bare `lpb` reconnects to it."""
+    LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LAST_PROJECT_FILE, "w") as f:
+        f.write(project_dir)
+
+
+def _wait_editor_ready(check_host: str, health_url: str, base_url: str) -> bool:
+    """Wait for the VSCodium server (web mode) and return True when ready.
+
+    Retry with increasing tolerance. VSCodium server needs time to bind,
+    load extensions, and serve. Three-tier approach: TCP connect → HTTP
+    root → /api/version (bypasses auth). Prints a progress dot per second;
+    exits 130 on Ctrl-C.
+    """
+    ready = False
+    tcp_ok = False
+    try:
+        for i in range(120):
+            # TCP connect check (always try, lightweight)
+            if not tcp_ok:
+                try:
+                    s = socket.create_connection((check_host, cfg.port), timeout=2)
+                    s.close()
+                    tcp_ok = True
+                except (socket.timeout, socket.error, OSError):
+                    pass
+
+            # Phase 1 (0-15s): HTTP root check (fast)
+            if i < 15 and tcp_ok:
+                try:
+                    r = subprocess.run(
+                        ["curl", "-s", "--max-time", "2",
+                         "--connect-timeout", "2",
+                         health_url],
+                        capture_output=True, timeout=4
+                    )
+                    if r.returncode == 0:
+                        ready = True; break
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    pass
+
+            # Phase 2 (15-45s): HTTP root with longer timeout
+            elif i < 45 and tcp_ok:
+                try:
+                    r = subprocess.run(
+                        ["curl", "-s", "--max-time", "5",
+                         "--connect-timeout", "3",
+                         health_url],
+                        capture_output=True, timeout=8
+                    )
+                    if r.returncode == 0:
+                        ready = True; break
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    pass
+
+            # Phase 3 (45-75s): /api/version endpoint (bypasses auth)
+            elif i < 75 and tcp_ok:
+                try:
+                    r = subprocess.run(
+                        ["curl", "-s", "--max-time", "5",
+                         "--connect-timeout", "3",
+                         f"{base_url}/api/version"],
+                        capture_output=True, timeout=8
+                    )
+                    if r.returncode == 0 and r.stdout.strip():
+                        ready = True; break
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    pass
+
+            # Phase 4 (75-120s): try HTTP root without token
+            elif i < 120 and tcp_ok:
+                try:
+                    r = subprocess.run(
+                        ["curl", "-s", "--max-time", "5",
+                         "--connect-timeout", "3",
+                         base_url],
+                        capture_output=True, timeout=8
+                    )
+                    if r.returncode == 0:
+                        ready = True; break
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    pass
+
+            sys.stdout.write("."); sys.stdout.flush()
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print(); info("Aborted."); sys.exit(130)
+    print()
+    return ready
+
+
+def _run_web(c: ContainerClient, project_dir: str, env_vars: list[str],
+             volumes: list[str], userns: str | None) -> None:
+    """Web mode: start the VSCodium server detached, health-check it, and
+    print the connection URLs."""
+    info("Starting VSCodium server (background)...")
+    container_id, stdout, stderr, rc = c.containers_run(
+        image=cfg.image_name, name=cfg.container_name, network="host",
+        env=env_vars, volumes=volumes, userns=userns, detach=True,
+    )
+    if rc != 0 or not container_id:
+        err("failed to start container")
+        if stderr: print(stderr, file=sys.stderr)
+        print("\nTroubleshooting:")
+        print("  lpb --logs     \u2014 View container logs")
+        print("  lpb --stop     \u2014 Stop existing container")
+        print("  lpb --remove   \u2014 Remove everything and start fresh")
+        raise DevstackError
+
+    _save_last_project(project_dir)
+    # Save version from image name (e.g. :0.0.9-lpb-dev-web → 0.0.9-lpb-dev)
+    _save_version(cfg.image_name.split(":")[-1].replace("-web", ""))
+
+    # Health check — retry with increasing tolerance.
+    # VSCodium server needs time to bind, load extensions, and serve.
+    # Three-tier approach: TCP connect → HTTP root → /api/version.
+    health_url = _build_url()
+    # Build base URL without token for version check
+    check_host = cfg.host
+    if check_host in ("0.0.0.0", "localhost", "127.0.0.1"):
+        check_host = "127.0.0.1"
+    base_url = f"http://{check_host}:{cfg.port}"
+    ready = _wait_editor_ready(check_host, health_url, base_url)
+
+    if ready:
+        urls = _build_urls()
+        for label, url in urls.items():
+            info(f"\u2713 Devstack ready at {url}")
+        info("\n  lpb --logs     \u2014 View logs")
+        info("  lpb --stop     \u2014 Stop")
+        info("  lpb --remove   \u2014 Remove everything")
+        info("  lpb            \u2014 Reconnect to last project")
+    else:
+        info("\u26a0 Container running but editor may not be ready yet.")
+        info("  Check logs:       lpb --logs")
+        info(f"  Container status: {cfg.container_cmd} ps --filter name={cfg.container_name}")
+
+
+def _run_ssh(c: ContainerClient, project_dir: str, env_vars: list[str],
+             volumes: list[str], userns: str | None) -> None:
+    """SSH mode: start a detached sshd server; the user logs in remotely
+    with their private key (never uploaded)."""
+    info("Starting SSH server (background)...")
+    container_id, stdout, stderr, rc = c.containers_run(
+        image=cfg.image_name, name=cfg.container_name, network="host",
+        env=env_vars, volumes=volumes, userns=userns, detach=True,
+    )
+    if rc != 0 or not container_id:
+        err("failed to start container")
+        if stderr: print(stderr, file=sys.stderr)
+        print("\nTroubleshooting:")
+        print("  lpb --logs     \u2014 View container logs")
+        print("  lpb --stop     \u2014 Stop existing container")
+        print("  lpb --remove   \u2014 Remove everything and start fresh")
+        raise DevstackError
+
+    _save_last_project(project_dir)
+    # Save version from image name
+    _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
+
+    host = _get_host_for_url()
+    port = cfg.ssh_port
+    user = "lpb"  # container user (uid 1000) is lpb
+    done("\u2713 SSH server ready (background)")
+    info(f"  Connect:  ssh -p {port} {user}@{host}")
+    info(f"  Pubkey:   {cfg.ssh_pubkey}")
+    info("")
+    info("  The container runs in the background with the provided public\n"
+          "  key in authorized_keys. Your private key is never uploaded.\n"
+          "  Manage it with:")
+    info("    lpb --stop      \u2014 Stop the SSH server")
+    info("    lpb --logs      \u2014 View logs")
+
+
+def _run_cli(project_dir: str, env_vars: list[str], volumes: list[str]) -> None:
+    """CLI mode: run in the foreground with --rm (container is removed on
+    exit, nothing to clean up afterwards)."""
+    info("Starting container (foreground)...\n")
+    # Save last-project for reconnection
+    _save_last_project(project_dir)
+    # Save version from image name
+    _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
+    # Run foreground, then stop container after exit
+    args = [cfg.container_cmd, "run", "--rm", "--network", "host"]
+    if is_podman():
+        args += ["--userns", "keep-id"]
+    args += ["-i", "-t", "--name", cfg.container_name]
+    for e in env_vars:
+        args += ["-e", str(e)]
+    for v in volumes:
+        args += ["-v", str(v)]
+    args.append(cfg.image_name)
+    if cfg.pi_args:
+        args += cfg.pi_args
+    ret = subprocess.run(args, check=False).returncode
+    # Container is removed (--rm), nothing to clean up
+
+
+def cmd_run():
+    """Resolve the project, decide the mode (cli/web/shell/ssh), and launch the
+    container. Foreground modes attach interactively; web/ssh run detached.
+    Includes recovery prompts when a Pi session is already active.
+
+    The numbered steps below map 1:1 onto the module-level helpers above
+    (e.g. _resolve_project covers steps 1-3, _build_run_env covers 12).
+    """
+    ensure_container_cmd()
+    c = client()
+
+    # ── 1–3. Resolve project dir, name, and in-container mount path ─────
+    project_dir, mount_path = _resolve_project()
+
+    # ── 4. Determine image and mode ──────────────────────────────────────
+    mode_label = _resolve_image_and_mode()
+
+    # ── 5. Show summary ─────────────────────────────────────────────────
+    info(f"Devstack: {cfg.project_name} ({mode_label})")
+    info(f"  Image:    {cfg.image_name}")
+    info(f"  Project:  {project_dir} \u2192 {mount_path}")
+    info("")
+
+    # ── 6. Resolve & ensure state dirs ───────────────────────────────────
+    resolved_state = resolve_path(cfg.state_dir)
+    dir_browser = resolve_path(cfg.browser_dir)
+    os.makedirs(resolved_state, exist_ok=True)
+    os.makedirs(dir_browser, exist_ok=True)
+
+    # ── 7. Shell mode: attach to existing container (falls through to
+    #    full startup when none exists; SSH mode skips this — it always
+    #    does a fresh detached server) ───────────────────────────────────
+    if cfg.shell_mode and not cfg.ssh_mode:
+        _shell_attach_or_start(c)
+
+    # ── 8. Check for running Pi session ──────────────────────────────────
+    _check_existing_session(c)
+
+    # ── 9. Pull image if needed ──────────────────────────────────────────
+    _ensure_image(c)
+
+    # ── 10. Detect SELinux mount flags ────────────────────────────────────
+    mount_flags = detect_mount_flags(project_dir)
+
+    # ── 11. Remove stale stopped containers ───────────────────────────────
+    _remove_stale_container(c)
+
+    # ── 12. Build env vars and volumes ───────────────────────────────────
+    env_vars = _build_run_env(mount_path)
+    volumes = _build_run_volumes(project_dir, mount_path, mount_flags,
+                                 resolved_state, dir_browser)
 
     userns = "keep-id" if is_podman() else None
 
     # ── 13. Run container ────────────────────────────────────────────────
     if cfg.web_mode:
-        # Web mode: background, health check
-        info("Starting VSCodium server (background)...")
-        container_id, stdout, stderr, rc = c.containers_run(
-            image=cfg.image_name, name=cfg.container_name, network="host",
-            env=env_vars, volumes=volumes, userns=userns, detach=True,
-        )
-        if rc != 0 or not container_id:
-            err("failed to start container")
-            if stderr: print(stderr, file=sys.stderr)
-            print("\nTroubleshooting:")
-            print("  lpb --logs     \u2014 View container logs")
-            print("  lpb --stop     \u2014 Stop existing container")
-            print("  lpb --remove   \u2014 Remove everything and start fresh")
-            raise DevstackError
-
-        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(LAST_PROJECT_FILE, "w") as f:
-            f.write(project_dir)
-        # Save version from image name (e.g. :0.0.9-lpb-dev-web → 0.0.9-lpb-dev)
-        _save_version(cfg.image_name.split(":")[-1].replace("-web", ""))
-
-        # Health check — retry with increasing tolerance.
-        # VSCodium server needs time to bind, load extensions, and serve.
-        # Three-tier approach: TCP connect → HTTP root → /api/version.
-        health_url = _build_url()
-        # Build base URL without token for version check
-        check_host = cfg.host
-        if check_host in ("0.0.0.0", "localhost", "127.0.0.1"):
-            check_host = "127.0.0.1"
-        base_url = f"http://{check_host}:{cfg.port}"
-        ready = False
-        tcp_ok = False
-        try:
-            for i in range(120):
-                # TCP connect check (always try, lightweight)
-                if not tcp_ok:
-                    try:
-                        s = socket.create_connection((check_host, cfg.port), timeout=2)
-                        s.close()
-                        tcp_ok = True
-                    except (socket.timeout, socket.error, OSError):
-                        pass
-
-                # Phase 1 (0-15s): HTTP root check (fast)
-                if i < 15 and tcp_ok:
-                    try:
-                        r = subprocess.run(
-                            ["curl", "-s", "--max-time", "2",
-                             "--connect-timeout", "2",
-                             health_url],
-                            capture_output=True, timeout=4
-                        )
-                        if r.returncode == 0:
-                            ready = True; break
-                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                        pass
-
-                # Phase 2 (15-45s): HTTP root with longer timeout
-                elif i < 45 and tcp_ok:
-                    try:
-                        r = subprocess.run(
-                            ["curl", "-s", "--max-time", "5",
-                             "--connect-timeout", "3",
-                             health_url],
-                            capture_output=True, timeout=8
-                        )
-                        if r.returncode == 0:
-                            ready = True; break
-                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                        pass
-
-                # Phase 3 (45-75s): /api/version endpoint (bypasses auth)
-                elif i < 75 and tcp_ok:
-                    try:
-                        r = subprocess.run(
-                            ["curl", "-s", "--max-time", "5",
-                             "--connect-timeout", "3",
-                             f"{base_url}/api/version"],
-                            capture_output=True, timeout=8
-                        )
-                        if r.returncode == 0 and r.stdout.strip():
-                            ready = True; break
-                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                        pass
-
-                # Phase 4 (75-120s): try HTTP root without token
-                elif i < 120 and tcp_ok:
-                    try:
-                        r = subprocess.run(
-                            ["curl", "-s", "--max-time", "5",
-                             "--connect-timeout", "3",
-                             base_url],
-                            capture_output=True, timeout=8
-                        )
-                        if r.returncode == 0:
-                            ready = True; break
-                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                        pass
-
-                sys.stdout.write("."); sys.stdout.flush()
-                time.sleep(1)
-        except KeyboardInterrupt:
-            print(); info("Aborted."); sys.exit(130)
-        print()
-
-        if ready:
-            urls = _build_urls()
-            for label, url in urls.items():
-                info(f"\u2713 Devstack ready at {url}")
-            info("\n  lpb --logs     \u2014 View logs")
-            info("  lpb --stop     \u2014 Stop")
-            info("  lpb --remove   \u2014 Remove everything")
-            info("  lpb            \u2014 Reconnect to last project")
-        else:
-            info("\u26a0 Container running but editor may not be ready yet.")
-            info("  Check logs:       lpb --logs")
-            info(f"  Container status: {cfg.container_cmd} ps --filter name={cfg.container_name}")
+        _run_web(c, project_dir, env_vars, volumes, userns)
     elif cfg.ssh_mode:
-        # SSH mode: background sshd server — user logs in remotely
-        info("Starting SSH server (background)...")
-        container_id, stdout, stderr, rc = c.containers_run(
-            image=cfg.image_name, name=cfg.container_name, network="host",
-            env=env_vars, volumes=volumes, userns=userns, detach=True,
-        )
-        if rc != 0 or not container_id:
-            err("failed to start container")
-            if stderr: print(stderr, file=sys.stderr)
-            print("\nTroubleshooting:")
-            print("  lpb --logs     \u2014 View container logs")
-            print("  lpb --stop     \u2014 Stop existing container")
-            print("  lpb --remove   \u2014 Remove everything and start fresh")
-            raise DevstackError
-
-        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(LAST_PROJECT_FILE, "w") as f:
-            f.write(project_dir)
-        # Save version from image name
-        _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
-
-        host = _get_host_for_url()
-        port = cfg.ssh_port
-        user = "lpb"  # container user (uid 1000) is lpb
-        done("\u2713 SSH server ready (background)")
-        info(f"  Connect:  ssh -p {port} {user}@{host}")
-        info(f"  Pubkey:   {cfg.ssh_pubkey}")
-        info("")
-        info("  The container runs in the background with the provided public\n"
-              "  key in authorized_keys. Your private key is never uploaded.\n"
-              "  Manage it with:")
-        info("    lpb --stop      \u2014 Stop the SSH server")
-        info("    lpb --logs      \u2014 View logs")
+        _run_ssh(c, project_dir, env_vars, volumes, userns)
     else:
-        # CLI mode: foreground, stop on exit
-        info("Starting container (foreground)...\n")
-        # Save last-project for reconnection
-        LAST_PROJECT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(LAST_PROJECT_FILE, "w") as f:
-            f.write(project_dir)
-        # Save version from image name
-        _save_version(cfg.image_name.split(":")[-1].replace("-cli", ""))
-        # Run foreground, then stop container after exit
-        args = [cfg.container_cmd, "run", "--rm", "--network", "host"]
-        if is_podman():
-            args += ["--userns", "keep-id"]
-        args += ["-i", "-t", "--name", cfg.container_name]
-        for e in env_vars:
-            args += ["-e", str(e)]
-        for v in volumes:
-            args += ["-v", str(v)]
-        args.append(cfg.image_name)
-        if cfg.pi_args:
-            args += cfg.pi_args
-        ret = subprocess.run(args, check=False).returncode
-        # Container is removed (--rm), nothing to clean up
+        _run_cli(project_dir, env_vars, volumes)
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
