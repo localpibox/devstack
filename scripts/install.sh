@@ -48,9 +48,12 @@ for tool in lpb-config lpb-devstack; do
     curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/support/${tool}" -o "${INSTALL_DIR}/${tool}"
     chmod +x "${INSTALL_DIR}/${tool}"
 done
-mkdir -p "${CONFIG_DIR}/localpibox"
+mkdir -p "${CONFIG_DIR}/localpibox/stack"
 for f in __init__.py cli.py env.py log.py run.py _stack_lib.py; do
     curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/scripts/localpibox/${f}" -o "${CONFIG_DIR}/localpibox/${f}"
+done
+for f in __init__.py gitutil.py repos.py version.py workspace.py validate.py release.py; do
+    curl -fsSL "https://raw.githubusercontent.com/${OWNER_REPO}/main/scripts/localpibox/stack/${f}" -o "${CONFIG_DIR}/localpibox/stack/${f}"
 done
 
 # 4. Add to PATH if needed (warn only, don't modify shell configs)

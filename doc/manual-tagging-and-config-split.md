@@ -216,3 +216,10 @@ intent):
 7. Fixed a latent bug in the stack-env lookup while moving it:
    `Path("/opt/devstack/lpb.stack.") / f"{pipeline}.env"` built a bogus
    path; now `Path("/opt/devstack") / f"lpb.stack.{pipeline}.env"`.
+
+8. Follow-up reorg (same day): `_stack_lib.py` was split into the
+   `localpibox/stack/` package (`gitutil` / `repos` / `version` /
+   `workspace` / `validate` / `release`); `_stack_lib.py` remains a thin
+   compat shim so existing imports are unchanged. `test_env_bridge.sh`
+   (previously orphaned) is wired into CI and now isolates its subshells
+   from the ambient environment.

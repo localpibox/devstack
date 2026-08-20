@@ -119,6 +119,7 @@ jobs:
         run: |
           python3 scripts/test_lpb.py
           python3 scripts/test_localpibox.py
+          bash scripts/test_env_bridge.sh
 
   # ──────────────────────────────────────────────────────
   # Phase 2: Build & publish images (only if VERSION changed)

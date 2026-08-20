@@ -285,7 +285,7 @@ devstack/
 │   ├── lpb               # bash wrapper
 │   ├── lpb.py            # launcher engine (stdlib-only Python)
 │   ├── install.sh        # host installer (lpb + stack tools)
-│   └── localpibox/       # shared Python helpers (incl. _stack_lib)
+│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
 ├── support/
 │   ├── start.sh          # container bootstrap (config, .env, extensions)
 │   ├── entrypoint-*.sh   # cli / web entrypoints

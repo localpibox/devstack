@@ -44,6 +44,8 @@ from localpibox import log as log_mod  # noqa: E402
 from localpibox import run as run_mod  # noqa: E402
 from localpibox import cli as cli_mod  # noqa: E402
 from localpibox import _stack_lib as sl  # noqa: E402
+from localpibox.stack import version as ver_mod  # noqa: E402
+from localpibox.stack import workspace as ws_mod  # noqa: E402
 import build  # noqa: E402
 bsc = importlib.import_module('browser-state-cleanup')
 
@@ -608,7 +610,7 @@ def _workspace_patch(tmpdir, repos, config_branch="dev", config_repo=True):
         subprocess.run(["git", "-C", str(agent), "commit", "-qm", "gitignore"], check=True)
         subprocess.run(["git", "-C", str(agent), "push", "-q", "origin", config_branch], check=True)
     return mock.patch.multiple(
-        sl,
+        ws_mod,
         WORKSPACE_REPOS=repos,
         WORKSPACE_ROOT=tmpdir / "workspace",
         AGENT_GIT=agent / "git" / "github.com" / "lpb-stack",
@@ -766,9 +768,9 @@ def test_stack_lib_bump_version():
 # ─── lpb-devstack: VERSION bumping ────────────────────────────────────────
 
 def _devstack_root_patch(root, tmpdir):
-    """Point _stack_lib version discovery at *root* (context manager)."""
+    """Point stack version discovery at *root* (context manager)."""
     return mock.patch.multiple(
-        sl,
+        ver_mod,
         _DEVSTACK_ROOT=root,
         WORKSPACE_ROOT=tmpdir / "nowhere",
         _VERSION_FILE=None,
@@ -819,9 +821,9 @@ def test_devstack_bump_commits(tmpdir):
 
 
 def test_devstack_bump_missing_version(tmpdir):
-    with mock.patch.object(sl, "_VERSION_FILE", None), \
-         mock.patch.object(sl, "_DEVSTACK_ROOT", tmpdir / "nope"), \
-         mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "nope2"):
+    with mock.patch.object(ver_mod, "_VERSION_FILE", None), \
+         mock.patch.object(ver_mod, "_DEVSTACK_ROOT", tmpdir / "nope"), \
+         mock.patch.object(ver_mod, "WORKSPACE_ROOT", tmpdir / "nope2"):
         assert ld.cmd_bump(_quiet_console(), no_commit=True) == 1
 
 
@@ -835,7 +837,7 @@ def test_devstack_tag_repos(tmpdir):
     subprocess.run(["git", "clone", "-q", "--branch", "lpb-dev", str(remote), str(ws)], check=True)
     env = mock.patch.dict(os.environ, {"LPB_STACK_REMOTE_BASE": str(tmpdir / "remotes")})
     patch_repos = mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")])
-    patch_ws = mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "workspace")
+    patch_ws = mock.patch.object(ws_mod, "WORKSPACE_ROOT", tmpdir / "workspace")
     for p in (env, patch_repos, patch_ws):
         p.start()
     try:
@@ -856,7 +858,7 @@ def test_devstack_tag_repos(tmpdir):
 
 def test_devstack_tag_repos_missing_clone(tmpdir):
     with mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")]), \
-         mock.patch.object(sl, "WORKSPACE_ROOT", tmpdir / "empty-ws"):
+         mock.patch.object(ws_mod, "WORKSPACE_ROOT", tmpdir / "empty-ws"):
         cons = _quiet_console()
         assert ld.cmd_tag_repos(cons, pipeline="dev", version="0.0.58-lpb-dev") == 1
         assert "workspace sync" in cons.err.getvalue()

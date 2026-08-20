@@ -191,9 +191,9 @@ lpb-devstack validate-hooks     # full pre-commit checks (tests included)
 lpb-devstack --tag main validate
 ```
 
-Both tools are thin CLIs over the shared `scripts/localpibox/_stack_lib.py`
-library (git helpers, repo definitions, pipeline detection, workspace/
-validate/release operations).
+Both tools are thin CLIs over the shared `scripts/localpibox/stack/` library
+(`gitutil` / `repos` / `version` / `workspace` / `validate` / `release`;
+`localpibox._stack_lib` remains a compat shim).
 
 ## Settings.json Lifecycle
 
@@ -278,10 +278,12 @@ CI does NOT use `workspace/pi` — it clones pi from `LPB_PI_FORK`
 
 - `scripts/lpb` (wrapper) → `scripts/lpb.py` (engine, stdlib-only)
 - Shared helpers: `scripts/localpibox/` Python package
-  (env/log/run/cli + `_stack_lib` for stack operations)
+  (env/log/run/cli + `stack/` for stack operations)
 - `support/lpb-config` + `support/lpb-devstack` (thin CLIs over
-  `localpibox._stack_lib`; symlinks in `scripts/`, installed to
+  `localpibox.stack`; symlinks in `scripts/`, installed to
   `/opt/pi-support/` in the image, to `~/.local/bin` on the host)
+- `support/build.py` — local image builder (`build.py [cli|web] [--push]`);
+  CI does the same inline, this is for local/fork builds
 - Installed via `scripts/install.sh` (fetches from the `main` branch —
   so `main` must stay a working stable tree)
 - `lpb --tag dev|main|{version}` selects the image tag; `LPB_*` vars from

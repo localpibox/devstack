@@ -27,6 +27,16 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # ─── Source start.sh bridge logic in a clean subshell ────────────────────────
+# The subshell inherits the ambient environment (host shells, MCP servers,
+# CI runners), so all bridge vars (bare + LPB_ variants) are unset first —
+# the priority-chain tests only make sense in a clean namespace.
+_ENV_ISOLATION='
+for _n in "${BARE_NAMES[@]}"; do
+    unset "$_n" "LPB_$_n"
+done
+unset _n
+'
+
 _source_bridge() {
     local bare_names_block bridge_block lib_func load_env_func
     bare_names_block=$(sed -n '/^BARE_NAMES=(/,/^)$/p' "$SUPPORT_SCRIPT")
@@ -49,6 +59,7 @@ _load_env_into_vars() {
         $lib_func
         $load_env_func
         $bare_names_block
+        $_ENV_ISOLATION
         $bridge_block
         $1
     "
@@ -77,6 +88,7 @@ _load_env_into_vars() {
         $lib_func
         $load_env_func
         $bare_inline
+        $_ENV_ISOLATION
         $bridge_block
         $1
     "
@@ -186,10 +198,15 @@ fi
 echo ""
 echo "=== 6. Consistency ==="
 
-for f in "$DEVSTACK_DIR/.env.example" "$AGENT_DIR/.env.example"; do
+for f in "$DEVSTACK_DIR/.env.example"; do
     [[ -f "$f" && -s "$f" ]] && pass ".env.example exists: $(basename "$f")" || fail ".env.example missing/empty: $(basename "$f")"
 done
-grep -qi 'LPB_.*bridge\|LPB_.*bare\|LPB_.*prefix' "$AGENT_DIR/.env.example" 2>/dev/null && pass "Agent docs: LPB_→bare bridge documented" || fail "Agent docs: missing bridge note"
+if [[ -f "$AGENT_DIR/.env.example" && -s "$AGENT_DIR/.env.example" ]]; then
+    pass ".env.example exists: $(basename "$AGENT_DIR/.env.example") (config repo)"
+    grep -qi 'LPB_.*bridge\|LPB_.*bare\|LPB_.*prefix' "$AGENT_DIR/.env.example" && pass "Agent docs: LPB_→bare bridge documented" || fail "Agent docs: missing bridge note"
+else
+    echo "  SKIP: $AGENT_DIR/.env.example not present (config repo not checked out)"
+fi
 grep -q 'LPB_' "$DEVSTACK_DIR/.env.example" && pass "Devstack: uses LPB_ prefix" || fail "Devstack: missing LPB_ prefix"
 
 # ─── 7. Full Priority Chain (End-to-End) ─────────────────────────────────────
