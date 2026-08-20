@@ -249,7 +249,8 @@ Jobs:
 1. **VERSION_CHECK** — did the pushed commit change `devstack/VERSION`?
    (cron / manual dispatch are always treated as changed)
 2. **test-lpb** — always runs: `scripts/test_lpb.py` +
-   `scripts/test_localpibox.py`
+   `scripts/test_localpibox.py` (each entry point runs the per-target
+   sub-suites in `test_*.py`; shared mocks/plumbing in `testharness.py`)
 3. **build-cli / build-web** — only if VERSION changed. Reads the VERSION
    file directly (CI never bumps). Publish per pipeline:
    - dev push: `:{v}-cli/web`, `:dev-cli/web`, `:{sha}-cli/web`
