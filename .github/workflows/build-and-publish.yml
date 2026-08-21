@@ -300,6 +300,9 @@ jobs:
     needs: [build-cli, build-web, VERSION_CHECK]
     if: ${{ github.event_name != 'pull_request' && needs.VERSION_CHECK.outputs.changed == 'true' && needs.build-cli.result == 'success' && needs.build-web.result == 'success' }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Create tags on all repos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
