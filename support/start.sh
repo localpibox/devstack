@@ -132,6 +132,20 @@ export LPB_AGENT_BROWSER_CONFIRM_ACTIONS="${LPB_AGENT_BROWSER_CONFIRM_ACTIONS:-d
 export LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS="${LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS:-300000}"
 export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:-}}"
 
+# -- Bridge LPB_AGENT_BROWSER_* → AGENT_BROWSER_* --
+# agent-browser reads the bare AGENT_BROWSER_* names (it does NOT read the
+# LPB_ prefix), so without this bridge the container-safe defaults in
+# lpb.conf.env (notably --no-sandbox) silently never reach the browser.
+# Priority: shell env > LPB_ (conf/.env) > container-safe fallback.
+# ARGS falls back to the full container-safe set — Chrome cannot launch
+# inside a container without --no-sandbox.
+export AGENT_BROWSER_ARGS="${AGENT_BROWSER_ARGS:-${LPB_AGENT_BROWSER_ARGS:---no-sandbox,--no-first-run,--disable-gpu,--disable-crashpad}}"
+export AGENT_BROWSER_MAX_OUTPUT="${AGENT_BROWSER_MAX_OUTPUT:-${LPB_AGENT_BROWSER_MAX_OUTPUT:-4000}}"
+export AGENT_BROWSER_CONTENT_BOUNDARIES="${AGENT_BROWSER_CONTENT_BOUNDARIES:-${LPB_AGENT_BROWSER_CONTENT_BOUNDARIES:-true}}"
+export AGENT_BROWSER_CONFIRM_ACTIONS="${AGENT_BROWSER_CONFIRM_ACTIONS:-${LPB_AGENT_BROWSER_CONFIRM_ACTIONS:-delete,download,cookie_delete,file_access}}"
+export AGENT_BROWSER_IDLE_TIMEOUT_MS="${AGENT_BROWSER_IDLE_TIMEOUT_MS:-${LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS:-300000}}"
+export AGENT_BROWSER_SESSION="${AGENT_BROWSER_SESSION:-${LPB_AGENT_BROWSER_SESSION:-}}"
+
 # ── API keys & other LPB_ → bare-name bridges ────────────────────────────────
 # Define bare-name aliases here. The _bridge() loop applies the generic logic:
 #   LPB_FOO → FOO (only if FOO not already set by shell env).

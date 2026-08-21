@@ -255,6 +255,48 @@ r=$(_bridge_only '
 ')
 [[ "$r" == "exa1:c71" ]] && pass "7d: multiple LPB_ vars bridged" || fail "7d: expected exa1:c71, got $r"
 
+# ─── 8. AGENT_BROWSER_* Bridge (agent-browser reads bare names) ──────────────
+# agent-browser does NOT read LPB_AGENT_BROWSER_* — start.sh bridges the
+# LPB_ names to AGENT_BROWSER_* with container-safe fallbacks (notably
+# --no-sandbox, required for Chrome to launch in a container).
+
+echo ""
+echo "=== 8. AGENT_BROWSER_* Bridge ==="
+
+_agent_bridge_test() {
+    local agent_block unset_list setup var
+    agent_block=$(sed -n '/^export AGENT_BROWSER_ARGS=/,/^export AGENT_BROWSER_SESSION=/p' "$SUPPORT_SCRIPT")
+    [[ -n "$agent_block" ]] || { echo "UNSET-BLOCK-MISSING"; return; }
+    unset_list='
+unset AGENT_BROWSER_ARGS AGENT_BROWSER_MAX_OUTPUT AGENT_BROWSER_CONTENT_BOUNDARIES AGENT_BROWSER_CONFIRM_ACTIONS AGENT_BROWSER_IDLE_TIMEOUT_MS AGENT_BROWSER_SESSION
+unset LPB_AGENT_BROWSER_ARGS LPB_AGENT_BROWSER_MAX_OUTPUT LPB_AGENT_BROWSER_CONTENT_BOUNDARIES LPB_AGENT_BROWSER_CONFIRM_ACTIONS LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS LPB_AGENT_BROWSER_SESSION
+'
+    setup="$1"
+    var="${2:-AGENT_BROWSER_ARGS}"
+    bash -c "
+        $unset_list
+        $setup
+        $agent_block
+        echo \"\${$var:-UNSET}\"
+    "
+}
+
+r=$(_agent_bridge_test '')
+if [[ "$r" == *"--no-sandbox"* && "$r" == *"--disable-gpu"* ]]; then
+    pass "8a: container-safe fallback when nothing set"
+else
+    fail "8a: expected container-safe args, got '$r'"
+fi
+
+r=$(_agent_bridge_test 'export LPB_AGENT_BROWSER_ARGS=--custom,--flags')
+[[ "$r" == "--custom,--flags" ]] && pass "8b: LPB_ bridges to AGENT_BROWSER_" || fail "8b: expected --custom,--flags, got '$r'"
+
+r=$(_agent_bridge_test 'export AGENT_BROWSER_ARGS=shell-wins; export LPB_AGENT_BROWSER_ARGS=lpb-loses')
+[[ "$r" == "shell-wins" ]] && pass "8c: shell env > LPB_" || fail "8c: expected shell-wins, got '$r'"
+
+r=$(_agent_bridge_test '' 'AGENT_BROWSER_MAX_OUTPUT')
+[[ "$r" == "4000" ]] && pass "8d: MAX_OUTPUT fallback default" || fail "8d: expected 4000, got '$r'"
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
 echo ""

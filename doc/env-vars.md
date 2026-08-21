@@ -47,6 +47,12 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 | `LPB_PERSIST_GH_CONFIG` | — | Persist gh CLI auth into the state volume |
 | `LPB_OPENROUTER_BASE_URL` | — | Optional overflow provider (not needed with Lemonade) |
 
+> **Browser var bridging:** agent-browser (CLI / MCP server) reads the
+> `AGENT_BROWSER_*` names, not `LPB_*`. `start.sh` bridges each
+> `LPB_AGENT_BROWSER_*` to `AGENT_BROWSER_*` (shell env > LPB_ > container-safe
+> fallback), so the container-safe Chrome args — notably `--no-sandbox`,
+> required to launch Chrome inside a container — always take effect.
+
 ## API Keys
 
 | Variable | Used by |
