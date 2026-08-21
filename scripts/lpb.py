@@ -125,8 +125,34 @@ def _find_env_file(name: str) -> Path | None:
     return None
 
 
+_ENV_PLACEHOLDER_RE = re.compile(r'\$\{(\w+)(?:(:)?-([^}]*))?\}')
+
+
+def _expand_env_value(value: str, context: dict[str, str]) -> str:
+    """Expand ${VAR} / ${VAR:-default} / ${VAR-default} placeholders.
+
+    Env files are meant to be sourced, so values may reference other
+    variables (e.g. ${PI_WORKTREE_ID}, ${HOME}). Expand against os.environ
+    plus values already parsed from the same file, like bash would.
+    Unset vars expand to empty (no default given).
+    """
+    def _sub(m: re.Match) -> str:
+        name, op, default = m.group(1), m.group(2), m.group(3)
+        if op is None:  # ${VAR}
+            return context.get(name, "")
+        if op == ":":  # ${VAR:-default} — default when unset OR empty
+            return context.get(name) or (default or "")
+        val = context.get(name)  # ${VAR-default} — default when unset only
+        return (default or "") if val is None else val
+    return _ENV_PLACEHOLDER_RE.sub(_sub, value)
+
+
 def _parse_env_file(path: Path) -> dict[str, str]:
-    """Parse KEY=value lines (optional export prefix), stripping quotes."""
+    """Parse KEY=value lines (optional export prefix), stripping quotes.
+
+    ${VAR} / ${VAR:-default} placeholders expand against os.environ and
+    values already parsed from this file (sourced-env-file semantics).
+    """
     env: dict[str, str] = {}
     try:
         with open(path) as f:
@@ -136,7 +162,8 @@ def _parse_env_file(path: Path) -> dict[str, str]:
                     continue
                 m = re.match(r'(?:(?:export\s+)?(\w+))=(.*)', line)
                 if m:
-                    env[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+                    raw = m.group(2).strip().strip('"').strip("'")
+                    env[m.group(1)] = _expand_env_value(raw, {**os.environ, **env})
     except OSError:
         pass
     return env

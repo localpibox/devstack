@@ -129,6 +129,47 @@ def test_parse_env_file():
     print("  PASS\n")
 
 
+def test_parse_env_file_placeholder_expansion():
+    """${VAR} / ${VAR:-default} placeholders expand (sourced-env-file semantics).
+
+    Regression guard: lpb.conf.env ships LPB_AGENT_BROWSER_SESSION=${PI_WORKTREE_ID}
+    and LPB_STATE_DIR=${HOME}/...; without expansion the literal placeholder
+    string reached the container env (e.g. AGENT_BROWSER_SESSION='${PI_WORKTREE_ID}').
+    """
+    print("TEST: _parse_env_file placeholder expansion")
+    reset_mock()
+    mod = make_module()
+    home = os.path.expanduser("~")
+    with tempfile.NamedTemporaryFile("w", suffix=".env", delete=False) as f:
+        f.write(
+            f"# placeholder test\n"
+            f"FIRST=alpha\n"
+            f"REFS_FIRST=${{FIRST}}\n"
+            f"HOME_PATH=${{HOME}}/state\n"
+            f"UNSET_VAR=${{NO_SUCH_LPB_VAR_XYZ}}\n"
+            f"WITH_DEFAULT=${{NO_SUCH_LPB_VAR_XYZ:-fallback}}\n"
+            f"SET_DEFAULT=${{FIRST:-ignored}}\n"
+        )
+        path = f.name
+    try:
+        env = mod._parse_env_file(path)
+    finally:
+        os.unlink(path)
+    assert env["REFS_FIRST"] == "alpha", f"in-file ref: got {env['REFS_FIRST']!r}"
+    assert env["HOME_PATH"] == os.path.join(home, "state"), f"HOME expand: got {env['HOME_PATH']!r}"
+    assert env["UNSET_VAR"] == "", f"unset var → empty: got {env['UNSET_VAR']!r}"
+    assert env["WITH_DEFAULT"] == "fallback", f"default: got {env['WITH_DEFAULT']!r}"
+    assert env["SET_DEFAULT"] == "alpha", f"set var wins over default: got {env['SET_DEFAULT']!r}"
+    # LPB_AGENT_BROWSER_SESSION from the real lpb.conf.env must not leak a
+    # literal placeholder into parsed values
+    conf = mod._find_env_file("lpb.conf.env")
+    if conf:
+        real = mod._parse_env_file(conf)
+        assert "${" not in real.get("LPB_AGENT_BROWSER_SESSION", ""), \
+            f"literal placeholder leaked: {real['LPB_AGENT_BROWSER_SESSION']!r}"
+    print("  PASS\n")
+
+
 def test_resolve_path_host_semantics():
     """state_dir/browser_dir must resolve to HOST paths (not container paths).
 
@@ -372,6 +413,7 @@ TESTS = [
     test_env_files_found,
     test_env_file_search_order,
     test_parse_env_file,
+    test_parse_env_file_placeholder_expansion,
     test_resolve_path_host_semantics,
     test_cmd_remove_with_dirs,
     test_cmd_remove_abort,
