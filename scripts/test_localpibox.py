@@ -9,10 +9,10 @@ The suite is split one file per target (all in scripts/):
   test_localpibox_cli.py              — localpibox.cli
   test_localpibox_build.py            — support/build.py
   test_localpibox_bsc.py              — browser-state-cleanup
-  test_localpibox_config.py           — support/lpb-config
+  test_localpibox_config.py           — scripts/lpb-config
   test_localpibox_workspace.py        — workspace sync (localpibox.stack)
-  test_localpibox_stack.py            — _stack_lib: pipeline + VERSION math
-  test_localpibox_devstack.py         — support/lpb-devstack (bump, tag-repos)
+  test_localpibox_stack.py            — localpibox.stack: pipeline + VERSION math
+  test_localpibox_devstack.py         — scripts/lpb-devstack (bump, tag-repos)
   test_localpibox_validate.py         — support/validate
   test_localpibox_install_browser.py  — support/install-browser
   test_localpibox_install_openspec.py — support/install-openspec

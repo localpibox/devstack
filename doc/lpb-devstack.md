@@ -50,9 +50,8 @@ partially-tagged stack is a release bug.
 | Command | Description |
 |---|---|
 | `lpb-devstack workspace status` | Show branches + alignment for all repos |
-| `lpb-devstack workspace sync` | Clone missing repos, create symlinks, align branches, pull latest |
-| `lpb-devstack workspace sync --extensions` | Sync settings.json pins to stack version |
-| `lpb-devstack workspace ensure [--fix]` | Check/fix branch alignment for the pipeline |
+| `lpb-devstack workspace sync` | Clone missing repos, create symlinks, align branches, pull latest (the single write path) |
+| `lpb-devstack workspace sync-pins` | Sync settings.json pins to the pipeline's stack version |
 
 ### Stack Validation
 
@@ -116,7 +115,7 @@ lpb-devstack release status                    # readiness check
 lpb-devstack release promote --dry-run         # inspect plan
 lpb-devstack release promote                   # dev → stable + push
 lpb-devstack tag-repos --branch main           # tag the 5 repos on stable branches
-lpb-devstack --tag main workspace sync --extensions   # pins → stable tag
+lpb-devstack --tag main workspace sync-pins   # pins → stable tag
 pi update --extensions
 ```
 

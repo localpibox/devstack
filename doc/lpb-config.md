@@ -47,7 +47,7 @@ Settings.json is **template-driven**, not git-tracked:
 1. Config repo ships `settings.json.template` with `__LPB_VERSION__` placeholders
 2. First boot: `start.sh` generates `settings.json` (replaces placeholders)
 3. No model/provider preconfigured — user runs `/login lemonade`
-4. Pin sync: `lpb-devstack workspace sync --extensions` (main pipeline reads
+4. Pin sync: `lpb-devstack workspace sync-pins` (main pipeline reads
    stable version from devstack `origin/main`)
 5. `lpb-devstack validate` checks pins match the current stack version
 6. Settings.json persists on the host volume — survives container rebuilds

@@ -18,19 +18,27 @@ from ..run import run_cmd
 from .gitutil import _git_authenticated, git, git_auth
 from .repos import (
     AGENT_GIT,
+    CONFIG_REPO,
     DEFAULT_AGENT_DIR,
     LPB_EXTENSION_REPOS,
     WORKSPACE_REPOS,
     WORKSPACE_ROOT,
     _repo_remote,
 )
-from .version import get_version
+from .version import expected_branch, expected_pin_version, get_version
 
 
 # ─── Repo helpers ─────────────────────────────────────────────────────────
 
 def _resolve_repo_path(repo_name: str) -> Path | None:
-    """Resolve the actual path of a workspace repo (follow symlinks)."""
+    """Resolve a stack repo's actual path (follows symlinks); None when missing.
+
+    Workspace repos live under WORKSPACE_ROOT (extension repos are symlinks
+    into the agent git area); the config repo lives in the agent dir itself.
+    """
+    if repo_name == CONFIG_REPO[0]:
+        path = Path(DEFAULT_AGENT_DIR)
+        return path if (path / ".git").is_dir() else None
     ws_path = WORKSPACE_ROOT / repo_name
     if ws_path.is_symlink():
         target = ws_path.resolve()
@@ -58,44 +66,63 @@ def _repo_head(repo_path: Path) -> str:
 
 
 def _ensure_branch_tracked(repo_path: Path, branch: str) -> bool:
-    """Ensure a remote branch has a local tracking branch. Returns True if success."""
-    # Check if local branch exists
-    out, _, code = git(repo_path, "rev-parse", "--verify", branch)
-    if code == 0:
+    """Ensure a remote branch has a local tracking branch. Returns True on success."""
+    # Local branch already exists
+    if git(repo_path, "rev-parse", "--verify", f"refs/heads/{branch}")[2] == 0:
         return True
 
-    # Check if remote branch exists
-    out, _, code = git_auth(repo_path, "ls-remote", "origin", f"refs/heads/{branch}")
-    if code != 0 or not out.strip():
+    # Fetch the remote branch (also proves it exists); capture the commit so
+    # follow-up fetches can't clobber the ref we check out from.
+    out, err, code = git_auth(repo_path, "fetch", "origin", branch, timeout=120)
+    if code != 0:
+        return False
+    fetched, _, fcode = git(repo_path, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
+    if fcode != 0 or not fetched.strip():
         return False
 
-    # Fetch and create local tracking branch
-    out, err, code = git_auth(repo_path, "fetch", "origin", branch)
+    # Clones with a restricted fetch refspec (e.g. lpb-config's shallow
+    # `--branch main`) never get refs/remotes/origin/<branch> — repair the
+    # refspec so future fetches see all branches.
+    fetch_spec, _, _ = git(repo_path, "config", "--get", "remote.origin.fetch")
+    if fetch_spec.strip() and "refs/heads/*" not in fetch_spec:
+        git(repo_path, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+        git_auth(repo_path, "fetch", "origin", timeout=180)
+
+    # Create the local branch from the fetched commit
+    out, err, code = git(repo_path, "checkout", "-q", "-b", branch, fetched)
     if code != 0:
         return False
 
-    # Ensure fetch refspec includes all branches (not just one)
-    fetch_spec_out, _, _ = git(repo_path, "config", "--get", "remote.origin.fetch")
-    fetch_spec = fetch_spec_out.strip()
-    if fetch_spec and "refs/heads/*" not in fetch_spec:
-        git(repo_path, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
-        git_auth(repo_path, "fetch", "origin")
-
-    # Create local branch from FETCH_HEAD
-    out, err, code = git(repo_path, "checkout", "-b", branch, "FETCH_HEAD")
-    if code == 0:
-        # Set upstream tracking
-        git_auth(repo_path, "fetch", "origin")
+    # Set upstream tracking once the remote-tracking ref exists
+    if git(repo_path, "rev-parse", "--verify", f"refs/remotes/origin/{branch}")[2] == 0:
         git(repo_path, "branch", "--set-upstream-to", f"origin/{branch}", branch)
-        return True
-
-    return False
+    return True
 
 
 def _is_dirty(path: Path) -> bool:
     """True when the worktree has uncommitted changes (tracked or untracked)."""
     out, _, _ = git(path, "status", "--porcelain")
     return bool(out.strip())
+
+
+# Dependency lockfiles a package manager rewrites during `npm install`.
+# pi's extension manager runs npm install inside the extension clones, and a
+# newer npm than the one that generated the committed lockfile rewrites it
+# (e.g. npm 12 dropped the `hasShrinkwrap` field). Such drift is tool noise,
+# not user work — discard it so it can't block a sync.
+LOCKFILE_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb"}
+
+
+def _discard_lockfile_drift(name: str, path: Path, cons: Console) -> None:
+    """Restore modified dependency lockfiles (package-manager rewrites)."""
+    st, _, _ = git(path, "status", "--porcelain")
+    drift = [line[3:] for line in st.splitlines()
+             if len(line) >= 4 and "M" in line[:2] and line[3:] in LOCKFILE_NAMES]
+    if not drift:
+        return
+    for f in drift:
+        git(path, "checkout", "--", f)
+    cons.info(f"  {name}: discarded lockfile rewrite(s): {', '.join(sorted(drift))}")
 
 
 def _detached_ref(path: Path) -> str:
@@ -137,10 +164,12 @@ def _sync_repo(name: str, path: Path, expected: str, cons: Console) -> bool:
         return False
 
     if _is_dirty(path):
-        st, _, _ = git(path, "status", "--short")
-        first = (st.strip().splitlines() or ["?"])[0][:60]
-        cons.warn(f"  {name}: uncommitted changes ({first}) — skipped (commit or stash first)")
-        return False
+        _discard_lockfile_drift(name, path, cons)
+        if _is_dirty(path):
+            st, _, _ = git(path, "status", "--short")
+            first = (st.strip().splitlines() or ["?"])[0][:60]
+            cons.warn(f"  {name}: uncommitted changes ({first}) — skipped (commit or stash first)")
+            return False
 
     branch = _repo_branch(path)
     if branch != expected:
@@ -161,6 +190,33 @@ def _sync_repo(name: str, path: Path, expected: str, cons: Console) -> bool:
 
     cons.info(f"  {name}: {expected} @ {_repo_head(path)} ✅")
     return True
+
+
+# ─── Config repo (lives in the agent dir, managed by lpb-config) ──────────
+
+def _status_config(pipeline: str, cons: Console) -> bool:
+    """Report the config repo; True when aligned with *pipeline*."""
+    path = Path(DEFAULT_AGENT_DIR)
+    if not (path / ".git").exists():
+        cons.warn("  config: MISSING")
+        return False
+    expected = expected_branch("config", pipeline)
+    branch = _repo_branch(path)
+    head = _repo_head(path)
+    if branch == expected:
+        cons.info(f"  config: {branch} ({head}) ✅")
+        return True
+    cons.warn(f"  config: {branch} (expected: {expected}) ({head}) ❌")
+    return False
+
+
+def _sync_config(pipeline: str, cons: Console) -> bool:
+    """Align the config repo to *pipeline*; True on success."""
+    path = Path(DEFAULT_AGENT_DIR)
+    if not (path / ".git").exists():
+        cons.warn(f"  config: no git repo at {path} — run 'lpb-config update' to install it")
+        return False
+    return _sync_repo("config", path, expected_branch("config", pipeline), cons)
 
 
 # ─── Workspace commands ───────────────────────────────────────────────────
@@ -191,26 +247,15 @@ def cmd_workspace_status(pipeline: str, cons: Console) -> int:
             cons.warn(f"  {name}: {where} (expected: {expected}){symlink} ({head}) ❌")
             all_aligned = False
 
-    # Config repo
-    config_path = Path(DEFAULT_AGENT_DIR)
-    if (config_path / ".git").exists():
-        config_expected = "dev" if pipeline == "dev" else "main"
-        config_branch = _repo_branch(config_path)
-        config_head = _repo_head(config_path)
-        if config_branch == config_expected:
-            cons.info(f"  config: {config_branch} ({config_head}) ✅")
-        else:
-            cons.warn(f"  config: {config_branch} (expected: {config_expected}) ({config_head}) ❌")
-            all_aligned = False
-    else:
-        cons.warn("  config: MISSING")
+    # Config repo (agent dir)
+    if not _status_config(pipeline, cons):
         all_aligned = False
 
     cons.info("")
     if all_aligned:
         cons.done("All repos aligned with pipeline.")
     else:
-        cons.warn("Some repos are misaligned. Run 'lpb-devstack workspace ensure' to fix.")
+        cons.warn("Some repos are misaligned. Run 'lpb-devstack workspace sync' to fix.")
 
     return 0 if all_aligned else 1
 
@@ -285,13 +330,7 @@ def cmd_workspace_sync(pipeline: str, cons: Console) -> int:
             prepared = False
 
     # Config repo (the agent dir itself)
-    config_path = Path(DEFAULT_AGENT_DIR)
-    if (config_path / ".git").exists():
-        config_expected = "dev" if pipeline == "dev" else "main"
-        if not _sync_repo("config", config_path, config_expected, cons):
-            prepared = False
-    else:
-        cons.warn(f"  config: no git repo at {config_path} — run 'lpb-config update' to install it")
+    if not _sync_config(pipeline, cons):
         prepared = False
 
     cons.info("")
@@ -301,110 +340,6 @@ def cmd_workspace_sync(pipeline: str, cons: Console) -> int:
     cons.warn("Workspace not fully prepared — see messages above.")
     return 1
 
-
-def cmd_workspace_ensure(pipeline: str, *, fix: bool = False, cons: Console) -> int:
-    """Ensure all workspace repos are on the correct branch for the pipeline.
-
-    If --fix is passed, automatically switch repos to the correct branch.
-    """
-    cons.info(f"Ensuring workspace alignment for pipeline: {pipeline}")
-    if fix:
-        cons.info("(auto-fixing misaligned repos)")
-    cons.info("")
-
-    all_aligned = True
-    actions: list[str] = []
-
-    for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
-        expected = dev_branch if pipeline == "dev" else main_branch
-        path = _resolve_repo_path(name)
-
-        if path is None:
-            cons.warn(f"  {name}: MISSING")
-            all_aligned = False
-            actions.append(f"  • Clone {name}")
-            continue
-
-        branch = _repo_branch(path)
-        if branch == expected:
-            cons.info(f"  {name}: {branch} ✅")
-            continue
-
-        where = branch if branch else (_detached_ref(path) or "(detached)")
-
-        # Repo is on wrong branch
-        all_aligned = False
-        if fix:
-            # Ensure the target branch is available locally
-            if not _ensure_branch_tracked(path, expected):
-                cons.error(f"  {name}: could not create/track {expected} branch")
-                continue
-
-            # Check for uncommitted changes
-            changes_out, _, _ = git(path, "status", "--porcelain")
-            if changes_out.strip():
-                cons.warn(f"  {name}: uncommitted changes — skipping switch (commit first)")
-                continue
-
-            git(path, "checkout", expected)
-            new_branch = _repo_branch(path)
-            if new_branch == expected:
-                cons.info(f"  {name}: {where} → {expected} ✅ (fixed)")
-            else:
-                cons.error(f"  {name}: checkout failed (still on {new_branch})")
-        else:
-            actions.append(f"  • {name}: '{where}' → '{expected}' (run --fix)")
-
-    # Config repo
-    config_path = Path(DEFAULT_AGENT_DIR)
-    if (config_path / ".git").exists():
-        config_expected = "dev" if pipeline == "dev" else "main"
-        config_branch = _repo_branch(config_path)
-        if config_branch == config_expected:
-            cons.info(f"  config: {config_branch} ✅")
-        else:
-            all_aligned = False
-            if fix:
-                changes_out, _, _ = git(config_path, "status", "--porcelain")
-                if changes_out.strip():
-                    cons.warn(f"  config: uncommitted changes — skipping switch (commit first)")
-                else:
-                    out, err, code = git(config_path, "checkout", config_expected)
-                    if code == 0:
-                        cons.info(f"  config: {config_branch} → {config_expected} ✅ (fixed)")
-                    else:
-                        cons.error(f"  config: checkout failed: {err.strip()[:80]}")
-            else:
-                where = config_branch if config_branch else (_detached_ref(config_path) or "(detached)")
-                actions.append(f"  • config: '{where}' → '{config_expected}' (run --fix)")
-
-    cons.info("")
-    if all_aligned:
-        cons.done("All repos aligned with pipeline.")
-    elif fix:
-        cons.warn("Some repos could not be fixed — check errors above.")
-    else:
-        cons.warn("Misaligned repos found. Actions needed:")
-        for action in actions:
-            cons.raw(action)
-        cons.info("")
-        cons.info("Run 'lpb-devstack workspace ensure --fix' to auto-fix.")
-
-    # ── Generate settings.json from template if missing ────────────────
-    if fix:
-        agent_dir = Path(DEFAULT_AGENT_DIR)
-        template = agent_dir / "settings.json.template"
-        settings_file = agent_dir / "settings.json"
-        if template.is_file() and not settings_file.is_file():
-            version = get_version()
-            if pipeline == "main":
-                version = version.replace("-dev", "")
-            content = template.read_text()
-            content = content.replace("__LPB_VERSION__", version)
-            settings_file.write_text(content)
-            cons.info(f"\nGenerated {settings_file} from template (version: {version})")
-
-    return 0 if all_aligned else 1
 
 
 # ─── Settings.json helpers ──────────────────────────────────────────────
@@ -459,38 +394,24 @@ def _update_pinned_versions(settings: dict, target_version: str) -> list[tuple[s
     return changes
 
 
-# ─── Workspace: sync extensions ───────────────────────────────────────────
+# ─── Workspace: sync extension pins ───────────────────────────────────────
 
-def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
-    """Sync settings.json extension pins to match current LPB_VERSION."""
+def cmd_workspace_sync_pins(pipeline: str, cons: Console) -> int:
+    """Sync settings.json extension pins to the pipeline's stack version."""
     agent_dir = Path(DEFAULT_AGENT_DIR)
     settings = _read_settings(agent_dir)
 
     if settings is None:
         cons.error(f"settings.json not found: {agent_dir}")
-        cons.info("  Run 'lpb-devstack workspace ensure' to generate from template.")
+        cons.info("  Run 'lpb-config render' to generate it from the template.")
         return 1
 
-    # Determine target version
-    version = get_version()
-    if pipeline == "main":
-        # Stable version is what CI last wrote on devstack origin/main
-        devstack_dir = WORKSPACE_ROOT / "devstack"
-        if devstack_dir.is_dir():
-            git_auth(devstack_dir, "fetch", "origin", "main", "--quiet", timeout=120)
-            out, _, code = git(devstack_dir, "show", "origin/main:VERSION")
-            if code == 0 and out.strip():
-                version = out.strip()
-            else:
-                version = version.replace("-dev", "")
-        else:
-            version = version.replace("-dev", "")
-    target_version = version
+    target_version = expected_pin_version(pipeline)
 
     current_pins = _get_pinned_versions(settings)
 
     cons.info(f"Pipeline:     {pipeline}")
-    cons.info(f"LPB_VERSION:  {version}")
+    cons.info(f"LPB_VERSION:  {get_version()}")
     cons.info(f"Target pins:  {target_version}")
     cons.info("")
 
@@ -518,6 +439,6 @@ def cmd_workspace_sync_extensions(pipeline: str, cons: Console) -> int:
         cons.info("")
         cons.done("Extension pins updated. Run 'pi update --extensions' to apply.")
     else:
-        cons.info("Skipped. Run 'lpb-devstack workspace sync --extensions' when ready.")
+        cons.info("Skipped. Run 'lpb-devstack workspace sync-pins' when ready.")
 
     return 0 if not mismatches else 1

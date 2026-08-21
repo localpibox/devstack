@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""support/lpb-config tests: legacy layout migration, update
+"""scripts/lpb-config tests: legacy layout migration, update
 (clone/fast-forward/refuse-dirty), reset (force/abort), status states,
 merge."""
 from __future__ import annotations
 
-from testharness import run_lpbx_suite, _quiet_console, log_mod, _load_script, SUPPORT_DIR
+from testharness import run_lpbx_suite, _quiet_console, log_mod, _load_script, SCRIPTS_DIR
 
 import io
 import json
 import os
 import subprocess
 
-lc = _load_script('lpb_config', SUPPORT_DIR / 'lpb-config')
+lc = _load_script('lpb_config', SCRIPTS_DIR / 'lpb-config')
 
 # NOTE: These tests are stubs for lpb-config features (repo listing,
 # mirror management) that are not yet implemented. They are skipped

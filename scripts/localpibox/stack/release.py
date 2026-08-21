@@ -15,19 +15,16 @@ from pathlib import Path
 from ..cli import confirm
 from ..log import Console
 from .gitutil import git, git_auth
-from .repos import DEFAULT_AGENT_DIR, WORKSPACE_REPOS, WORKSPACE_ROOT
+from .repos import repo_path, stack_repos
 from .version import get_version
 
 
 def _release_repos() -> list[tuple[str, Path, str, str, str]]:
     """All 6 stack repos: (label, path, dev_branch, main_branch, github_repo)."""
-    repos: list[tuple[str, Path, str, str, str]] = []
-    for name, _is_sym, _is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
-        repos.append((name, WORKSPACE_ROOT / name, dev_branch, main_branch,
-                      f"lpb-stack/{name}"))
-    repos.append(("config", Path(DEFAULT_AGENT_DIR), "dev", "main",
-                  "lpb-stack/config"))
-    return repos
+    return [
+        (name, repo_path(name), dev_branch, main_branch, f"lpb-stack/{name}")
+        for name, dev_branch, main_branch in stack_repos()
+    ]
 
 
 def _repo_release_state(path: Path, dev_branch: str, main_branch: str,
@@ -355,7 +352,7 @@ def cmd_release_promote(*, assume_yes: bool, dry_run: bool, rebase: bool,
     cons.info(f"CI (main pipeline) now builds :{stable_version}-* / :main-* / :latest-*")
     cons.info("and tags the 5 repos at the stable branches.")
     cons.info("After CI passes:")
-    cons.info("  1. lpb-devstack --tag main workspace sync --extensions")
+    cons.info("  1. lpb-devstack --tag main workspace sync-pins")
     cons.info("  2. pi update --extensions")
     cons.info(f"  (If CI's tag-repos didn't run: lpb-devstack tag-repos --branch main --version {stable_version})")
     return 0

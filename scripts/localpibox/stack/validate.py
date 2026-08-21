@@ -19,7 +19,7 @@ from .repos import (
     WORKSPACE_ROOT,
     _DEVSTACK_ROOT,
 )
-from .version import _find_version_file, get_stack_env, get_version
+from .version import _find_version_file, expected_branch, expected_pin_version, get_stack_env, get_version
 from .workspace import (
     _detached_ref,
     _get_pinned_versions,
@@ -91,7 +91,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     config_path = Path(DEFAULT_AGENT_DIR)
     if (config_path / ".git").exists():
         config_branch = _repo_branch(config_path)
-        config_expected = "dev" if pipeline == "dev" else "main"
+        config_expected = expected_branch("config", pipeline)
         check(
             "Config repo on correct branch",
             config_branch == config_expected,
@@ -107,7 +107,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     cons.info("  Workspace repos:")
 
     for name, is_sym, is_ext, dev_branch, main_branch in WORKSPACE_REPOS:
-        expected = dev_branch if pipeline == "dev" else main_branch
+        expected = expected_branch(name, pipeline)
         path = _resolve_repo_path(name)
 
         if path is None:
@@ -163,8 +163,8 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
 
     pi_ref = stack_env.get("LPB_PI_REF", "")
     config_ref = stack_env.get("LPB_CONFIG_REF", "")
-    pi_ref_expected = "lpb-dev" if pipeline == "dev" else "lpb"
-    config_ref_expected = "dev" if pipeline == "dev" else "main"
+    pi_ref_expected = expected_branch("pi", pipeline)
+    config_ref_expected = expected_branch("config", pipeline)
 
     check(
         "LPB_PI_REF correct",
@@ -184,9 +184,7 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
     cons.info("  Extension pins:")
 
     # Determine target version for this pipeline
-    target_version = version
-    if pipeline == "main":
-        target_version = version.replace("-dev", "")
+    target_version = expected_pin_version(pipeline)
 
     settings_path = config_path / "settings.json"
     settings = _read_settings(config_path)
@@ -207,12 +205,12 @@ def cmd_validate(pipeline: str, cons: Console) -> int:
                         f"  {pkg_name} pinned",
                         False,
                         f"@{pinned_tag} (expected: {target_version})",
-                        "lpb-devstack workspace sync --extensions",
+                        "lpb-devstack workspace sync-pins",
                     )
             else:
                 check(f"  {pkg_name} pinned", False,
                       "not found in settings.json",
-                      "lpb-devstack workspace sync --extensions")
+                      "lpb-devstack workspace sync-pins")
     else:
         check("settings.json exists", False,
               f"{settings_path} not found",

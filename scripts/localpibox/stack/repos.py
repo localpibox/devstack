@@ -1,8 +1,9 @@
 """LocalPibox stack constants and repository definitions.
 
-Single source of truth for the workspace layout, the 6-repo stack map,
-and the release-tagging repo list. Also the one-time legacy ~/.pi layout
-migration.
+Single source of truth for the workspace layout and the 6-repo stack map.
+Everything else (tagging list, extension list, release repo list, expected
+branches) is derived from the tables below. Also the one-time legacy
+~/.pi layout migration.
 """
 
 from __future__ import annotations
@@ -50,20 +51,32 @@ WORKSPACE_REPOS = [
     ("pi",                False, False, "lpb-dev", "lpb"),
 ]
 
-EXTENSION_REPOS = [r for r in WORKSPACE_REPOS if r[2]]  # is_extension
+# The config repo lives in the agent dir (DEFAULT_AGENT_DIR) instead of the
+# workspace root and is installed by lpb-config (not a plain git clone).
+# (name, dev_branch, main_branch)
+CONFIG_REPO = ("config", "dev", "main")
+
+
+def stack_repos() -> list[tuple[str, str, str]]:
+    """All 6 stack repos: (name, dev_branch, main_branch) — single source of truth."""
+    return [(n, d, m) for (n, _sym, _ext, d, m) in WORKSPACE_REPOS] + [CONFIG_REPO]
+
 
 # Repos tagged per release — the 5 stack repos excluding devstack (devstack
 # is tracked by its VERSION file, never tagged). Mirrors the CI tag-repos job.
 TAG_REPOS = [
-    # (name, dev_branch, main_branch)
-    ("pi", "lpb-dev", "lpb"),
-    ("pi-subagents", "lpb-dev", "lpb"),
-    ("lemonade-pi-plugin", "lpb-dev", "lpb"),
-    ("config", "dev", "main"),
-    ("lpb-memory", "dev", "main"),
-]
+    (n, d, m) for (n, _sym, _ext, d, m) in WORKSPACE_REPOS if n != "devstack"
+] + [CONFIG_REPO]
 
-LPB_EXTENSION_REPOS = ["lemonade-pi-plugin", "lpb-memory", "pi-subagents"]
+# Pi extension repos (settings.json pin targets).
+LPB_EXTENSION_REPOS = [n for (n, _sym, is_ext, _d, _m) in WORKSPACE_REPOS if is_ext]
+
+
+def repo_path(name: str) -> Path:
+    """Local path where stack repo *name* lives (workspace root or agent dir)."""
+    if name == CONFIG_REPO[0]:
+        return Path(DEFAULT_AGENT_DIR)
+    return WORKSPACE_ROOT / name
 
 MEMORY_CONFIG_PATH = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json"
 MEMORY_CONFIG_TEMPLATE = Path(DEFAULT_AGENT_DIR) / "lpb-memory-config.json.template"
