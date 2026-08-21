@@ -1,41 +1,48 @@
 ---
 name: lpb-stack-repo-workflow
-description: Manage the 6 LocalPibox repos — CI-only versioning, stable releases, image builds, lpb.py.
+description: Manage the 6 LocalPibox repos — manual versioning (lpb-devstack bump), stable releases, image builds, lpb.py.
 ---
 # LocalPibox Repository Workflow
 
-Versioning model: **single-source** (devstack/VERSION). CI bumps the version
-after tests pass, commits it to the pushed branch, tags the other 5 repos,
-and builds images. Git hooks validate only — no cross-repo writes, no
-local version bumping.
+Versioning model: **single-source** (devstack/VERSION), **manual tagging**.
+The developer bumps the version with `lpb-devstack bump` (commit + push).
+CI builds and tags **only when VERSION changed in the pushed commit** —
+code-only pushes run tests only. Git hooks validate only — they never write
+VERSION or cross-repo state.
 
 ## When to Use
 
 - Onboarding new developers to the LocalPibox stack
 - Setting up or debugging CI/CD (build-and-publish.yml)
+- Shipping a dev image (VERSION bump → CI build + tag)
 - Creating the stable (main) release from dev
 - Debugging version/tag/pin alignment issues
 - Adding/removing repos from the stack
 - Validating Docker image builds for `dev` or `main` targets
-- Using `lpb --version`, `lpb --tag`, `lpb.py`, `lpb-config`
+- Using `lpb --version`, `lpb --tag`, `lpb.py`, `lpb-config`, `lpb-devstack`
 
-## Versioning Model (Option C)
+## Versioning Model (manual tagging)
 
 ```
 Single source: devstack/VERSION
-CI: tests pass → bump patch (branch-aware suffix) → commit to pushed branch
-    → tag other 5 repos → build + publish images
+Developer: lpb-devstack bump → commit → push (the release trigger)
+CI: VERSION changed in pushed commit → tests → build + publish → tag 5 repos
 ```
 
-- **devstack/VERSION** — the only VERSION file in the stack (e.g. `0.0.46-lpb-dev`)
-- **Format:** dev pipeline `0.0.x-lpb-dev`, main pipeline `0.0.x-lpb`
-- **CI bump** preserves major.minor, increments patch, appends `-dev` only on dev
-- **Tags** — created by CI on the **other 5 repos only** (devstack is tracked by
-  its VERSION file, never tagged), pointing at the pipeline's branch HEAD
+- **devstack/VERSION** — the only VERSION file in the stack (e.g. `0.0.57-lpb-dev`)
+- **Format:** dev pipeline `0.x.y-lpb-dev`, main pipeline `0.x.y-lpb`
+- **`lpb-devstack bump`** preserves major.minor, increments patch (or
+  `--minor` / `--major` / `--set`), keeps the current suffix, and commits
+  (`--push` also pushes, triggering CI)
+- **CI never writes VERSION** — the `VERSION_CHECK` job gates build/tag on a
+  VERSION change in the pushed commit; cron and manual dispatch always build
+- **Tags** — created by CI (or `lpb-devstack tag-repos`) on the **other 5
+  repos only** (devstack is tracked by its VERSION file, never tagged),
+  pointing at the pipeline's branch HEAD
 - **`lpb.stack.env`** — `LPB_PI_REF` / `LPB_CONFIG_REF` are **branch names**
   (`lpb-dev`/`lpb`, `dev`/`main`), never versions
-- **Pipeline profiles** — `lpb.stack.dev.env` / `lpb.stack.main.env` override the
-  refs per pipeline (`lpb --tag dev|main`)
+- **Pipeline profiles** — `lpb.stack.dev.env` / `lpb.stack.main.env` override
+  the refs per pipeline (`lpb --tag dev|main`)
 - **Docker images** — `ghcr.io/lpb-stack/devstack` tagged per pipeline (see CI/CD)
 - **package.json** — keeps original fork versions, CI never touches it
 
@@ -98,22 +105,22 @@ The only available identity is:
 localpibox <localpibox@gmail.com>
 ```
 
-CI commits use `ci-localpibox <ci@lpb-stack.dev>`.
+Bump/release commits made by `lpb-devstack` use that identity. CI no longer
+commits to the repo (manual tagging).
 
 ## Stable Release Procedure (dev → main)
 
-There is no local version script — **`lpb-config release` is the tool**
-(`support/version.sh` was removed as dead code).
+**`lpb-devstack release` is the tool** (there is no other local version path).
 
 ```bash
 # 1. Readiness check (all 6 repos, non-destructive, fetches first)
-lpb-config release status
+lpb-devstack release status
 
 # 2. Inspect the exact plan without changing anything
-lpb-config release promote --dry-run
+lpb-devstack release promote --dry-run
 
 # 3. Promote (interactive confirmation)
-lpb-config release promote
+lpb-devstack release promote
 ```
 
 What promote does per repo:
@@ -128,42 +135,71 @@ What promote does per repo:
   guidance — delete the local branch (`git branch -D <stable>`, only with
   explicit user confirmation) and re-run
 - **devstack only:** strips the `-dev` VERSION suffix on `main` and commits
-  it (e.g. `0.0.46-lpb-dev` → `0.0.46-lpb`)
+  it (e.g. `0.0.58-lpb-dev` → `0.0.58-lpb`)
 
-After promote, CI (main pipeline) finishes the release:
-1. Bumps VERSION to `0.0.(x+1)-lpb` on `main`
+After promote, CI (main pipeline) finishes the release — the VERSION change
+on `main` is the trigger:
+1. Builds `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
 2. Tags the 5 repos on their stable branches (`lpb`/`main`)
-3. Builds `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
 
 Then align the runtime to the stable pipeline:
 ```bash
-lpb-config --tag main workspace sync --extensions   # pins → stable tag
+lpb-devstack --tag main workspace sync --extensions   # pins → stable tag
 pi update --extensions
-lpb --tag main validate                            # or lpb-config --tag main validate
+lpb-devstack --tag main validate
 ```
 
 Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
 (first-release mode for unrelated histories). Re-runs are safe: promoted
 repos fast-forward or no-op.
 
-## Stack Validation & Sync (lpb-config)
-
-**`lpb-config`** — single tool for config repo, workspace, and validation:
+## Shipping a Dev Image (the common case)
 
 ```bash
-lpb-config validate                     # Validate entire stack alignment
-lpb-config workspace status             # Show branches + alignment
-lpb-config workspace sync               # Symlinks + git pull current branches
-lpb-config workspace sync --extensions  # Sync settings.json pins to stack version
-lpb-config workspace ensure [--fix]     # Check/fix branch alignment for pipeline
-lpb-config status | update | reset      # Config repo management
-lpb-config align                        # Update extension pins to latest GitHub tags
-lpb-config memory show | setup          # lpb-memory extension config wizard
-lpb-config release status | promote     # Stable release (see above)
+# Work happens on dev as usual — CI runs tests on every push (no build).
+# When ready to ship:
+lpb-devstack bump                # 0.0.57-lpb-dev → 0.0.58-lpb-dev (+ commit)
+git push origin dev              # CI sees VERSION change → build + tag
+# Or one step (commit + push):
+lpb-devstack bump --push
+# Verify afterwards:
+lpb-devstack workspace status
+lpb-devstack validate
+```
+
+**The bump must be the TIP of the push.** CI's `VERSION_CHECK` diffs the
+pushed tip commit only — commits made after the bump (follow-up fixes,
+docs) make the push look tests-only and the build/tag is skipped. If that
+happens, run `bump` again so a VERSION change lands on the new tip, and
+push. `bump` (without `--push`) warns about this.
+
+## Stack Tools
+
+**`lpb-config`** — config repo manager (in-container, `~/.local/bin/lpb-config`):
+
+```bash
+lpb-config status | update | reset [--force] | merge   # config repo
+lpb-config align                                        # pins → latest GitHub tags
+lpb-config memory show | setup                          # lpb-memory config
+```
+
+**`lpb-devstack`** — DevOps workspace tool (container + host):
+
+```bash
+lpb-devstack bump [--minor|--major] [--set V] [--no-commit] [--push]
+lpb-devstack tag-repos [--branch dev|main] [--version V] [--dry-run]
+lpb-devstack workspace status | sync [--extensions] | ensure [--fix]
+lpb-devstack validate
+lpb-devstack release status | promote [--yes] [--dry-run] [--rebase]
+lpb-devstack validate-hooks     # full pre-commit checks (tests included)
 
 # Pipeline override (dev vs main) on any command:
-lpb-config --tag main validate
+lpb-devstack --tag main validate
 ```
+
+Both tools are thin CLIs over the shared `scripts/localpibox/stack/` library
+(`gitutil` / `repos` / `version` / `workspace` / `validate` / `release`;
+`localpibox._stack_lib` remains a compat shim).
 
 ## Settings.json Lifecycle
 
@@ -172,12 +208,12 @@ lpb-config --tag main validate
 1. Config repo ships `settings.json.template` with `__LPB_VERSION__` placeholders
 2. First boot: `start.sh` generates `settings.json` (replaces placeholders)
 3. No model/provider preconfigured — user runs `/login lemonade`
-4. Pin sync: `lpb-config workspace sync --extensions`
+4. Pin sync: `lpb-devstack workspace sync --extensions`
    (main pipeline reads the stable version from devstack `origin/main`)
-5. `lpb-config validate` checks pins match the current stack version
+5. `lpb-devstack validate` checks pins match the current stack version
 6. Persistent on the host volume — survives container rebuilds
 
-Pins look like: `git:github.com/lpb-stack/pi-subagents@0.0.46-lpb-dev`
+Pins look like: `git:github.com/lpb-stack/pi-subagents@0.0.57-lpb-dev`
 
 ## lpb-memory Config Lifecycle
 
@@ -197,35 +233,50 @@ Same pattern — template in config repo, user config on host volume:
 4. Working tree clean (except VERSION/env/hooks changes)
 5. `scripts/test_lpb.py` passes (skip with `SKIP_TESTS=1 --no-verify`)
 
-**commit-msg** — **no-op.** Version bumping is CI's job (bump-version job
-after tests pass). Git hooks never write VERSION or cross-repo state.
-`.github/scripts/commit-msg-auto-version` was removed (dead code from the
-old cross-repo bump model).
+The full test suite in pre-commit is intentional — it guards against
+low-quality changes reaching the repo. `lpb-devstack validate-hooks` runs
+the same checks on demand.
+
+**commit-msg** — **no-op.** Version bumping is manual (`lpb-devstack bump`).
+Git hooks never write VERSION or cross-repo state.
 
 ## CI/CD Workflow
 
 `.github/workflows/build-and-publish.yml` (org: `lpb-stack`):
 
 Triggers (no tag triggers — push-to-branch only):
-- push to `dev` or `main` (paths: Dockerfile, support/**, scripts/**, workflow)
-  — VERSION/lpb.stack.env changes are excluded to avoid re-triggering on auto-bumps
+- push to `dev` or `main` (paths: Dockerfile, **VERSION**, support/**,
+  scripts/**, workflow) — VERSION changes DO trigger: bump = release
 - pull_request to `main` (tests only, no builds/pushes)
-- weekly cron (Monday 03:00 UTC) → `:weekly-cli/web`
-- manual dispatch (`publish_latest`, `no_cache` inputs)
+- weekly cron (Monday 03:00 UTC) → `:weekly-cli/web` (always builds)
+- manual dispatch (`publish_latest`, `no_cache` inputs) (always builds)
 
 Jobs:
-1. **test-lpb** — `scripts/test_lpb.py` + `scripts/test_localpibox.py`
-2. **bump-version** — bump patch (preserves major.minor, `-dev` suffix on dev),
-   commit + push to the **pushed branch** (`${GITHUB_REF_NAME}`)
-3. **build-cli / build-web** — publish per pipeline:
+1. **VERSION_CHECK** — did the pushed commit change `devstack/VERSION`?
+   (cron / manual dispatch are always treated as changed)
+2. **test-lpb** — always runs: `scripts/test_lpb.py` +
+   `scripts/test_localpibox.py` (each entry point runs the per-target
+   sub-suites in `test_*.py`; shared mocks/plumbing in `testharness.py`)
+3. **build-cli / build-web** — only if VERSION changed. Reads the VERSION
+   file directly (CI never bumps). Publish per pipeline:
    - dev push: `:{v}-cli/web`, `:dev-cli/web`, `:{sha}-cli/web`
    - main push: `:{v}-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`
    - manual with `publish_latest`: `:latest-cli/web`
-4. **tag-repos** — after successful builds: tags the 5 repos on the pipeline's
-   branches (dev: `lpb-dev`/`dev`, main: `lpb`/`main`) using `LPB_STACK_PAT`
+   - cron: `:weekly-cli/web`
+4. **tag-repos** — after successful builds, only if VERSION changed: tags
+   the 5 repos on the pipeline's branches (dev: `lpb-dev`/`dev`, main:
+   `lpb`/`main`) using `LPB_STACK_PAT`. Retries transient 5xx with backoff
+   and **fails the run if any repo's tag fails** (a partially-tagged stack
+   is a release bug — re-running the job is idempotent, 422 = already
+   tagged). A missing branch aborts immediately.
+5. **status** — always runs; passes when builds were skipped (no VERSION
+   change), fails otherwise only on build failure
 
-Images: `ghcr.io/lpb-stack/devstack:cli` (base dev env + Pi CLI),
-`:web` (extends cli + VSCodium server).
+Images: `ghcr.io/lpb-stack/devstack` in two flavours per tag — `…-cli`
+(base dev env + Pi CLI) and `…-web` (extends cli + VSCodium server). The bare
+`:cli`/`:web` tags do NOT exist — CI only publishes versioned plus
+`:dev-*`/`:main-*`/`:latest-*`/`:sha-*` (pulling a bare tag fails with
+`manifest unknown`).
 
 CI does NOT use `workspace/pi` — it clones pi from `LPB_PI_FORK`
 (`lpb-stack/pi`) into `/opt/pi-src` during the Docker build.
@@ -233,7 +284,13 @@ CI does NOT use `workspace/pi` — it clones pi from `LPB_PI_FORK`
 ## lpb Launcher
 
 - `scripts/lpb` (wrapper) → `scripts/lpb.py` (engine, stdlib-only)
-- Shared helpers: `scripts/localpibox/` Python package (env/log/run/cli)
+- Shared helpers: `scripts/localpibox/` Python package
+  (env/log/run/cli + `stack/` for stack operations)
+- `support/lpb-config` + `support/lpb-devstack` (thin CLIs over
+  `localpibox.stack`; symlinks in `scripts/`, installed to
+  `/opt/pi-support/` in the image, to `~/.local/bin` on the host)
+- `support/build.py` — local image builder (`build.py [cli|web] [--push]`);
+  CI does the same inline, this is for local/fork builds
 - Installed via `scripts/install.sh` (fetches from the `main` branch —
   so `main` must stay a working stable tree)
 - `lpb --tag dev|main|{version}` selects the image tag; `LPB_*` vars from
@@ -257,10 +314,10 @@ gh api repos/lpb-stack/<repo> --method PATCH -f default_branch=lpb-dev
 Before declaring a repo clean:
 - [ ] Default branch set correctly (`dev` or `lpb-dev`)
 - [ ] Working on the default branch
-- [ ] All commits authored `localpibox <localpibox@gmail.com>` (CI: `ci-localpibox`)
+- [ ] All commits authored `localpibox <localpibox@gmail.com>`
 - [ ] Stale branches deleted (explicit user confirmation for main/dev)
 - [ ] Remote under `github.com/lpb-stack` (org migrated Aug 2026)
 - [ ] `lpb` stable branch exists (receives the release promote when stable)
 - [ ] pre-commit hook active (devstack: `core.hooksPath=.githooks`)
 - [ ] No stale org references (`github.com/localpibox`, `ghcr.io/localpibox`)
-- [ ] `lpb-config validate` passes
+- [ ] `lpb-devstack validate` passes

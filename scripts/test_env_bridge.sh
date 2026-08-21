@@ -27,9 +27,21 @@ pass() { echo "  PASS: $1"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL + 1)); }
 
 # ─── Source start.sh bridge logic in a clean subshell ────────────────────────
+# The subshell inherits the ambient environment (host shells, MCP servers,
+# CI runners), so all bridge vars (bare + LPB_ variants) are unset first —
+# the priority-chain tests only make sense in a clean namespace.
+_ENV_ISOLATION='
+for _n in "${BARE_NAMES[@]}"; do
+    unset "$_n" "${BARE_ALIASES[${_n}]:-LPB_$_n}"
+done
+unset _n
+'
+
 _source_bridge() {
-    local bare_names_block bridge_block lib_func load_env_func
+    local bare_names_block fallbacks_block aliases_block bridge_block lib_func load_env_func
     bare_names_block=$(sed -n '/^BARE_NAMES=(/,/^)$/p' "$SUPPORT_SCRIPT")
+    fallbacks_block=$(sed -n '/^declare -A BARE_FALLBACKS=(/,/^)$/p' "$SUPPORT_SCRIPT")
+    aliases_block=$(sed -n '/^declare -A BARE_ALIASES=(/,/^)$/p' "$SUPPORT_SCRIPT")
     bridge_block=$(sed -n '/^_bridge() {/,/^}/p' "$SUPPORT_SCRIPT")
     lib_func=$(sed -n '/^parse_env_file() {/,/^}/p' "$DEVSTACK_DIR/support/_lib.sh")
     load_env_func='
@@ -49,37 +61,17 @@ _load_env_into_vars() {
         $lib_func
         $load_env_func
         $bare_names_block
+        $fallbacks_block
+        $aliases_block
+        $_ENV_ISOLATION
         $bridge_block
         $1
     "
 }
 
-# Bridge-only: like _source_bridge but skips the BARE_NAMES export step.
-# Used for priority tests where we control the initial LPB_ state.
+# Bridge-only: alias for _source_bridge (kept for test readability).
 _bridge_only() {
-    local bridge_block lib_func
-    bridge_block=$(sed -n '/^_bridge() {/,/^}/p' "$SUPPORT_SCRIPT")
-    lib_func=$(sed -n '/^parse_env_file() {/,/^}/p' "$DEVSTACK_DIR/support/_lib.sh")
-    local load_env_func='
-_load_env_into_vars() {
-        local file="$1"
-        while IFS= read -r line; do
-            [[ "$line" =~ ^LPB_ ]] || continue
-            [[ -z "$line" ]] && continue
-            local key="${line%%=*}" val="${line#*=}"
-            val="${val#\"}"; val="${val%\"}"
-            export "$key=$val"
-        done < "$file"
-    }
-'
-    local bare_inline='BARE_NAMES=(EXA_API_KEY CONTEXT7_API_KEY LEMONADE_BASE_URL OPENROUTER_BASE_URL ED_PORT HOST CONNECTION_TOKEN DEVCONTAINER_WORKSPACE_DIR MAX_TOKENS_CONTEXT_RATIO)'
-    bash -c "
-        $lib_func
-        $load_env_func
-        $bare_inline
-        $bridge_block
-        $1
-    "
+    _source_bridge "$@"
 }
 
 # ─── 1. Bridge Mechanism ─────────────────────────────────────────────────────
@@ -186,10 +178,15 @@ fi
 echo ""
 echo "=== 6. Consistency ==="
 
-for f in "$DEVSTACK_DIR/.env.example" "$AGENT_DIR/.env.example"; do
+for f in "$DEVSTACK_DIR/.env.example"; do
     [[ -f "$f" && -s "$f" ]] && pass ".env.example exists: $(basename "$f")" || fail ".env.example missing/empty: $(basename "$f")"
 done
-grep -qi 'LPB_.*bridge\|LPB_.*bare\|LPB_.*prefix' "$AGENT_DIR/.env.example" 2>/dev/null && pass "Agent docs: LPB_→bare bridge documented" || fail "Agent docs: missing bridge note"
+if [[ -f "$AGENT_DIR/.env.example" && -s "$AGENT_DIR/.env.example" ]]; then
+    pass ".env.example exists: $(basename "$AGENT_DIR/.env.example") (config repo)"
+    grep -qi 'LPB_.*bridge\|LPB_.*bare\|LPB_.*prefix' "$AGENT_DIR/.env.example" && pass "Agent docs: LPB_→bare bridge documented" || fail "Agent docs: missing bridge note"
+else
+    echo "  SKIP: $AGENT_DIR/.env.example not present (config repo not checked out)"
+fi
 grep -q 'LPB_' "$DEVSTACK_DIR/.env.example" && pass "Devstack: uses LPB_ prefix" || fail "Devstack: missing LPB_ prefix"
 
 # ─── 7. Full Priority Chain (End-to-End) ─────────────────────────────────────
@@ -237,6 +234,45 @@ r=$(_bridge_only '
     echo "${EXA_API_KEY}:${CONTEXT7_API_KEY}"
 ')
 [[ "$r" == "exa1:c71" ]] && pass "7d: multiple LPB_ vars bridged" || fail "7d: expected exa1:c71, got $r"
+
+# ─── 8. AGENT_BROWSER_* Fallbacks (agent-browser reads bare names) ──────────
+# agent-browser does NOT read LPB_AGENT_BROWSER_* — the unified bridge
+# promotes the LPB_ names to AGENT_BROWSER_* with container-safe fallbacks
+# (notably --no-sandbox, required for Chrome to launch in a container).
+
+echo ""
+echo "=== 8. AGENT_BROWSER_* Fallbacks ==="
+
+_agent_test() {
+    _source_bridge "
+        $1
+        _bridge
+        echo \"\${${2:-AGENT_BROWSER_ARGS}:-UNSET}\"
+    "
+}
+
+r=$(_agent_test '')
+if [[ "$r" == *"--no-sandbox"* && "$r" == *"--disable-gpu"* ]]; then
+    pass "8a: container-safe fallback when nothing set"
+else
+    fail "8a: expected container-safe args, got '$r'"
+fi
+
+r=$(_agent_test 'export LPB_AGENT_BROWSER_ARGS=--custom,--flags')
+[[ "$r" == "--custom,--flags" ]] && pass "8b: LPB_ bridges to AGENT_BROWSER_" || fail "8b: expected --custom,--flags, got '$r'"
+
+r=$(_agent_test 'export AGENT_BROWSER_ARGS=shell-wins; export LPB_AGENT_BROWSER_ARGS=lpb-loses')
+[[ "$r" == "shell-wins" ]] && pass "8c: shell env > LPB_" || fail "8c: expected shell-wins, got '$r'"
+
+r=$(_agent_test '' AGENT_BROWSER_MAX_OUTPUT)
+[[ "$r" == "4000" ]] && pass "8d: MAX_OUTPUT fallback default" || fail "8d: expected 4000, got '$r'"
+
+r=$(_source_bridge '
+    export LPB_EDITOR_HOST=10.0.0.5
+    _bridge
+    echo "${HOST:-UNSET}"
+')
+[[ "$r" == "10.0.0.5" ]] && pass "8e: HOST alias (LPB_EDITOR_HOST) bridges" || fail "8e: expected 10.0.0.5, got '$r'"
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 

@@ -197,12 +197,15 @@ RUN mkdir -p /home/lpb/.local/bin \
     && ln -sf /opt/devstack/validate.py /home/lpb/.local/bin/validate \
     && ln -sf /opt/pi-support/install-openspec.py /home/lpb/.local/bin/install-openspec \
     && ln -sf /opt/pi-support/browser-state-cleanup.py /home/lpb/.local/bin/browser-state-cleanup \
-    && ln -sf /opt/pi-support/lpb-config.py /home/lpb/.local/bin/lpb-config
+    && ln -sf /opt/pi-support/lpb-config /home/lpb/.local/bin/lpb-config \
+    && ln -sf /opt/pi-support/lpb-devstack /home/lpb/.local/bin/lpb-devstack
 
 # ── Shell PATH helper ───────────────────────────────────────────────────────
-# lpb-config.py needs to live under /opt/pi-support/ for its sys.path resolution.
-# A symlink at ~/.local/bin/lpb-config gives users the clean CLI name.
-COPY --chmod=755 support/lpb-config.py /opt/pi-support/lpb-config.py
+# lpb-config / lpb-devstack need to live under /opt/pi-support/ for their
+# sys.path resolution (the localpibox package is copied there above).
+# Symlinks at ~/.local/bin give users the clean CLI names.
+COPY --chmod=755 support/lpb-config /opt/pi-support/lpb-config
+COPY --chmod=755 support/lpb-devstack /opt/pi-support/lpb-devstack
 
 # ── Root operations: ownership + gitconfig + shell PATH ─────────────────────
 USER root

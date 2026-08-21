@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 import urllib.request
@@ -35,6 +36,9 @@ import subprocess  # noqa: E402
 
 CHROME_BASE = Path("/home/lpb/.agent-browser/browsers")
 SYSTEM_CHROME = Path("/opt/google/chrome/chrome")
+# Executable binaries inside the chrome-linux64/ payload (everything else
+# is data/libs). Used to self-heal trees extracted without exec bits.
+CHROME_EXECUTABLES = {"chrome", "chrome_crashpad_handler", "headless_shell"}
 LAST_KNOWN_URL = (
     "https://googlechromelabs.github.io/chrome-for-testing/"
     "last-known-good-versions-with-downloads.json"
@@ -63,6 +67,36 @@ def chrome_binary(version: str) -> Path:
     return chrome_dir_for(version) / "chrome-linux64" / "chrome"
 
 
+def _ensure_executable(path: Path, cons: Console | None = None) -> None:
+    """Restore the exec bit that Python's zipfile extractall drops.
+
+    Chrome-for-Testing zips ship 0755 entries, but CPython's extractall()
+    does not restore Unix modes — left alone, the binary is 0644 and every
+    launch dies with PermissionError (errno 13).
+    """
+    if path.is_file() and not os.access(path, os.X_OK):
+        path.chmod(path.stat().st_mode | 0o755)
+        if cons:
+            cons.warn(f"Restored missing exec bit on {path}")
+
+
+def _restore_exec_bits(chrome_root: Path, cons: Console | None = None) -> int:
+    """Self-heal an extracted Chrome tree: restore exec bits on the known
+    binaries. Returns the number of files fixed. Chrome crashes at startup
+    if chrome_crashpad_handler is not executable (PermissionError 13)."""
+    fixed = 0
+    for sub in (chrome_root, chrome_root / "chrome-linux64"):
+        if not sub.is_dir():
+            continue
+        for f in sub.iterdir():
+            if f.name in CHROME_EXECUTABLES and f.is_file() and not os.access(f, os.X_OK):
+                f.chmod(f.stat().st_mode | 0o755)
+                fixed += 1
+    if fixed and cons:
+        cons.warn(f"Restored missing exec bits on {fixed} Chrome binary(ies) under {chrome_root}")
+    return fixed
+
+
 def install_chrome(cons: Console) -> int:
     cons.info("Downloading latest Chrome for Testing...")
     try:
@@ -72,8 +106,15 @@ def install_chrome(cons: Console) -> int:
         return 1
     cons.info(f"Chrome version: {version}")
 
-    if chrome_binary(version).is_file():
-        cons.warn(f"Chrome already installed at {chrome_dir_for(version)}")
+    bin_path = chrome_binary(version)
+    if bin_path.is_file():
+        if os.access(bin_path, os.X_OK) and not _restore_exec_bits(chrome_dir_for(version)):
+            cons.warn(f"Chrome already installed at {chrome_dir_for(version)}")
+            return 0
+        # Self-heal: an earlier install may have extracted without exec bits
+        # (Python's zipfile drops Unix modes) — restore and reuse.
+        _restore_exec_bits(chrome_dir_for(version), cons)
+        cons.warn(f"Chrome already installed at {chrome_dir_for(version)} (exec bits restored)")
         return 0
 
     chrome_dir_for(version).mkdir(parents=True, exist_ok=True)
@@ -84,11 +125,19 @@ def install_chrome(cons: Console) -> int:
         cons.info(f"Downloading {url} ...")
         urllib.request.urlretrieve(url, zip_path)
         with zipfile.ZipFile(zip_path) as zf:
-            zf.extractall(chrome_dir_for(version))
+            # Extract member-by-member and restore Unix modes: extractall()
+            # drops exec bits, leaving the chrome binary unrunnable (0644).
+            for member in zf.infolist():
+                target = zf.extract(member, chrome_dir_for(version))
+                if not member.is_dir():
+                    mode = member.external_attr >> 16
+                    if mode:
+                        os.chmod(target, mode & 0o7777)
     finally:
         zip_path.unlink(missing_ok=True)
 
-    if chrome_binary(version).is_file():
+    if bin_path.is_file():
+        _restore_exec_bits(chrome_dir_for(version), cons)  # belt & braces
         cons.info(f"Chrome extracted to {chrome_dir_for(version)}")
         return 0
     cons.error("Chrome extraction failed")
@@ -123,14 +172,34 @@ def install_agent_browser(cons: Console) -> int:
 
     cons.info("agent-browser installed successfully")
 
-    # Container-safe defaults: Chrome needs --no-sandbox in Docker/container
+    # Container-safe defaults: Chrome needs --no-sandbox in a container.
+    # agent-browser reads ~/.agent-browser/config.json (camelCase keys; the
+    # "args" value is a comma-separated launch-arg list). MERGE the safe set
+    # into any existing config instead of skipping it — an existing file
+    # (user-customized, or from an older stack) must not silence the
+    # container-safe defaults.
     config_path = Path.home() / ".agent-browser" / "config.json"
-    if not config_path.is_file():
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            json.dumps({"args": "--no-sandbox"}, indent=2)
-        )
+    existed = config_path.is_file()
+    config = {}
+    if existed:
+        try:
+            loaded = json.loads(config_path.read_text())
+            if isinstance(loaded, dict):
+                config = loaded
+        except (json.JSONDecodeError, OSError):
+            cons.warn(f"Existing {config_path} is unreadable — overwriting")
+    safe_args = ["--no-sandbox", "--no-first-run", "--disable-gpu", "--disable-crashpad"]
+    existing = [a.strip() for a in str(config.get("args", "")).replace("\n", ",").split(",") if a.strip()]
+    merged = existing + [a for a in safe_args if a not in existing]
+    config["args"] = ",".join(merged)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
+    if not existed:
         cons.info(f"Created container-safe config: {config_path}")
+    elif merged != existing:
+        cons.info(f"Merged container-safe args into {config_path}")
+    else:
+        cons.info(f"Container-safe args already present in {config_path}")
 
     return 0
 
@@ -145,9 +214,20 @@ def verify_installation(cons: Console) -> int:
 
     if chrome_bin:
         cons.info(f"  Chrome: {chrome_bin}")
-        out, _err, code = run_cmd([str(chrome_bin), "--version"], timeout=30)
-        if code == 0 and out.strip():
-            cons.raw(f"    {out.strip()}")
+        try:
+            out, _err, code = run_cmd([str(chrome_bin), "--version"], timeout=30)
+        except (PermissionError, OSError) as exc:
+            cons.error(
+                f"  Chrome binary not executable ({exc.__class__.__name__}); "
+                f"re-run install-browser to restore permissions"
+            )
+            errors += 1
+        else:
+            if code == 0 and out.strip():
+                cons.raw(f"    {out.strip()}")
+            else:
+                cons.error(f"  Chrome --version failed (exit {code})")
+                errors += 1
     else:
         cons.error("  Chrome binary not found")
         errors += 1

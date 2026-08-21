@@ -1,75 +1,151 @@
 # LocalPibox Fork Improvements
 
-> Generated: 2025-08-13  
-> Status: Complete — Qwen3.6 reasoning + vision fully operational
+> Last updated: 2026-08-18
+> Status: Qwen3.6 reasoning + vision fully operational
 
 ---
 
-## Architecture
+## Repository Map
 
-This stack uses 6 repositories. The two code forks and their changes:
+This stack uses 6 repositories under `github.com/lpb-stack`. The two forked
+repos and their upstream origins:
 
-| Repo | Upstream | Purpose |
-|---|---|---|
-| `lpb-stack/pi` | `earendil-works/pi` | Forked Pi monorepo — Qwen reasoning protocol + overflow detection |
-| `lpb-stack/lemonade-pi-plugin` | `lemonade-sdk/lemonade-pi-plugin` | Lemonade provider — Qwen model detection, vision, dynamic sizing |
-| `lpb-stack/pi-subagents` | `tintinweb/pi-subagents` | Subagent model registry — removes Anthropic defaults, local-first |
-| `lpb-stack/config` | — | User settings, skills, agents |
-| `lpb-stack/devstack` | — | Docker-based dev environment |
-| `lpb-stack/lpb-memory` | — | Persistent memory extension |
+| Repo | Type | Upstream | Purpose |
+|---|---|---|---|
+| **`lpb-stack/pi`** | Fork | `earendil-works/pi` | Pi monorepo — Qwen reasoning + overflow detection |
+| **`lpb-stack/lemonade-pi-plugin`** | Fork | `lemonade-sdk/lemonade-pi-plugin` | Lemonade provider — Qwen model detection, vision |
+| **`lpb-stack/pi-subagents`** | Original | — | Subagent model registry (local-first) |
+| **`lpb-stack/config`** | Original | — | User settings, skills, agents |
+| **`lpb-stack/devstack`** | Original | — | Docker dev environment + lpb launcher |
+| **`lpb-stack/lpb-memory`** | Original | — | Persistent memory extension |
 
----
+## The Pi Fork (`lpb-stack/pi`)
 
-## Pi Fork (`lpb-stack/pi`)
+### Upstream Baseline
 
-**Key commit: `53c1dc2` — surgical Qwen patches on v0.84.1**
+**Based on:** `earendil-works/pi` v0.84.2 (merged into `lpb-dev` branch)
 
-This commit makes the **surgical edits** to Pi itself that enable the Qwen reasoning protocol:
+The original upstream repo is a **TypeScript monorepo** with 11 packages:
 
-| File | Change | Purpose |
-|---|---|---|
-| `packages/ai/src/api/openai-completions.ts` | Adds `reasoning_effort` mapping to `chat_template_kwargs` | Sends `reasoning_effort: "high"|"medium"|"low"` to Qwen models when thinking is enabled |
-| `packages/ai/src/api/openai-completions.ts` | Adds `reasoning_budget_tokens` param | Sends soft-cap (0) to prevent runaway thinking blocks that exhaust max_tokens |
-| `packages/ai/src/types.ts` | Adds `reasoningBudgetTokens` compat field | New compat flag for Qwen reasoning budget |
-| `packages/ai/src/utils/overflow.ts` | Adds **Case 4** reasoning overflow detection | Detects when Qwen thinking blocks silently consume output token budget (input ≥ 90% of context, stopReason=withLength, output > 0, no text/tool calls) |
-| `packages/coding-agent/src/config.ts` | Adds `LOCALPIB_VERSION` env | Reads from `LPB_VERSION` env for fork identification |
-| `VERSION` | New file: `0.0.1-lpb` | Fork version marker |
-| `package.json` | Version → `0.0.1-lpb` | Fork version |
-
-**Additional 3 commits on top (lpb-dev branch):**
-
-| Commit | Description |
+| Package | Description |
 |---|---|
-| `2a3e9bc` feat | `allowScripts` for native addons |
-| `346947d` hooks | Validation-only hook sync for devstack |
-| `8449290` chore | Install husky pre-commit hook |
+| `@earendil-works/pi-ai` | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
+| `@earendil-works/pi-agent-core` | Agent runtime with tool calling and state management |
+| `@earendil-works/pi-coding-agent` | Interactive coding agent CLI |
+| `@earendil-works/pi-tui` | Terminal UI library with differential rendering |
+| `@earendil-works/pi-client` | Client library |
+| `@earendil-works/pi-protocol` | Protocol definitions |
+| `@earendil-works/pi-server` | Server component |
+| `@earendil-works/pi-session-backends` | Session storage backends |
+| `@earendil-works/pi-telemetry` | Vendor-neutral telemetry contracts |
+| `@earendil-works/pi-evals` | Evaluation harness |
 
-**Verdict:** `53c1dc2` is the **critical commit** — it wires Pi's OpenAI completions layer to send Qwen-specific reasoning parameters (`reasoning_effort`, `reasoning_budget_tokens`) and adds overflow detection for thinking-block exhaustion.
+For chat/workflows, see the companion project: [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
 
----
+### Fork Patches (on top of v0.84.2)
 
-## Subagents Fork (`lpb-stack/pi-subagents`)
+The fork adds **6 lbp-specific commits** on top of the v0.84.2 merge:
 
-**Key commit: `5a3159d` — centralized model registry on upstream v0.15.0**
+| Commit | What changed | Purpose |
+|---|---|---|
+| `53c1dc2` | **Critical**: Qwen/Lemonade-compatible patches on v0.84.1 | See details below |
+| `3340960` | `docs(lbp)`: document what v0.84.1 provides vs lbp additions | Docs |
+| `2a3e9bc` | `feat(coding-agent)`: declare `allowScripts` for native addons | Allow native addons |
+| `346947d` | `hooks`: sync to latest (validation-only, skip when not in devstack) | Hook management |
+| `8449290` | `chore`: install husky pre-commit hook, remove stale githooks wrapper | Dev tooling |
+| `3fc4978` | `Merge tag 'v0.84.2' into lbp-dev` | Upstream merge |
 
-This commit **removes Anthropic-hardcoded defaults** from the subagents extension, making it fully local-first:
+The **critical commit** (`53c1dc2`) adds these surgical changes:
 
 | File | Change | Purpose |
 |---|---|---|
-| `src/agent-runner.ts` | Adds `globalDefaultModel` setting + getter/setter | New centralized model registry — single source of truth for all subagent models |
-| `src/agent-runner.ts` | `resolveDefaultModel()` priority: explicit > config > **globalDefaultModel** > parent | New intermediate step between config and parent inheritance |
-| `src/default-agents.ts` | Removes `model: "anthropic/claude-haiku-4-5"` from Explore agent | `model: undefined` — inherits parent model |
-| `src/index.ts` | Reads `globalDefaultModel` from settings + resolves it | Applies the centralized model to agent spawns |
-| `src/settings.ts` | Adds `globalDefaultModel` field to settings interface | Configurable via `pi-defaults.json` or `/agents → Settings` |
-| `package.json` | Version → `0.14.3` (reverted from 0.15.0) | Aligns with upstream stable release |
-| `README.md` | Rewritten — adds "Configuring for local models" section | Documents `globalDefaultModel: null` in `pi-defaults.json` |
+| `packages/ai/src/api/openai-completions.ts` | Maps `reasoning_effort` to `chat_template_kwargs` | Sends `reasoning_effort: "high"\|"medium"\|"low"` to Qwen models |
+| `packages/ai/src/api/openai-completions.ts` | Adds `reasoning_budget_tokens` param | Sends soft-cap (0) to prevent runaway thinking blocks |
+| `packages/ai/src/types.ts` | Adds `reasoningBudgetTokens` compat field | New compat flag for Qwen reasoning budget |
+| `packages/ai/src/utils/overflow.ts` | Adds **Case 4** reasoning overflow detection | Detects when thinking blocks consume output token budget |
+| `packages/coding-agent/src/config.ts` | Adds `LOCALPIB_VERSION` env | Reads `LPB_VERSION` for fork identification |
+| `VERSION` | New file: `0.0.1-lbp` | Fork version marker |
+| `package.json` | Version → `0.0.1-lbp` | Fork version |
 
-**Why it matters:** Without this change, subagents would default to `anthropic/claude-haiku-4-5` and **fail when no Anthropic API key is configured**. For stacks running entirely on local models (like LocalPibox), this is critical.
+### Branch Strategy
+
+| Branch | Source | Content |
+|---|---|---|
+| `lpb-dev` (default) | Upstream + patches | Active development, contains lbp patches |
+| `lpb` (stable) | Derived from `lpb-dev` | Stable branch, receives clean merges |
+
+To update:
+```bash
+git fetch https://github.com/earendil-works/pi.git
+git checkout lbp-dev
+git rebase <upstream-tag>    # e.g. v0.84.2
+# apply lbp patches
+git push --force-with-lease origin lbp-dev
+```
+
+---
+
+## Lemonade Pi Plugin (`lpb-stack/lemonade-pi-plugin`)
+
+Forked from `lemonade-sdk/lemonade-pi-plugin`. Adds +334 lines across 13 files
+to support Qwen reasoning models on the Lemonade local provider.
+
+### Qwen Reasoning Model Support
+
+| Feature | Implementation |
+|---|---|
+| **Qwen detection** | `isQwenReasoningModel()` — detects Qwen3.x, QwQ, Qwen2.5-thinking via regex |
+| **MTP detection** | `isMtpModel()` — detects Multi-Token Prediction models |
+| **FLM detection** | `flmTemplateRejectsDeveloperRole()` — disables reasoning for FLM backends |
+| **Dynamic maxTokens** | Reasoning: `0.06 × contextWindow`. Non-reasoning: `0.125` — prevents context overflow |
+| **Thinking protocol** | Adds `enable_thinking`, `reasoning_budget_tokens`, `thinkingFormat: "qwen-chat-template"` |
+| **Heuristic detection** | `isReasoningByHeuristic()` — catches models without `recipe` field |
+
+### Vision Capability
+
+| Feature | Implementation |
+|---|---|
+| **Label-based detection** | `detectVision()` — checks for `"vision"` in model labels |
+| **Auto image input** | Vision models auto-get `input: ["text", "image"]` |
+
+### Sync Model Store
+
+Keeps `~/.pi/agent/models-store.json` in sync with the Lemonade API. Subprocesses
+and subagents resolve models with correct `contextWindow` and `maxTokens` without
+network calls. Triggered on login, refresh, and `/lemonade change-ctx`.
+
+### Configuration
+
+| Constant | Value | Purpose |
+|---|---|---|
+| `DEFAULT_MAX_TOKENS_CONTEXT_RATIO` | `0.125` | Non-reasoning Qwen models |
+| `QWEN_REASONING_MAX_TOKENS_CONTEXT_RATIO` | `0.06` | Reasoning models (thinking headroom) |
+| `QWEN_REASONING_BUDGET_TOKENS` | `0` | Soft-capped thinking (prevents runaway) |
+
+### Why the Ratios Matter
+
+| Model Type | Ratio | 262k Context → maxTokens | Why |
+|---|---|---|---|
+| Reasoning (Qwen MTP) | `0.06` | ~15.7k | Thinking blocks consume 10-20k tokens |
+| Non-reasoning (Qwen) | `0.125` | ~32k | Standard ratio, no thinking overhead |
+
+---
+
+## Pi Subagents (`lpb-stack/pi-subagents`)
+
+**Original** — not a fork. Provides subagent model registry that removes
+Anthropic defaults and makes the stack fully local-first.
+
+### Key Change: `globalDefaultModel`
+
+Removes hardcoded `anthropic/claude-haiku-4-5` defaults from subagent
+definitions. Introduces `globalDefaultModel` in settings as the centralized
+model source of truth:
 
 **Model resolution chain (after patch):**
 1. Explicit `model` param in `Agent()` call
 2. `model` field in agent `.md` frontmatter
-3. **`globalDefaultModel`** from `pi-defaults.json` / `subagents.json` (centralized registry)
+3. **`globalDefaultModel`** from `pi-defaults.json` / `subagents.json`
 4. Parent session model (inherit)
 
 **Configuration for local-first:**
@@ -83,106 +159,9 @@ This commit **removes Anthropic-hardcoded defaults** from the subagents extensio
   }
 }
 ```
-`globalDefaultModel: null` means subagents inherit whatever model the parent session uses — **zero Anthropic dependency**.
 
-**Verdict:** This is the **glue that makes the local-only stack work end-to-end** — it ensures subagents (like `vision-analysis`, `researcher`, etc.) all use the session's local Qwen model instead of falling back to Anthropic.
-
----
-
-## Lemonade Fork (`lpb-stack/lemonade-pi-plugin`)
-
-**Changes: +334 lines across 13 files — all major improvements**
-
-### 1. Qwen Reasoning Model Support
-
-**File:** `lib/models.ts` (~130 new lines)
-
-| Feature | Implementation |
-|---|---|
-| **Qwen detection** | `isQwenReasoningModel()` — detects Qwen3.x, QwQ, Qwen2.5-thinking, Qwen2.5-72B via regex on name/recipe |
-| **MTP detection** | `isMtpModel()` — detects Multi-Token Prediction models via name, recipe, or `mtp-gguf` label |
-| **FLM detection** | `flmTemplateRejectsDeveloperRole()` — disables reasoning for FLM backends (reject `developer` role in chat template) |
-| **Dynamic maxTokens ratio** | Reasoning models: `0.06 × contextWindow` (~15.7k for 262k). Non-reasoning: `0.125` (~32k) — prevents context overflow from thinking blocks |
-| **Thinking protocol** | Adds `enable_thinking`, `reasoning_budget_tokens`, `thinkingFormat: "qwen-chat-template"` to Qwen models |
-| **Heuristic detection** | `isReasoningByHeuristic()` — catches models where `recipe` field is absent or non-matching (checks name, labels) |
-| **Reasoning flag** | Combines `isReasoningModel(recipe)` + heuristic + Qwen detection |
-
-### 2. Vision Capability Detection
-
-**File:** `lib/models.ts`
-
-| Feature | Implementation |
-|---|---|
-| **Label-based detection** | `detectVision()` — checks for `"vision"` in model labels |
-| **Auto image input** | Vision models automatically get `input: ["text", "image"]` |
-
-### 3. Sync Model Store
-
-**File:** `lib/sync-store.ts` (new, 61 lines)
-
-| Aspect | Details |
-|---|---|
-| **Purpose** | Keeps `~/.pi/agent/models-store.json` in sync with Lemonade API |
-| **Why** | Subprocesses and subagents resolve models with correct `contextWindow` and `maxTokens` without network calls |
-| **Triggers** | OAuth login, token refresh, `/lemonade refresh`, `/lemonade change-ctx` |
-| **Error handling** | Non-critical — falls back to provider at runtime if sync fails |
-
-### 4. API Field Propagation
-
-**File:** `lib/http.ts` (+8 lines)
-
-| Field | Purpose |
-|---|---|
-| `labels` | Passed through to drive `detectVision()` and other heuristics |
-| `config` | Passed through for backend configuration |
-| `max_context_window` | Respected for context sizing |
-
-### 5. Auth & Config Improvements
-
-**Files:** `extensions/index.ts`, `lib/provider.ts`
-
-| Change | Details |
-|---|---|
-| `auth_type: "api-key"` | Registers provider as API-key auth type |
-| Spread copy in `refreshToken` | `{ ...decodeCreds(creds) }` — prevents credential mutation |
-| `creds.access` fallback | `getApiKey` checks `creds.access` as fallback |
-| `LEMONADE_BASE_URL` env fallback | Resolves baseUrl when stored creds are stale |
-
-### 6. Admin Command & OAuth Sync
-
-**Files:** `lib/admin.ts`, `lib/oauth.ts`
-
-| Change | Details |
-|---|---|
-| Post-refresh sync | `syncModelStore()` after `/lemonade refresh` |
-| Post-change-ctx sync | `syncModelStore()` after `/lemonade change-ctx` |
-| Post-login sync | `syncModelStore()` after OAuth login |
-| Post-refresh sync | `syncModelStore()` in `registerLemonadeProvider` |
-
-### 7. Qwen Constants
-
-**File:** `lib/constants.ts` (21 new lines)
-
-| Constant | Value | Purpose |
-|---|---|---|
-| `DEFAULT_MAX_TOKENS_CONTEXT_RATIO` | 0.125 | Non-reasoning Qwen models |
-| `QWEN_REASONING_MAX_TOKENS_CONTEXT_RATIO` | 0.06 | Reasoning models (thinking headroom) |
-| `QWEN_REASONING_BUDGET_TOKENS` | 0 | Soft-capped thinking (prevents runaway) |
-
-### 8. Model Type Definitions
-
-**File:** `lib/types.ts`
-
-| Change | Details |
-|---|---|
-| `labels?: string[]` | Added to `LemonadeModelInfo` interface |
-
-### 9. Documentation & Version
-
-| File | Purpose |
-|---|---|
-| `CONTRIBUTING.md` | Docs on patch model, rebase workflow, forking guide |
-| `VERSION` | `0.2.0-lpb` — fork version marker |
+`globalDefaultModel: null` means subagents inherit whatever model the
+parent session uses — **zero Anthropic dependency**.
 
 ---
 
@@ -190,69 +169,15 @@ This commit **removes Anthropic-hardcoded defaults** from the subagents extensio
 
 ### Patch Model
 
-All LocalPibox changes are kept as a **single squashed commit** on top of upstream `main`. The delta is always one clean patch.
-
-```
-upstream main ──→ [latest] ──┐
-                             │
-lpb-dev branch      ──→ [lpb patch]──┘
-```
-
-To update:
-```bash
-git fetch upstream main
-git checkout lpb-dev
-git rebase upstream/main
-git push --force-with-lease origin lpb-dev
-```
-
-### Why the Ratios Matter
-
-| Model Type | Ratio | 262k Context → maxTokens | Why |
-|---|---|---|---|
-| Reasoning (Qwen MTP) | 0.06 | ~15.7k | Thinking blocks consume 10-20k tokens; leaving budget prevents context overflow |
-| Non-reasoning (Qwen) | 0.125 | ~32k | Standard ratio, no thinking overhead |
+All LocalPibox changes are kept as clean commits on top of upstream tags.
+The delta is always visible as the diff between upstream and `lpb-dev`.
 
 ### FLM vs MTP Backend
 
 | Backend | Reasoning Support | Why |
 |---|---|---|
 | **MTP** (`Qwen3.6-35B-A3B-MTP-GGUF`) | ✅ Yes | Uses newer chat template that accepts `developer` role |
-| **FLM** (`qwen3.5-9b-FLM`, `qwen3.6-moe-35b-a3b-FLM`) | ❌ No | Chat template only accepts `system/user/assistant/tool` roles, raises error on `developer` |
-
----
-
-## Vision Pipeline
-
-### Custom Agent (`vision-analysis`)
-
-Created at `~/.pi/agent/agents/vision-analysis.md`
-
-**Workflow:**
-1. `mcp` → `agent-browser_open` — open URL in Chrome
-2. `mcp` → `agent-browser_screenshot` — capture screenshot
-3. `read` — pass image to session model for vision analysis
-4. `mcp` → `agent-browser_close` — close browser
-
-**Usage:**
-```bash
-Agent(description: "Vision analysis of <url>", subagent_type: "vision-analysis", prompt: "Analyze this page: <url>")
-```
-
-Runs in background, uses session model by default (can override with `model:` parameter).
-
-### Manual Alternative
-
-```bash
-# Open browser
-mcp({ tool: "agent-browser_open", args: { url: "..." } })
-# Take screenshot
-mcp({ tool: "agent-browser_screenshot", args: {} })
-# Read image (passes to session model)
-read(path: "/home/lpb/.agent-browser/tmp/screenshots/screenshot-xxx.png")
-# Close browser
-mcp({ tool: "agent-browser_close", args: { all: false } })
-```
+| **FLM** (`qwen3.5-9b-FLM`, `qwen3.6-moe-35b-a3b-FLM`) | ❌ No | Chat template only accepts `system/user/assistant/tool` roles |
 
 ---
 
@@ -260,17 +185,19 @@ mcp({ tool: "agent-browser_close", args: { all: false } })
 
 ### Qwen3 Thinking Overflow (2026-08-02)
 
-Qwen3.6 with thinking enabled throws "context size exceeded" when `prompt + max_tokens` exceeds the 262k window.
+Qwen3.6 with thinking enabled throws "context size exceeded" when
+`prompt + max_tokens` exceeds the 262k window.
 
 **Mitigations:**
 - `maxTokens` reduced to ~15k (`ratio 0.06`) — leaves room for 10-20k thinking blocks
 - `reserveTokens` doubled to 32k — compaction fires at ~88% (230k) instead of ~94% (246k)
 - Thinking disabled during compaction — prevents meta-thinking waste
-- `LPB_MAX_TOKENS_CONTEXT_RATIO=0.06` set in `support/start.sh` and `.env.example`
+- `LPB_MAX_TOKENS_CONTEXT_RATIO=0.06` set in `start.sh` and `.env.example`
 
-### agent-browser_chat
+### agent-browser-chat
 
-Requires `AI_GATEWAY_API_KEY` (Vercel AI SDK gateway). Not configurable per-call. Cannot point at local Lemonade server. Not usable with this stack.
+Requires `AI_GATEWAY_API_KEY` (Vercel AI SDK gateway). Not configurable
+per-call. Cannot point at local Lemonade server. Not usable with this stack.
 
 ---
 
@@ -303,3 +230,4 @@ Requires `AI_GATEWAY_API_KEY` (Vercel AI SDK gateway). Not configurable per-call
 | `/opt/pi-support/browser-validate.ts` | Browser validation entry point |
 | `/opt/pi-support/start.sh` | Start script |
 | `/opt/pi-support/config/agent-browser-action-policy.json` | Agent action policies |
+| `/opt/pi-support/validate-subagent-output.ts` | Subagent output validation |

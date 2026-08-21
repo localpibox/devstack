@@ -22,13 +22,11 @@ has its own scope:
 | [lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) | Qwen thinking + vision support (fork) |
 | [pi-subagents](https://github.com/lpb-stack/pi-subagents) | Centralized subagent model registry (fork) |
 | [lpb-memory](https://github.com/lpb-stack/lpb-memory) | Persistent memory / session search extension |
-| [lpb-stack](https://github.com/lpb-stack/lpb-stack) | Project overview & stack reference |
-| [lpb-stack.github.io](https://github.com/lpb-stack/lpb-stack.github.io) | GitHub Pages project site |
 
 ### Process
 
-1. Fork the repo and create a feature branch off its stable branch
-   (`main` for own repos, `lpb` for forks).
+1. Fork the repo and create a feature branch off its default branch
+   (`dev` for own repos, `lpb-dev` for forks).
 2. Make focused changes. **Prefer minimal, targeted patches** over broad
    rewrites.
 3. For forks, keep work as a **single squashed commit** on `lpb` so the delta
@@ -48,7 +46,7 @@ has its own scope:
 
 1. Fork the repos you care about.
 2. Clone devstack and edit `lpb.stack.env` to point at your forks (see
-   [Forking & Repointing](https://github.com/lpb-stack/devstack#forking--repointing)).
+   [Forking & Repointing](https://github.com/lpb-stack/devstack/blob/dev/doc/forking.md)).
 3. Build & push your image, then run `lpb`.
 
 You own your variant — change anything: image names, container name, branch

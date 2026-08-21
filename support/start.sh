@@ -99,71 +99,16 @@ export PI_TIME="$(date '+%H:%M:%S %Z')"
 export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/lpb/workspace}"
 export PI_SUPPORT_DIR="${PI_SUPPORT_DIR:-/opt/pi-support}"
 
-# -- API endpoints --
-export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}}"
-export OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}}"
-export LPB_LEMONADE_BASE_URL="${LEMONADE_BASE_URL}"
-export LPB_OPENROUTER_BASE_URL="${OPENROUTER_BASE_URL}"
-
-# -- Editor (web mode) --
-export LPB_ED_PORT="${LPB_ED_PORT:-${ED_PORT:-3000}}"
-export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-${HOST:-0.0.0.0}}"
-export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-${CONNECTION_TOKEN:-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')}}"
-
-# Backwards-compat aliases (used by VSCodium server and other tools)
-export ED_PORT="${LPB_ED_PORT}"
-export HOST="${LPB_EDITOR_HOST}"
-export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
-export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-
-# -- Workspace --
-WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
-
-# -- Context window / max tokens ratio --
-export LPB_MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO:-0.06}"
-export MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO}"
-
-
-# -- Browser config (preserve lpb.py defaults, allow shell override) --
-export LPB_AGENT_BROWSER_ARGS="${LPB_AGENT_BROWSER_ARGS:-}"
-export LPB_AGENT_BROWSER_MAX_OUTPUT="${LPB_AGENT_BROWSER_MAX_OUTPUT:-4000}"
-export LPB_AGENT_BROWSER_CONTENT_BOUNDARIES="${LPB_AGENT_BROWSER_CONTENT_BOUNDARIES:-true}"
-export LPB_AGENT_BROWSER_CONFIRM_ACTIONS="${LPB_AGENT_BROWSER_CONFIRM_ACTIONS:-delete,download,cookie_delete,file_access}"
-export LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS="${LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS:-300000}"
-export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:-}}"
-
-# ── API keys & other LPB_ → bare-name bridges ────────────────────────────────
-# Define bare-name aliases here. The _bridge() loop applies the generic logic:
-#   LPB_FOO → FOO (only if FOO not already set by shell env).
-# Fallback chain: shell env > LPB_ (from .env/conf) > hardcoded.
-#
-# NOTE: GITHUB_TOKEN is excluded — it has a special fallback chain:
-#   shell env > LPB_ > `gh auth token` (CLI auth) > empty.
-# That special case runs below, after _bridge.
-_bridge() {
-    local _name lpb_name
-    # Unset bare names that are set but empty — they block the promotion
-    # (e.g. EXA_API_KEY="" from host env still counts as "set")
-    for _name in "${BARE_NAMES[@]}"; do
-        if [[ -z "${!_name:-}" ]]; then
-            unset "$_name"
-        fi
-    done
-    # Build LPB_ prefix with fallback to bare name (shell env wins)
-    for _name in "${BARE_NAMES[@]}"; do
-        lpb_name="LPB_${_name}"
-        export "$lpb_name="${!lpb_name:-${!_name:-}}""
-    done
-    # Promote LPB_ → bare (only if bare not already in shell env)
-    for _name in "${BARE_NAMES[@]}"; do
-        lpb_name="LPB_${_name}"
-        if [[ -z "${!_name+x}" ]]; then
-            export "$_name="${!lpb_name:-}""
-        fi
-    done
-}
-
-# Define the full list of LPB_ → bare-name pairs.
+# ── LPB_ → bare-name bridge (single source of truth) ─────────────────────────
+# One list, one loop: every variable a third-party tool reads under a bare
+# (unprefixed) name — API keys, endpoints, editor, agent-browser.
+# agent-browser does NOT read LPB_AGENT_BROWSER_*; without promotion the
+# container-safe defaults in lpb.conf.env (notably --no-sandbox) never reach
+# the browser, and Chrome cannot launch in a container without --no-sandbox.
+# BARE_FALLBACKS carries per-name container-safe defaults.
+# Priority: shell env > LPB_ (conf/.env) > container-safe fallback.
+# NOTE: GITHUB_TOKEN is intentionally excluded — its fallback is a command
+# (`gh auth token`), handled in the special case below.
 BARE_NAMES=(
     EXA_API_KEY
     CONTEXT7_API_KEY
@@ -174,7 +119,60 @@ BARE_NAMES=(
     CONNECTION_TOKEN
     DEVCONTAINER_WORKSPACE_DIR
     MAX_TOKENS_CONTEXT_RATIO
+    GITHUB_TOOLSETS
+    AGENT_BROWSER_ARGS
+    AGENT_BROWSER_MAX_OUTPUT
+    AGENT_BROWSER_CONTENT_BOUNDARIES
+    AGENT_BROWSER_CONFIRM_ACTIONS
+    AGENT_BROWSER_IDLE_TIMEOUT_MS
+    AGENT_BROWSER_SESSION
 )
+# Container-safe fallbacks per bare name (absent = pure LPB_→bare promotion).
+declare -A BARE_FALLBACKS=(
+    [LEMONADE_BASE_URL]="http://127.0.0.1:13305/v1"
+    [OPENROUTER_BASE_URL]="https://openrouter.ai/api/v1"
+    [ED_PORT]="3000"
+    [HOST]="0.0.0.0"
+    [CONNECTION_TOKEN]="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+    [DEVCONTAINER_WORKSPACE_DIR]="/home/lpb/workspace"
+    [MAX_TOKENS_CONTEXT_RATIO]="0.06"
+    [GITHUB_TOOLSETS]="all"
+    [AGENT_BROWSER_ARGS]="--no-sandbox,--no-first-run,--disable-gpu,--disable-crashpad"
+    [AGENT_BROWSER_MAX_OUTPUT]="4000"
+    [AGENT_BROWSER_CONTENT_BOUNDARIES]="true"
+    [AGENT_BROWSER_CONFIRM_ACTIONS]="delete,download,cookie_delete,file_access"
+    [AGENT_BROWSER_IDLE_TIMEOUT_MS]="300000"
+    [AGENT_BROWSER_SESSION]="${PI_WORKTREE_ID:-}"
+)
+# LPB_ var name for bare names where the prefix is not simply LPB_<name>.
+declare -A BARE_ALIASES=(
+    [HOST]="LPB_EDITOR_HOST"
+)
+
+# -- Workspace --
+WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
+
+_bridge() {
+    local _name lpb_name fallback resolved
+    # Unset bare names that are set but empty — they block the promotion
+    # (e.g. EXA_API_KEY="" from host env still counts as "set")
+    for _name in "${BARE_NAMES[@]}"; do
+        if [[ -z "${!_name:-}" ]]; then
+            unset "$_name"
+        fi
+    done
+    # Resolve each name (shell env > LPB_ > fallback) and keep the LPB_
+    # mirror in sync so dumps of LPB_* reflect the effective value.
+    for _name in "${BARE_NAMES[@]}"; do
+        lpb_name="${BARE_ALIASES[${_name}]:-LPB_${_name}}"
+        fallback="${BARE_FALLBACKS[${_name}]:-}"
+        resolved="${!_name:-}"
+        [[ -z "$resolved" ]] && resolved="${!lpb_name:-}"
+        [[ -z "$resolved" ]] && resolved="$fallback"
+        export "$_name=$resolved"
+        export "$lpb_name=$resolved"
+    done
+}
 
 # Apply bridge after lpb.conf.env defaults (step 0).
 _bridge
@@ -187,9 +185,6 @@ export GITHUB_TOKEN="${GITHUB_TOKEN:-${LPB_GITHUB_TOKEN:-$(gh auth token 2>/dev/
 # mcp.json resolves ${GITHUB_PERSONAL_ACCESS_TOKEN} from this export.
 export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_TOKEN}"
 export LPB_GITHUB_TOKEN="${GITHUB_TOKEN}"
-
-# ── GitHub MCP Server toolsets (see mcp.json for transport config) ──
-export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 
 # ── Persistence flags ──
 export LPB_PERSIST_GH_CONFIG="${LPB_PERSIST_GH_CONFIG:-true}"

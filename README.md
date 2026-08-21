@@ -1,66 +1,68 @@
 # LocalPibox Devstack
 
-AI-powered development environment with the Pi coding agent, VSCodium editor, and agent-browser automation — all containerized.
+A local-first AI development environment in a single container: the
+**Pi** coding agent, **VSCodium** editor, and **agent-browser** automation —
+powered by a Qwen model served locally through **Lemonade**. No cloud LLM
+required; your code and data stay on your machine.
 
 ## Quick Start
 
-### Option 1: One-line installer (recommended)
+### 1. Install the launcher (once)
 
 ```bash
-# Install the `lpb` launcher (adds it to ~/.local/bin/)
 curl -fsSL https://raw.githubusercontent.com/lpb-stack/devstack/main/scripts/install.sh | bash
-
-# Run devstack for your project
-lpb /path/to/your/project
-
-# Or start VSCodium with a welcome screen (user picks project)
-lpb
-
-# Common commands
-lpb --stop      # Stop the container
-lpb --logs      # View logs
-lpb --remove    # Remove everything
-lpb --config    # Show config file
-lpb --help      # Full usage
 ```
 
-### Option 2: Manual podman run
+Installs `lpb` + `lpb.py` to `~/.local/bin` (no sudo needed — make sure
+`~/.local/bin` is on your `PATH`) and the stack config files to
+`~/.lpb-stack/devstack/`.
+
+### 2. Run it
 
 ```bash
-# Pull the latest image
-podman pull ghcr.io/lpb-stack/devstack:latest
-
-# Run with a project folder
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    -e ED_PORT=3000 \
-    ghcr.io/lpb-stack/devstack:latest
-
-# Open browser to http://localhost:3000 (token: devsession)
+lpb /path/to/your/project      # Pi CLI session (foreground) in the container
+lpb --web /path/to/your/project  # VSCodium editor (background, prints a URL)
+lpb                              # resumes your last project (or ~)
 ```
 
-### Interactive mode
+On the **first run** the container pulls the image, clones the config preset,
+generates `settings.json`, and installs the extensions — then Pi starts.
+You'll be asked to connect a model:
+
+```
+/login lemonade     # connect to the local Lemonade server (must be running on the host)
+/model              # pick a model (e.g. the Qwen3.6-35B reasoning model)
+```
+
+### Common commands
 
 ```bash
-# Run and get a shell inside the container
-podman run -it --name lpb-stack --network host --userns keep-id \
-    -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    -e ED_PORT=3000 \
-    ghcr.io/lpb-stack/devstack:latest
+lpb --stop       # stop the container
+lpb --logs       # stream container logs
+lpb --update     # update the launcher + pull the latest image
+lpb --remove     # stop, remove container + state dirs
+lpb --config     # show config file location
+lpb --help       # full usage
 ```
 
-### Update extensions (no rebuild)
+> `lpb stop`, `lpb logs`, `lpb update`, … also work (positional aliases).
+> `lpb --tag dev|main|latest|<version>` selects the image pipeline
+> (`--dev` / `--main` are shorthands). See [lpb CLI reference](doc/lpb-cli.md).
 
-```bash
-# Inside the running container
-podman exec -it lpb-stack update --extensions
-```
+## What's Inside
 
-## Architecture
+| Component | Role |
+|---|---|
+| **Pi** (forked) | Coding agent CLI — local fork with Qwen reasoning + context-overflow patches |
+| **VSCodium** | Web-based editor (`:web` image), connects over the OpenVSCode protocol |
+| **lemonade-pi-plugin** (forked) | Qwen model provider — talks to the local Lemonade server |
+| **lpb-memory** | Persistent memory + session search for the agent |
+| **pi-subagents** (forked) | Local-first subagent model registry (no hardcoded cloud models) |
+| **agent-browser** + Chrome | Browser automation tools for the agent |
+| **MCP servers** | Exa (web search), Context7 (library docs), agent-browser |
+| **Lemonade** (on host) | Local model server at `127.0.0.1:13305` (Qwen3.6-35B by default) |
+
+## How It Works
 
 ```mermaid
 flowchart TB
@@ -71,14 +73,14 @@ flowchart TB
         H4["Lemonade (:13305)"]
     end
 
-    subgraph Image["Image: ghcr.io/lpb-stack/devstack:latest"]
+    subgraph Image["Image: ghcr.io/lpb-stack/devstack"]
         direction TB
         I1["Ubuntu 26.04 + Node.js 24"]
         I2["Pi monorepo (built, patched)"]
-        I3["VSCodium server (headless, port 3000)"]
+        I3["VSCodium server (headless)"]
         I4["Chrome (agent-browser automation)"]
-        I5["Extensions: lemonade, memory, mcp-adapter, subagents"]
-        I6["Config: settings, mcp, skills, agents"]
+        I5["Extensions: lemonade, memory, subagents, mcp-adapter"]
+        I6["Config preset: settings, skills, agents"]
     end
 
     H1 -->|bind mount| I1
@@ -87,358 +89,218 @@ flowchart TB
     H4 -->|host network| I4
 ```
 
-Mount structure:
-- Host: `$PROJECT → /home/lpb/workspace/myproject/`
-- Host: `~/.lpb-stack/state → /home/lpb/.pi` (persistent agent state)
-- Host: `~/.lpb-stack/agent-browser → /home/lpb/.agent-browser` (browser sessions)
-- Host: `Lemonade (:13305) → 127.0.0.1:13305` (host network mode)
+### Where things live
 
-## Commands Available Inside Container
+| Host path | In container | Purpose |
+|---|---|---|
+| your project dir | `/home/lpb/workspace/<name>` | The code you work on |
+| `~/.lpb-stack/state/` | `/home/lpb/.pi/` | Agent config, sessions, memory, extension clones — **persists across rebuilds** |
+| `~/.lpb-stack/agent-browser/` | `/home/lpb/.agent-browser/` | Browser profiles & sessions |
+| `~/.lpb-stack/devstack/` | (host only) | Launcher config: `config`, `last-version`, `token`, `last-project` |
 
-Once the container is running, these commands are available:
+### Images and tags
+
+Two image flavours are published to `ghcr.io/lpb-stack/devstack`:
+
+- **`…-cli`** — dev environment + Pi CLI (foreground)
+- **`…-web`** — extends `-cli` with the VSCodium server
+
+CI tags images per pipeline: `:0.0.x-lpb[-dev]-cli/web` (versioned),
+`:dev-cli/web`, `:main-cli/web`, `:latest-cli/web`, `:{sha}-cli/web`.
+
+> ⚠️ There is **no bare `:cli`, `:web`, or `:latest` tag** — pulling one
+> fails with `manifest unknown`. `lpb` always resolves a real tag for you,
+> so in practice you never type image tags.
+
+## Managing the Stack
+
+| Command | What it does |
+|---|---|
+| `lpb /path` | Pi CLI session (foreground); no path → last project or `~` |
+| `lpb --web /path` | VSCodium (background); `--port 8080` to change the port |
+| `lpb --shell /path` | Interactive bash inside the container |
+| `lpb --ssh [pubkey] /path` | sshd server in the container for remote login |
+| `lpb --stop` / `--remove` / `--logs` | Stop / stop+remove+state cleanup / stream logs |
+| `lpb --update` | Self-update launcher + pull latest image for the selected pipeline |
+| `lpb /path -- <pi-args>` | Pass args to Pi, e.g. `lpb /path -- -p "summarize this repo"` |
+
+## Running Without the Launcher (advanced)
+
+Manual `podman run` works too — note the **`-cli`/`-web` tag suffix**:
+
+```bash
+podman pull ghcr.io/lpb-stack/devstack:latest-web
+
+podman run -d --name lpb-stack --network host --userns keep-id \
+    -v /path/to/your/project:/home/lpb/workspace/myproject:Z \
+    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
+    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
+    ghcr.io/lpb-stack/devstack:latest-web
+
+# URL + connection token are printed in the container logs:
+podman logs -f lpb-stack
+```
+
+## Inside the Container
+
+```bash
+podman exec -it lpb-stack bash
+```
 
 | Command | Description |
 |---|---|
-| `pi` | Start Pi CLI |
-| `update --extensions` | Update extensions to latest |
-| `update --patches` | Apply Pi source patches |
-| `exit` | Stop the server and exit |
+| `pi` | Start the Pi CLI |
+| `pi update --extensions` | Update unpinned packages (tag-pinned packages are skipped — move a pin with `pi install git:github.com/lpb-stack/<repo>@<new-tag>`) |
+| `lpb-devstack validate` | Validate stack alignment (repos, branches, pins) |
+| `lpb-devstack bump` | Bump VERSION + commit (the release trigger for CI build/tag) |
+| `lpb-config memory setup` | Interactive wizard for the memory extension |
 
-### Update examples
-
-```bash
-# Update extensions to latest release
-podman exec -it lpb-stack update --extensions
-
-# Patches are baked into the image — to update, rebuild the container
-# with updated fork branches in lpb.stack.env.
-```
-
-## Usage
-
-### Single project
-
-```bash
-# Run with any project folder
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /home/user/projects/myproject:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-```
-
-The project mounts at `/workspace/myproject/` so tools see the correct project name (not "workspace").
-
-### Multiple projects
-
-```bash
-# First project
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=3000 \
-    -v /path/to/project-a:/home/lpb/workspace/project-a:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:3000
-
-# Stop and run another
-podman stop lpb-stack
-podman rm lpb-stack
-
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=3001 \
-    -v /path/to/project-b:/home/lpb/workspace/project-b:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:3001
-```
+Inside the Pi TUI: `/login <provider>`, `/model`, `/settings` (thinking
+level, theme), `/new` (new session).
 
 ## Update Flow
 
 ```mermaid
 flowchart LR
-    subgraph Source["Source"]
-        G["GitHub\n(your code)"]
+    subgraph Source["GitHub"]
+        G["push to dev or main"]
     end
 
-    subgraph Pipeline["CI/CD Pipeline"]
-        CI["GitHub Actions\n(push / weekly)"]
+    subgraph Pipeline["CI/CD"]
+        CI["GitHub Actions"]
     end
 
-    subgraph Registry["Registry"]
-        GHCR["GHCR\nghcr.io/lpb-stack/devstack:latest"]
+    subgraph Registry["GHCR"]
+        GHCR["ghcr.io/lpb-stack/devstack"]
     end
 
-    subgraph Runtime["Runtime (host)"]
-        PODMAN_PULL["podman pull\n(image)"]
-        PODMAN_RUN["podman run\n(launch)"]
-        UPDATE["update\n--extensions\n(at boot)"]
+    subgraph Runtime["Host"]
+        PULL["lpb --update\n(pull image)"]
+        RUN["lpb (launch)"]
+        EXT["pi update --extensions\n(at boot)"]
     end
 
-    G -->|push to main| CI
-    CI -->|build & push| GHCR
-    GHCR -->|pull| PODMAN_PULL
-    PODMAN_PULL --> PODMAN_RUN
-    PODMAN_RUN --> UPDATE
+    G --> CI --> GHCR --> PULL --> RUN --> EXT
 ```
 
-**What gets updated:**
+| Component | How it updates |
+|---|---|
+| Devstack image | CI builds on push to `dev`/`main`; `lpb --update` pulls it |
+| `lpb` launcher | `lpb --update` self-update (branch follows the selected tag) |
+| Extensions | Runtime — `pi update --extensions` (unpinned packages) |
+| Config preset | `lpb-config update` (git pull of the config repo) |
+| Pi core + patches | Baked into the image — rebuilt by CI |
 
-| Component | How | Frequency |
-|---|---|---|
+## Forked Repos & Upstream Policy
 
-| Component | How | Frequency |
-|---|---|---|
-| Base image | CI/CD on push to main | Every code change |
-| Extensions | `pi update --extensions` (at boot) | Every container start |
-| Chrome/VSCodium | Base image rebuild | Monthly or on-demand |
-| lpb launcher | `lpb --update` self-update | Every code change |
+Fork URLs and branches are tracked in `lpb.stack.env` at the repo root.
+Each fork carries its LocalPibox work as a **single squashed commit** on top
+of upstream, so the delta vs upstream is always one clean patch.
 
-**Note:** Pulls may take a while on slow connections — `lpb --update` uses
-non-blocking streaming so you'll see real-time progress (no timeouts).
-
-## Forked Repos, Patches & Upstream Policy
-
-Fork URLs and branches are tracked in `lpb.stack.env` at the repo root. Each
-LocalPibox fork carries its lpb-stack work as a **single squashed commit** on
-top of upstream (or as its own root commit for independent projects), so the
-delta vs upstream is always one clean patch.
-
-| Repo | Upstream | Upstream latest | LocalPibox work | Update policy |
-|---|---|---|---|---|
-| **pi** | `earendil-works/pi` | release **v0.83.0** | Qwen reasoning + context-overflow patches | rebase `lpb` patch onto upstream **on releases** only |
-| **lemonade-pi-plugin** | `lemonade-sdk/lemonade-pi-plugin` | **no stable release** | Qwen thinking + vision support | follow upstream **main**; check periodically |
-| **pi-subagents** | `tintinweb/pi-subagents` | release **v0.14.3** | centralized subagent model registry | branch & follow **master** releases; submit upstream if clean |
-| **lpb-memory** | *(independent — full refactor)* | — | Pi memory extension (subprocess provider) | no upstream to track |
-| **config** | — | — | preset: settings, skills, agents | own |
-| **devstack** | — | — | this stack | own |
-
-### `pi` → `earendil-works/pi` (releases)
-
-One squashed patch commit on `lpb` (`packages/ai`, `packages/agent`, …):
-
-| Patch | What it does | File |
-|---|---|---|
-| `reasoning_effort` | Send `reasoning_effort` (high/medium/low) for Qwen models via the `qwen` / `qwen-chat-template` thinking formats | `packages/ai/src/api/openai-completions.ts` |
-| `reasoning_budget_tokens` | Add reasoning-budget token support/typing for Qwen to prevent runaway thinking | `packages/ai/src/types.ts`, `generate-models.ts`, ai tests |
-| Case 4 context overflow | Add Case 4 to `isContextOverflow`: Qwen/Llama.cpp reasoning overflow (`stopReason=length` + `output>0` + input ≥ 90% window) | `packages/ai/src/utils/overflow.ts` |
-| compaction tuning | Adjust compaction for Qwen thinking windows | `packages/agent/src/harness/compaction/compaction.ts` |
-| reasoning wiring | `reasoning_effort` field plumbing in coding-agent config | `packages/coding-agent/src/config.ts` |
-
-Update: rebase the patch onto the **next upstream release** (after v0.83.0).
-
-### `lemonade-pi-plugin` → `lemonade-sdk/lemonade-pi-plugin` (main)
-
-One squashed patch commit on `lpb` (`extensions/index.ts`, `+287/-49`): API-key
-auth type registration, Qwen thinking-format support (`thinkingLevelMap`),
-vision-capability detection, and reasoning-format handling. Update policy: no
-stable release upstream yet — **check periodically** and rebase onto upstream
-`main`.
-
-### `pi-subagents` → `tintinweb/pi-subagents` (master)
-
-One squashed patch commit on `master` (`src/index.ts`, `src/settings.ts`,
-`src/agent-runner.ts`, `src/default-agents.ts`): a **centralized subagent model
-registry** (remove Anthropic-heavy defaults; make all subagents inherit the
-session model), plus removal of a workflow file (OAuth scope limitation). If
-this patch proves clean and generally useful, **submit it upstream**.
-
-### `lpb-memory` — independent
-
-Original Hermes base was **fully refactored** and is now an independent project
-(no upstream to track). Provides the Pi memory extension: subprocess-based
-background reviews, model-override propagation, memory store + handlers.
-
-### Upstreaming policy
-
-Patches are **candidate upstream contributions**: they go upstream only if
-generally useful and not too opinionated for this stack's specific
-configuration. Local-workaround-specific patches or ones that diverge from
-upstream design direction stay on the LocalPibox fork branch.
-
-## Forking & Repointing
-
-You can fork this repo, personalize it, and repoint it at your own managed
-set of repositories (Pi core, config preset, and extensions) instead of the
-LocalPibox originals.
-
-### What each component maps to
-
-| Component | URL / ref lives in | Effort | Repoint path |
+| Repo | Upstream | LocalPibox work | Update policy |
 |---|---|---|---|
-| **Extensions** (lemonade-pi-plugin, lpb-memory, pi-subagents, …) | runtime config `~/.pi/agent/settings.json` → `packages` | 🟢 trivial, **no rebuild** | edit the `packages` array, or `pi install git:<fork>/<repo>`; applied at next startup via `pi update --extensions` |
-| **Config preset** (lpb-stack/config) | `lpb.stack.env` → `LPB_CONFIG_FORK` / `LPB_CONFIG_REF` | 🟡 one rebuild, or no rebuild at runtime | rebuild `--build-arg CONFIG_FORK=...`, **or** `git -C ~/.pi/agent/ remote set-url origin <fork>` (no rebuild) |
-| **Pi core** (lpb-stack/pi) | `lpb.stack.env` → `LPB_PI_FORK` / `LPB_PI_REF` | 🔴 image rebuild | fork `lpb-stack/pi`, set engine + `LPB_IMAGE_CLI`, rebuild |
+| **pi** | `earendil-works/pi` (v0.84.2) | Qwen `reasoning_effort` + context-overflow patches | rebase onto new upstream releases |
+| **lemonade-pi-plugin** | `lemonade-sdk/lemonade-pi-plugin` (no stable release) | Qwen thinking + vision support | follow upstream `main`, check periodically |
+| **pi-subagents** | `tintinweb/pi-subagents` (v0.14.3) | centralized local-first subagent model registry | follow `master`; submit upstream if clean |
+| **lpb-memory** | *(independent project)* | Pi memory extension (subprocess reviews) | no upstream to track |
+| **config** / **devstack** | — | own | own |
 
-### Full repoint procedure (image build)
+Patches are **candidate upstream contributions** — they go upstream only if
+generally useful and not too opinionated for this stack. See
+[Fork improvements](doc/fork-improvements.md) for the full patch-by-patch
+breakdown.
 
-1. Fork the repos you care about (e.g. `lpb-stack/pi`, `lpb-stack/config`).
-2. Clone **this** repo (devstack) and edit `lpb.stack.env` at the root to point
-   at your forks:
+### Forking & repointing this stack
 
-   ```sh
-   export LPB_PI_FORK=https://github.com/<you>/pi.git
-   export LPB_PI_REF=main                 # your branch
-   export LPB_CONFIG_FORK=https://github.com/<you>/config.git
-   export LPB_CONFIG_REF=main             # your branch
-   export LPB_IMAGE_CLI=ghcr.io/<you>/devstack:dev-cli
-   export LPB_IMAGE_WEB=ghcr.io/<you>/devstack:dev-web
-   export LPB_CONTAINER_NAME=mybox        # avoid colliding with lpb-stack
-   ```
-
-   (Or pass them as `docker build --build-arg PI_FORK=... --build-arg
-   CONFIG_FORK=...` without editing the file.)
-3. Build and push the image (locally, or via the GitHub Actions workflow,
-   which reads `lpb.stack.env`).
-4. Install/run `lpb` — it reads the same `lpb.stack.env` for image/container
-   names, so it picks up your fork automatically.
-5. Pin a specific image with `~/.lpb-stack/devstack/config` → `export
-   LPB_IMAGE_TAG="0.0.1-lpb-dev"` (a version tag on your fork's registry),
-   or let the forked `lpb` resolve the latest for you.
-
-### Repointing the config preset without a rebuild
-
-The config preset is a git clone at `~/.pi/agent/` (container). After
-first boot you can repoint it live — no image rebuild needed:
-
-```sh
-podman exec -it lpb-stack bash
-cd ~/.pi/agent/
-git remote set-url origin https://github.com/<you>/config.git
-git pull --ff-only origin <your-branch>
-# re-seed the runtime copy from your preset
-# Config repo IS ~/.pi/ — managed by start.sh at container startup
-```
-
-### Repointing extensions at runtime (no rebuild)
-
-Extensions are not baked in; they are installed on first boot from
-`settings.json#packages`. Repoint them from the running container:
-
-```sh
-podman exec -it lpb-stack pi remove git:github.com/lpb-stack/lemonade-pi-plugin
-podman exec -it lpb-stack pi install git:github.com/<you>/lemonade-pi-plugin@<your-branch>
-podman exec -it lpb-stack pi update --extensions
-```
-
-Changes apply at the **next pi startup** (or `/reload` in a running session
-for config).
+You can fork the stack and point it at your own repos instead of the
+LocalPibox originals — the effort ranges from trivial (extensions, no
+rebuild) to a full image rebuild (Pi core). Full procedure in
+[Forking & Repointing](doc/forking.md).
 
 ## CI/CD
 
-Built automatically on GitHub Actions when:
-- Push to `main` (Dockerfile, support/, lpb.stack.env)
-- Weekly (Monday 3am UTC) — keeps image fresh
-- Manual dispatch with flags
+GitHub Actions (`.github/workflows/build-and-publish.yml`) runs on:
 
-### Actions used (all latest versions, Node.js 24 native)
+- push to `dev` or `main` (Dockerfile, `VERSION`, `support/`, `scripts/`,
+  workflow changes)
+- pull requests to `main` (tests only)
+- weekly cron (Monday 03:00 UTC) and manual dispatch (always build)
 
-- `actions/checkout@v6`
-- `docker/build-push-action@v7`
-- `docker/setup-buildx-action@v4`
-- `docker/setup-qemu-action@v4`
-- `docker/login-action@v4`
-- `docker/metadata-action@v6`
-- `actions/upload-artifact@v7`
+Versioning is **manual**: `lpb-devstack bump` commits a new `VERSION`, and CI
+builds + tags only when VERSION changed in the pushed commit. Pipeline jobs:
+**VERSION check** → **test** (always) → **build & publish images** →
+**tag repos** (CI tags the other 5 stack repos on their pipeline branches) →
+**status**. Devstack itself is tracked by its `VERSION` file and is never
+tagged.
 
 ## Troubleshooting
+
+### `manifest unknown` when pulling an image
+
+You used a bare tag (`:cli`, `:web`, `:latest`). Those don't exist — CI only
+publishes versioned tags plus the `:dev-*`, `:main-*`, `:latest-*` floats.
+Let `lpb` resolve the tag (`lpb --tag dev|main|<version>`), or pull e.g.
+`ghcr.io/lpb-stack/devstack:latest-web` explicitly.
+
+### No model available / login fails
+
+The Lemonade server on the host must be running before Pi can list models:
+start it, then in the Pi TUI run `/lemonade refresh` (or `/login lemonade`
+again).
 
 ### Port already in use
 
 ```bash
-# Check who's using the port
-lsof -i :3000
-
-# Stop existing container
-podman stop lpb-stack
-podman rm lpb-stack
-
-# Run with new port
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -e ED_PORT=8080 \
-    -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
-# → http://localhost:8080
+lsof -i :3000                    # find what's using the port
+lpb --web --port 8080 /project   # pick another port
 ```
 
-### Auth token expired
+### Editor token / URL
 
-```bash
-# Login in the editor (Ctrl+Shift+P → "Pi: Login")
-# Or via CLI
-podman exec -it lpb-stack pi login
-```
+The VSCodium URL and connection token are auto-generated each start
+(set `LPB_CONNECTION_TOKEN` in your project `.env` to persist one). They're
+printed in the container logs: `lpb --logs`.
 
 ### Outdated extensions
 
 ```bash
-podman exec -it lpb-stack update --extensions
+podman exec -it lpb-stack pi update --extensions
 ```
 
-### Need a rebuild
+### Need a newer image
 
 ```bash
-# Pull from GHCR (newer build)
-podman pull ghcr.io/lpb-stack/devstack:latest
-podman stop lpb-stack && podman rm lpb-stack
-podman run -d --name lpb-stack --network host --userns keep-id \
-    -v /path/to/project:/home/lpb/workspace/myproject:Z \
-    -v ~/.lpb-stack/state:/home/lpb/.pi:Z \
-    -v ~/.lpb-stack/agent-browser:/home/lpb/.agent-browser:Z \
-    ghcr.io/lpb-stack/devstack:latest
+lpb --update      # self-update launcher + pull the latest image for your pipeline
 ```
 
 ## Directory Structure
 
-```mermaid
-classDiagram
-    class devstack {
-        +Dockerfile
-        +lpb.stack.env
-        +lpb.conf.env
-        +.env.example
-        +.env
-    }
-    class scripts {
-        +lpb (bash wrapper)
-        +lpb.py (Python launcher)
-        +install.sh
-    }
-    class doc {
-        +ARCHITECTURE.md
-        +BRANCH-STRATEGY.md
-        +*.md
-    }
-    class support {
-        +entrypoint-cli.sh
-        +entrypoint-web.sh
-        +install-browser.sh
-        +install-openspec.sh
-        +start.sh
-        +validate.sh
-    }
-    class workspace {
-        +pi/
-        +config/
-        +lemonade-pi-plugin/
-        +lpb-memory/
-        +pi-subagents/
-    }
-
-    devstack --> scripts : contains
-    devstack --> doc : contains
-    devstack --> support : contains
-    devstack --> workspace : contains
+```
+devstack/
+├── Dockerfile            # image build (pi clone, VSCodium, Chrome)
+├── lpb.stack.env         # fork URLs, image names, container identity
+├── lpb.conf.env          # runtime defaults (baked into the image)
+├── .env.example          # template for per-project .env (LPB_ vars)
+├── scripts/
+│   ├── lpb               # bash wrapper
+│   ├── lpb.py            # launcher engine (stdlib-only Python)
+│   ├── install.sh        # host installer (lpb + stack tools)
+│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
+├── support/
+│   ├── start.sh          # container bootstrap (config, .env, extensions)
+│   ├── entrypoint-*.sh   # cli / web entrypoints
+│   ├── lpb-config        # config repo manager (in-container)
+│   ├── lpb-devstack      # DevOps tool (bump/tag/workspace/validate/release)
+│   └── docs/             # operational docs (e.g. subagent spawning)
+└── doc/                  # reference docs (mirrored to the docs site)
 ```
 
-## Related Repositories
+## Documentation & Related Repos
 
-- [lpb-stack/pi](https://github.com/lpb-stack/pi) — Forked Pi monorepo with Qwen reasoning support
+- [Documentation site](https://lpb-stack.github.io/devstack/) — versioned
+  per stack tag
+- [lpb-stack/pi](https://github.com/lpb-stack/pi) — Pi monorepo fork
+- [lpb-stack/config](https://github.com/lpb-stack/config) — agent config preset
 - [lpb-stack/lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) — Lemonade provider plugin
-- [lpb-stack/config](https://github.com/lpb-stack/config) — Pi configuration (settings, mcp, skills)
-- [lpb-stack/lpb-memory](https://github.com/lpb-stack/lpb-memory) — Persistent memory + session search extension
-- [lpb-stack/lpb-stack](https://github.com/lpb-stack/lpb-stack) — Project overview & stack reference
-- [lpb-stack/lpb-stack.github.io](https://github.com/lpb-stack/lpb-stack.github.io) — Project site (GitHub Pages)
+- [lpb-stack/pi-subagents](https://github.com/lpb-stack/pi-subagents) — subagent model registry
+- [lpb-stack/lpb-memory](https://github.com/lpb-stack/lpb-memory) — persistent memory extension
