@@ -13,6 +13,7 @@ Usage:
     lpb --tag dev|main|latest           Select image pipeline (dev/main/latest/<custom>)
     lpb --dev / lpb --main              Shorthand for --tag dev / --tag main
     lpb --update                        Pull latest image(s) (+ self-update launcher)
+                                        (stable by default; --dev for the dev pipeline)
 
 Positional command aliases (no -- needed):
     lpb logs     → lpb --logs
@@ -29,6 +30,7 @@ Image tag selection:
     lpb --tag latest                   Same as main
     lpb --tag 0.0.9-lpb-dev            Pin to specific version image
     lpb --dev / lpb --main             Shorthand for --tag dev / --tag main
+    (no tag)                           Default: stable pipeline (main); dev is opt-in
     LPB_IMAGE_TAG=0.0.9-lpb-dev        Or set env var for persistent override
 
 Self-update (lpb --update):
@@ -246,7 +248,7 @@ def _resolve_tagged_image(tag: str, mode: str) -> str:
 def resolve_cli_image(tag: str) -> str:
     """Resolve the final CLI image name from stack config + tag override.
 
-    no tag         → pinned last-version if any, else the dev pipeline
+    no tag         → pinned last-version if any, else the stable (main) pipeline
     --tag dev/main → latest versioned image (0.0.x-lpb[-dev]-cli)
     --tag <custom> → :<custom>-cli (explicit version)
     """
@@ -254,10 +256,11 @@ def resolve_cli_image(tag: str) -> str:
         last = _load_last_version()
         if last:
             return _resolve_version_image(last, "cli")
-        # No pinned version yet — default to the dev pipeline (the active
-        # mainline). Never fall back to the legacy bare :cli tag: CI only
-        # publishes versioned tags plus :dev-*, :main-*, :latest-* floats.
-        return _resolve_tagged_image("dev", "cli")
+        # No pinned version yet — default to the stable pipeline; dev is an
+        # explicit opt-in (--dev / --tag dev). Never fall back to the legacy
+        # bare :cli tag: CI only publishes versioned tags plus :dev-*,
+        # :main-*, :latest-* floats.
+        return _resolve_tagged_image("main", "cli")
     return _resolve_tagged_image(tag, "cli")
 
 
@@ -270,7 +273,7 @@ def resolve_web_image(tag: str) -> str:
         last = _load_last_version()
         if last:
             return _resolve_version_image(last, "web")
-        return _resolve_tagged_image("dev", "web")
+        return _resolve_tagged_image("main", "web")
     return _resolve_tagged_image(tag, "web")
 
 
@@ -579,23 +582,16 @@ class ContainerClient:
             return False
 
     def images_pull(self, name):
-        """Pull image with full verbosity, auto-login to GHCR if needed."""
+        """Pull image, streaming the native pull output, auto-login to GHCR if needed."""
         # Auto-login to GHCR for LocalPibox images
         if name.startswith("ghcr.io/lpb-stack/"):
             self._ghcr_login()
 
-        proc = subprocess.Popen(
-            [self.cmd, "pull", name],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1
-        )
-        import io
-        for line in io.TextIOWrapper(proc.stdout.buffer, encoding="utf-8", errors="replace"):
-            sys.stdout.write(line)
-            sys.stdout.flush()
-        proc.stdout.close()
-        rc = proc.wait()
-        return rc
+        # Foreground run with inherited stdio: docker/podman report pull
+        # progress with \r on a single line, so piping + line-buffered
+        # reading collapses all progress into one burst at the end.
+        # Inheriting stdio preserves the native live output.
+        return subprocess.run([self.cmd, "pull", name]).returncode
 
     def _ghcr_login(self):
         """Login to GHCR with read-only token if not already authenticated."""
@@ -1039,10 +1035,10 @@ def cmd_version():
 def cmd_update():
     """Self-update the launcher and pull the latest devstack image(s).
 
-    No tag → updates the default pipeline (dev) — the same images a
-    bare `lpb` run would pull. With a tag (dev/main/latest/<version>) →
-    updates that pipeline/version. The pinned last-version is refreshed
-    so a bare `lpb` reconnects to the updated image.
+    No tag → updates the stable pipeline (main). Dev is explicit opt-in
+    (--dev / --tag dev / --tag <version>-dev). With a tag (dev/main/latest/
+    <version>) → updates that pipeline/version. The pinned last-version is
+    refreshed so a bare `lpb` reconnects to the updated image.
     """
     ensure_container_cmd()
     c = client()
@@ -1050,9 +1046,9 @@ def cmd_update():
     # Self-update
     self_update()
 
-    # No tag = default pipeline (dev), same as a bare `lpb` run.
-    # This is an explicit update request - always pull both images.
-    tag = cfg.image_tag or "dev"
+    # No tag = stable pipeline (main) — dev is explicit opt-in (--dev /
+    # --tag dev). This is an explicit update request - always pull both images.
+    tag = cfg.image_tag or "main"
     images_to_update = [resolve_cli_image(tag), resolve_web_image(tag)]
 
     pulled_ok = []
