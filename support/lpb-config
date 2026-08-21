@@ -9,10 +9,19 @@ Usage:
   lpb-config update          — Fetch + fast-forward config repo (safe)
   lpb-config reset [--force] — Re-clone config repo (destructive)
   lpb-config merge           — Interactive git merge for config repo
+  lpb-config render [--force] — Regenerate runtime config from templates
   lpb-config align           — Sync extension pins to latest GitHub tags
 
   lpb-config memory show     — Show lpb-memory config
   lpb-config memory setup    — Interactive memory config wizard
+
+Template rendering:
+  The config repo ships templates (settings.json.template,
+  lpb-memory-config.json.template); the rendered files are gitignored.
+  start.sh generates them on first boot only (gated by ~/.pi/.initialized),
+  so lpb-config re-renders after reset/update/merge and offers 'render'
+  for on-demand regeneration. '--force' merges: user-added keys survive,
+  template pins win in settings.json, local keys win in the memory config.
 
 Moved to lpb-devstack (dev-time workspace tool):
   lpb-devstack bump | tag-repos | workspace ... | validate | release ...
@@ -32,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import urllib.request
@@ -58,6 +68,7 @@ from localpibox._stack_lib import (  # noqa: E402
     DEFAULT_REMOTE,
     DEFAULT_REF,
     LPB_EXTENSION_REPOS,
+    get_version,
     git,
     migrate_legacy_layout,
 )
@@ -71,7 +82,10 @@ def clone_or_init(agent_dir: str | Path, remote: str, ref: str, cons: Console) -
     if agent_dir.is_dir() and any(agent_dir.iterdir()):
         cons.warn("Config area not empty — initializing config repo in place...")
         git(agent_dir, "init", "-q")
-        git(agent_dir, "remote", "add", "origin", remote)
+        out, err, code = git(agent_dir, "remote", "add", "origin", remote)
+        if code:
+            # Stale .git already has an origin (partial wipe) — repoint it.
+            git(agent_dir, "remote", "set-url", "origin", remote)
         out, err, code = git(agent_dir, "fetch", "--depth=1", "origin", ref)
         if code:
             cons.error(f"Failed to fetch config repo: {err.strip() or out.strip()}")
@@ -93,6 +107,143 @@ def head_short(dir_: str | Path) -> str:
     return out.strip()[:8] or "?"
 
 
+# ─── Template rendering ───────────────────────────────────────────────────
+# The config repo ships *templates*; the rendered runtime files are gitignored
+# and start.sh only generates them on first boot (gated by ~/.pi/.initialized,
+# which survives 'lpb-config reset'). So lpb-config must render itself after
+# reset/update/merge — otherwise the rendered config is unrecoverable.
+
+def _resolve_version() -> str:
+    """Stack version for __LPB_VERSION__ substitution.
+
+    Mirrors start.sh exactly: LPB_VERSION env (baked into the image) first,
+    then the devstack VERSION file, then a safe fallback. (get_version() alone
+    would prefer the workspace VERSION file, which may be a -dev version
+    different from the baked image version.)
+    """
+    v = os.environ.get("LPB_VERSION", "").strip()
+    if v:
+        return v
+    v = get_version()
+    return v if v and v != "unknown" else "0.0.0-lpb"
+
+
+def _stale_pins(packages, version: str) -> list[tuple[str, str]]:
+    """(name, pin) pairs of lpb-stack packages whose pin != current version."""
+    stale = []
+    for pkg in packages or []:
+        if not isinstance(pkg, str):
+            continue
+        m = re.search(r"lpb-stack/([^@/]+)@([^@]+)$", pkg)
+        if m and m.group(2) != version:
+            stale.append((m.group(1), m.group(2)))
+    return stale
+
+
+def _render_file(
+    agent_dir: Path,
+    template_name: str,
+    out_name: str,
+    cons: Console,
+    *,
+    force: bool,
+    version: str | None,
+    local_wins: bool,
+) -> None:
+    """Render one runtime config file from its template.
+
+    - file missing        → generate from template (always safe)
+    - present, no --force → never overwrite; report stale version pins and
+      template packages not yet present locally
+    - present, --force    → merge: keys present in both sides resolve by
+      *local_wins* (memory config: the wizard is the customization path, so
+      local wins; settings.json: template wins so pins track the stack
+      version). Keys present in only one side are always preserved, and
+      user-added packages are appended to the template's package list.
+    """
+    template = agent_dir / template_name
+    out = agent_dir / out_name
+    if not template.is_file():
+        cons.warn(f"No {template_name} in {agent_dir} — skipped")
+        return
+    text = template.read_text()
+    if version is not None:
+        text = text.replace("__LPB_VERSION__", version)
+    try:
+        new = json.loads(text)
+    except json.JSONDecodeError as e:
+        cons.error(f"{template_name} is not valid JSON: {e}")
+        return
+
+    if not out.is_file():
+        out.write_text(json.dumps(new, indent=2) + "\n")
+        cons.info(f"Generated {out.name} from {template_name}")
+        return
+
+    try:
+        existing = json.loads(out.read_text())
+    except json.JSONDecodeError:
+        existing = {}
+
+    if not force:
+        stale = _stale_pins(existing.get("packages"), version) if version else []
+        if stale:
+            cons.warn(f"{out.name}: extension pins are stale:")
+            for name, pin in stale:
+                cons.warn(f"  {name}: {pin} -> {version}")
+            cons.warn("  'lpb-config render --force' will re-pin (user keys preserved).")
+        else:
+            missing = [
+                p for p in (new.get("packages") or [])
+                if p not in (existing.get("packages") or [])
+            ]
+            if missing:
+                cons.warn(f"{out.name}: template adds packages not yet present locally:")
+                for p in missing:
+                    cons.warn(f"  {p}")
+                cons.warn("  'lpb-config render --force' picks them up (user keys preserved).")
+        return
+
+    # --force: merge (see docstring for win rules)
+    if (
+        version is not None
+        and isinstance(new.get("packages"), list)
+        and isinstance(existing.get("packages"), list)
+    ):
+        tpl_pkgs = new["packages"]
+        extras = [p for p in existing["packages"] if p not in tpl_pkgs]
+        new = {**new, "packages": tpl_pkgs + extras}
+    merged = {**new, **existing} if local_wins else {**existing, **new}
+    out.write_text(json.dumps(merged, indent=2) + "\n")
+    cons.info(f"Re-rendered {out.name} from {template_name} (merged, user keys preserved)")
+
+
+def _render_templates(agent_dir: str | Path, cons: Console, *, force: bool) -> None:
+    """Render all runtime config files from their templates."""
+    agent_dir = Path(agent_dir)
+    version = _resolve_version()
+    _render_file(
+        agent_dir, "settings.json.template", "settings.json", cons,
+        force=force, version=version, local_wins=False,
+    )
+    _render_file(
+        agent_dir, "lpb-memory-config.json.template", "lpb-memory-config.json", cons,
+        force=force, version=None, local_wins=True,
+    )
+
+
+def cmd_render(agent_dir: str | Path, cons: Console, *, force: bool = False) -> int:
+    """Render runtime config files from templates (safe: --force required to overwrite)."""
+    agent_dir = Path(agent_dir)
+    if not agent_dir.is_dir():
+        cons.error(f"No config area at {agent_dir}. Run 'lpb-config update' first.")
+        return 1
+    cons.info(f"Rendering runtime config from templates (stack version: {_resolve_version()})")
+    _render_templates(agent_dir, cons, force=force)
+    cons.info("Re-run Pi (or /new) to apply.")
+    return 0
+
+
 # ─── Config repo commands ─────────────────────────────────────────────────
 
 def cmd_status(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> int:
@@ -112,7 +263,7 @@ def cmd_status(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> i
 
     remote_head = git(agent_dir, "rev-parse", f"origin/{ref}")[0].strip()
     if remote_head:
-        cons.info(f"Remote:      {remote_head[:8]} origin/{ref}")
+        cons.info(f"Remote:      {remote_head[:8]} origin/{ref} (last fetch)")
 
     changes = git(agent_dir, "status", "--porcelain")[0]
     if changes.strip():
@@ -136,6 +287,7 @@ def cmd_update(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> i
         cons.info(f"Cloning config repo from {remote}...")
         if not clone_or_init(agent_dir, remote, ref, cons):
             return 1
+        _render_templates(agent_dir, cons, force=False)
         cons.info("Done. Run 'lpb-config status' to verify.")
         return 0
 
@@ -168,6 +320,9 @@ def cmd_update(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> i
         git(agent_dir, "reset", "--hard", f"origin/{ref}")
         log = git(agent_dir, "log", "--oneline", "-1")[0].strip()
         cons.info(f"Updated to {log}")
+        # Re-render runtime config so template changes (pins, new packages)
+        # reach the live files. Non-forcing: user customizations survive.
+        _render_templates(agent_dir, cons, force=False)
         return 0
 
     cons.warn("Cannot fast-forward — conflicts detected.")
@@ -203,9 +358,22 @@ def cmd_reset(
         return 0
 
     shutil.rmtree(agent_dir, ignore_errors=True)
+    if agent_dir.is_dir():
+        survivors = sorted(p.name for p in agent_dir.iterdir())
+        if survivors:
+            cons.warn(f"Wipe incomplete — {len(survivors)} entries survived "
+                      "(in use or protected):")
+            for n in survivors[:10]:
+                cons.raw(f"  {n}")
+            cons.warn("Re-initializing in place; untracked survivors are preserved.")
     if not clone_or_init(agent_dir, remote, ref, cons):
         return 1
-    cons.info("Reset complete. Re-run Pi to apply the new config.")
+    # Regenerate rendered runtime config from templates (they were wiped
+    # with the repo). Force: reset is destructive by definition, and a
+    # successful wipe means no rendered files survived to preserve.
+    _render_templates(agent_dir, cons, force=True)
+    cons.info("Reset complete. Runtime config regenerated from templates.")
+    cons.info("Re-run Pi to apply the new config.")
     return 0
 
 
@@ -227,6 +395,7 @@ def cmd_merge(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
     out, err, code = git(agent_dir, "merge", "--no-edit", f"origin/{ref}")
     if code == 0:
         cons.info("Merge complete.")
+        _render_templates(agent_dir, cons, force=False)
         return 0
 
     cons.warn("Merge conflicts detected. Resolve them with git, then:")
@@ -262,11 +431,11 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
         cons.info(f"  {name}: {current_pins.get(name, '(not pinned)')}")
 
     cons.info("\nChecking latest tags...")
+    from localpibox._stack_lib import _github_token
+    token = _github_token()
     latest_tags = {}
     for name in lpb_repos:
         try:
-            from localpibox._stack_lib import _github_token
-            token = _github_token()
             url = f"https://api.github.com/repos/lpb-stack/{name}/tags"
             headers = {"Accept": "application/vnd.github+json"}
             if token:
@@ -304,6 +473,8 @@ def cmd_align(agent_dir: str | Path, remote: str, ref: str, cons: Console) -> in
                 json.dump(settings, f, indent=2)
                 f.write("\n")
             cons.info(f"\nUpdated {settings_path}")
+            cons.info("Note: settings.json is local state (gitignored) — the template")
+            cons.info("pins are unchanged, and 'render --force' re-pins to the stack version.")
             cons.info("Run 'pi update --extensions' to apply")
         else:
             cons.info("Skipped. Run 'lpb-config align' when ready.")
@@ -467,6 +638,14 @@ def main(argv: list[str] | None = None) -> int:
     p_reset = _add_subparser(sub, "reset", "Re-clone config repo (with confirmation)")
     p_reset.add_argument("--force", action="store_true", help="skip confirmation")
     _add_subparser(sub, "merge", "Open git merge flow for config repo")
+    p_render = _add_subparser(
+        sub, "render",
+        "Render runtime config from templates (settings.json, lpb-memory config)",
+    )
+    p_render.add_argument(
+        "--force", action="store_true",
+        help="overwrite existing rendered files (merged — user keys preserved)",
+    )
     _add_subparser(sub, "align", "Align settings.json extension pins to latest tags")
 
     # Memory config subcommand
@@ -501,6 +680,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_reset(agent_dir, remote, ref, cons, force=force)
     if args.command == "merge":
         return cmd_merge(agent_dir, remote, ref, cons)
+    if args.command == "render":
+        return cmd_render(agent_dir, cons, force=force)
     if args.command == "align":
         return cmd_align(agent_dir, remote, ref, cons)
     if args.command == "memory":

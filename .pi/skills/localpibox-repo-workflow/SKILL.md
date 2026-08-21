@@ -179,9 +179,19 @@ push. `bump` (without `--push`) warns about this.
 
 ```bash
 lpb-config status | update | reset [--force] | merge   # config repo
+lpb-config render [--force]                             # regen runtime config from templates
 lpb-config align                                        # pins → latest GitHub tags
 lpb-config memory show | setup                          # lpb-memory config
 ```
+
+`render` recreates the gitignored runtime files (`settings.json`,
+`lpb-memory-config.json`) from the repo's templates. lpb-config auto-renders
+after `reset` (force) / `update` / `merge` (non-forcing): without it the
+rendered config was unrecoverable after `reset` (start.sh only renders on
+first boot, gated by `~/.pi/.initialized`). Non-forcing render never
+overwrites — it creates missing files and warns on stale pins; `--force`
+merges (user keys/packages preserved, template pins win in settings.json,
+local keys win in the memory config).
 
 **`lpb-devstack`** — DevOps workspace tool (container + host):
 
@@ -207,11 +217,14 @@ Both tools are thin CLIs over the shared `scripts/localpibox/stack/` library
 
 1. Config repo ships `settings.json.template` with `__LPB_VERSION__` placeholders
 2. First boot: `start.sh` generates `settings.json` (replaces placeholders)
-3. No model/provider preconfigured — user runs `/login lemonade`
-4. Pin sync: `lpb-devstack workspace sync --extensions`
+3. `lpb-config render` regenerates it on demand (auto after reset/update/
+   merge) — this is the recovery path when the rendered file is lost or
+   its pins are stale after a stack version move
+4. No model/provider preconfigured — user runs `/login lemonade`
+5. Pin sync: `lpb-devstack workspace sync --extensions`
    (main pipeline reads the stable version from devstack `origin/main`)
-5. `lpb-devstack validate` checks pins match the current stack version
-6. Persistent on the host volume — survives container rebuilds
+6. `lpb-devstack validate` checks pins match the current stack version
+7. Persistent on the host volume — survives container rebuilds
 
 Pins look like: `git:github.com/lpb-stack/pi-subagents@0.0.57-lpb-dev`
 

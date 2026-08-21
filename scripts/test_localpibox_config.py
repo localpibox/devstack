@@ -7,6 +7,8 @@ from __future__ import annotations
 from testharness import run_lpbx_suite, _quiet_console, log_mod, _load_script, SUPPORT_DIR
 
 import io
+import json
+import os
 import subprocess
 
 lc = _load_script('lpb_config', SUPPORT_DIR / 'lpb-config')
@@ -144,6 +146,256 @@ def test_lpb_config_merge_uptodate(tmpdir):
     assert lc.cmd_merge(agent, str(remote), "main", cons) == 0
     # merge when no repo -> error
     assert lc.cmd_merge(tmpdir / "nope", str(remote), "main", _quiet_console()) == 1
+
+
+# ─── Template rendering (render / auto-render after reset/update/merge) ──
+
+
+def _make_templates(dir_):
+    (dir_ / "settings.json.template").write_text(json.dumps({
+        "packages": ["git:github.com/lpb-stack/demo@__LPB_VERSION__", "npm:somepkg"],
+        "theme": "dark",
+    }))
+    (dir_ / "lpb-memory-config.json.template").write_text(json.dumps({
+        "reviewTransport": "subprocess",
+        "memoryCharLimit": 3000,
+    }))
+
+
+def _push_templates(work):
+    _make_templates(work)
+    # Mirror the real config repo: rendered runtime files are gitignored,
+    # otherwise they'd trip lpb-config's local-change guard.
+    (work / ".gitignore").write_text("settings.json\nlpb-memory-config.json\n")
+    subprocess.run(["git", "-C", str(work), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(work), "commit", "-qm", "templates"], check=True)
+    subprocess.run(["git", "-C", str(work), "push", "-q", "origin", "main"], check=True)
+
+
+def _with_lpb_version(value: str):
+    """Set LPB_VERSION for the duration of a test; returns restore closure."""
+    old = os.environ.get("LPB_VERSION")
+    os.environ["LPB_VERSION"] = value
+
+    def _restore():
+        if old is None:
+            os.environ.pop("LPB_VERSION", None)
+        else:
+            os.environ["LPB_VERSION"] = old
+    return _restore
+
+
+def _capture_console():
+    out, err = io.StringIO(), io.StringIO()
+    cons = log_mod.Console(color=False, out=out, err=err)
+    return cons, lambda: out.getvalue() + err.getvalue()
+
+
+def test_render_creates_from_template(tmpdir):
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    _make_templates(agent)
+    restore = _with_lpb_version("0.9.9-lpb")
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_render(agent, cons) == 0
+    finally:
+        restore()
+    text = text()
+    raw = (agent / "settings.json").read_text()
+    settings = json.loads(raw)
+    assert settings["packages"][0] == "git:github.com/lpb-stack/demo@0.9.9-lpb"
+    assert "__LPB_VERSION__" not in raw
+    mem = json.loads((agent / "lpb-memory-config.json").read_text())
+    assert mem["reviewTransport"] == "subprocess"
+    assert "Generated" in text
+
+
+def test_render_no_env_uses_version_file_fallback(tmpdir):
+    """With LPB_VERSION unset, falls back to the devstack VERSION file."""
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    _make_templates(agent)
+    old = os.environ.pop("LPB_VERSION", None)
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_render(agent, cons) == 0
+    finally:
+        if old is not None:
+            os.environ["LPB_VERSION"] = old
+    raw = (agent / "settings.json").read_text()
+    # Must be a real version (no placeholder left, no empty pin)
+    assert "__LPB_VERSION__" not in raw
+    assert "demo@" in raw
+
+
+def test_render_nonforce_never_overwrites(tmpdir):
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    _make_templates(agent)
+    customized = {
+        "packages": ["git:github.com/lpb-stack/demo@0.1.0-lpb", "npm:user-pkg"],
+        "theme": "light",
+        "defaultProvider": "lemonade",
+    }
+    (agent / "settings.json").write_text(json.dumps(customized))
+    restore = _with_lpb_version("0.2.0-lpb")
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_render(agent, cons) == 0
+    finally:
+        restore()
+    # untouched file, but stale pins reported
+    text = text()
+    assert json.loads((agent / "settings.json").read_text()) == customized
+    assert "stale" in text and "0.1.0-lpb -> 0.2.0-lpb" in text
+
+
+def test_render_force_repins_and_keeps_user_keys(tmpdir):
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    _make_templates(agent)
+    customized = {
+        "packages": ["git:github.com/lpb-stack/demo@0.1.0-lpb", "npm:user-pkg"],
+        "theme": "light",
+        "defaultProvider": "lemonade",
+    }
+    (agent / "settings.json").write_text(json.dumps(customized))
+    restore = _with_lpb_version("0.2.0-lpb")
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_render(agent, cons, force=True) == 0
+    finally:
+        restore()
+    s = json.loads((agent / "settings.json").read_text())
+    assert s["packages"][0] == "git:github.com/lpb-stack/demo@0.2.0-lpb"  # re-pinned
+    assert "npm:user-pkg" in s["packages"]        # user package preserved
+    assert s["defaultProvider"] == "lemonade"     # user key preserved
+    assert s["theme"] == "dark"                   # template key wins
+
+
+def test_render_force_memory_local_wins(tmpdir):
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    _make_templates(agent)
+    (agent / "lpb-memory-config.json").write_text(json.dumps({
+        "reviewTransport": "direct",
+        "llmModelOverride": "qwen-x",
+    }))
+    restore = _with_lpb_version("0.2.0-lpb")
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_render(agent, cons, force=True) == 0
+    finally:
+        restore()
+    m = json.loads((agent / "lpb-memory-config.json").read_text())
+    assert m["reviewTransport"] == "direct"       # local (wizard) wins
+    assert m["llmModelOverride"] == "qwen-x"      # wizard key kept
+    assert m["memoryCharLimit"] == 3000           # template fills gaps
+
+
+def test_reset_renders_runtime_config(tmpdir):
+    remote = _setup_git_remote(tmpdir)
+    _push_templates(tmpdir / "work")
+    agent = tmpdir / "agent"
+    restore = _with_lpb_version("0.5.5-lpb")
+    try:
+        lc.cmd_update(agent, str(remote), "main", _quiet_console())
+        (agent / "junk").write_text("x")
+        cons, text = _capture_console()
+        assert lc.cmd_reset(agent, str(remote), "main", cons, force=True) == 0
+    finally:
+        restore()
+    assert not (agent / "junk").exists()
+    s = json.loads((agent / "settings.json").read_text())
+    assert s["packages"][0] == "git:github.com/lpb-stack/demo@0.5.5-lpb"
+    assert (agent / "lpb-memory-config.json").is_file()
+    assert "regenerated from templates" in text()
+
+
+def test_update_restores_missing_rendered(tmpdir):
+    remote = _setup_git_remote(tmpdir)
+    _push_templates(tmpdir / "work")
+    agent = tmpdir / "agent"
+    restore = _with_lpb_version("0.6.6-lpb")
+    try:
+        lc.cmd_update(agent, str(remote), "main", _quiet_console())
+        assert (agent / "settings.json").is_file()
+        (agent / "settings.json").unlink()
+        _push_commit(tmpdir / "work", "bump", "three")
+        cons, text = _capture_console()
+        assert lc.cmd_update(agent, str(remote), "main", cons) == 0
+    finally:
+        restore()
+    raw = (agent / "settings.json").read_text()
+    assert "0.6.6-lpb" in raw
+    assert "Generated settings.json" in text()
+
+
+def test_update_warns_stale_pins_without_clobbering(tmpdir):
+    """Stack version moves (new image), rendered file keeps old pins:
+    update must warn, not silently overwrite."""
+    remote = _setup_git_remote(tmpdir)
+    _push_templates(tmpdir / "work")
+    agent = tmpdir / "agent"
+    restore = _with_lpb_version("0.1.0-lpb")
+    try:
+        lc.cmd_update(agent, str(remote), "main", _quiet_console())
+    finally:
+        restore()
+    restore2 = _with_lpb_version("0.2.0-lpb")
+    try:
+        _push_commit(tmpdir / "work", "x", "four")
+        cons, text = _capture_console()
+        assert lc.cmd_update(agent, str(remote), "main", cons) == 0
+    finally:
+        restore2()
+    assert "stale" in text()
+    s = json.loads((agent / "settings.json").read_text())
+    assert s["packages"][0].endswith("@0.1.0-lpb")  # untouched
+
+
+def test_clone_or_init_survives_stale_remote(tmpdir):
+    """Partial wipe: leftover .git already has an origin — repoint, don't abort."""
+    remote = _setup_git_remote(tmpdir)
+    agent = tmpdir / "agent"
+    agent.mkdir()
+    subprocess.run(["git", "-C", str(agent), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(agent), "remote", "add", "origin",
+                    "/old/nonexistent.git"], check=True)
+    (agent / "preexisting").write_text("keep me")
+    cons, text = _capture_console()
+    assert lc.clone_or_init(agent, str(remote), "main", cons) is True
+    assert (agent / "f").read_text() == "one"
+    r = subprocess.run(
+        ["git", "-C", str(agent), "remote", "get-url", "origin"],
+        capture_output=True, text=True, check=False)
+    assert r.returncode == 0 and r.stdout.strip() == str(remote)
+    assert (agent / "preexisting").exists()
+
+
+def test_reset_warns_on_incomplete_wipe(tmpdir):
+    """rmtree that leaves survivors (files in use) must warn, not claim a clean reset."""
+    remote = _setup_git_remote(tmpdir)
+    agent = tmpdir / "agent"
+    lc.cmd_update(agent, str(remote), "main", _quiet_console())
+    (agent / "busy").write_text("in use")
+    real_rmtree = lc.shutil.rmtree
+    lc.shutil.rmtree = lambda *a, **k: None  # simulate failure
+    try:
+        cons, text = _capture_console()
+        assert lc.cmd_reset(agent, str(remote), "main", cons, force=True) == 0
+    finally:
+        lc.shutil.rmtree = real_rmtree
+    assert "Wipe incomplete" in text() and "busy" in text()
+    assert (agent / "busy").exists()          # untracked survivor preserved
+    assert (agent / "f").read_text() == "one"  # tracked tree still reset
+
+
+def test_render_missing_dir_errors(tmpdir):
+    cons, text = _capture_console()
+    assert lc.cmd_render(tmpdir / "nope", cons) == 1
+    assert "No config area" in text()
 
 
 def main() -> int:
