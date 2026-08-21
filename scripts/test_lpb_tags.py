@@ -134,33 +134,33 @@ def test_resolve_web_image_dev():
 
 
 def test_resolve_cli_image_default():
-    """resolve_cli_image('') with no pin defaults to the dev pipeline."""
-    print("TEST: resolve_cli_image('') -> dev pipeline")
+    """resolve_cli_image('') with no pin defaults to the stable (main) pipeline."""
+    print("TEST: resolve_cli_image('') -> stable pipeline")
     reset_mock()
     mod = make_module()
     mod.LAST_VERSION_FILE.unlink(missing_ok=True)  # no pin in this scenario
-    mod._get_remote_version = lambda branch="dev": "0.0.99-lpb-dev"
+    mod._get_remote_version = lambda branch="dev": "0.0.99-lpb"
     image = mod.resolve_cli_image("")
-    assert image == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-dev-cli", f"got {image}"
+    assert image == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-cli", f"got {image}"
     print(f"  Image: {image}")
     print("  PASS\n")
 
 
 def test_resolve_cli_image_default_offline():
-    """No pin + offline -> floating :dev-cli/:dev-web tags (real registry tags).
+    """No pin + offline -> floating :main-cli/:main-web tags (real registry tags).
 
     Regression guard: the old fallback used the bare :cli/:web tags, which CI
     never publishes -> 'manifest unknown' on every fresh install.
     """
-    print("TEST: resolve_cli_image('') offline -> :dev-cli")
+    print("TEST: resolve_cli_image('') offline -> :main-cli")
     reset_mock()
     mod = make_module()
     mod.LAST_VERSION_FILE.unlink(missing_ok=True)  # no pin in this scenario
     mod._get_remote_version = lambda branch="dev": ""
     image = mod.resolve_cli_image("")
-    assert image == "ghcr.io/lpb-stack/devstack:dev-cli", f"got {image}"
+    assert image == "ghcr.io/lpb-stack/devstack:main-cli", f"got {image}"
     web = mod.resolve_web_image("")
-    assert web == "ghcr.io/lpb-stack/devstack:dev-web", f"got {web}"
+    assert web == "ghcr.io/lpb-stack/devstack:main-web", f"got {web}"
     print("  PASS\n")
 
 
@@ -183,21 +183,45 @@ def test_resolve_cli_image_default_pinned():
 
 
 def test_cmd_update_saves_version():
-    """--update (no tag) pulls the dev pipeline and pins the new version.
+    """--update (no tag) pulls the stable pipeline and pins the new version.
 
     Regression guard: the old save loop matched the version regex against the
     full tag including the -cli/-web suffix, so it never saved. A bare `lpb`
     after `lpb --update` then fell back to the dead :cli tag and failed with
     'manifest unknown' even though devstack images were already local.
     """
-    print("TEST: --update saves version")
+    print("TEST: --update saves version (stable default)")
+    reset_mock()
+    mod = make_module()
+    mod.self_update = lambda: None
+    mod._get_remote_version = lambda branch="dev": "0.0.99-lpb"
+    pulled = []
+    mod.ContainerClient.images_pull = lambda self, name: pulled.append(name) or 0
+    mod.parse_cli(["--update"])
+    mod.apply_overrides()
+    with _OutputCapture():
+        mod.cmd_update()
+    assert len(pulled) == 2, f"expected cli+web pulls, got {pulled}"
+    assert pulled[0] == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-cli", f"got {pulled}"
+    assert pulled[1] == "ghcr.io/lpb-stack/devstack:0.0.99-lpb-web", f"got {pulled}"
+    assert mod._load_last_version() == "0.0.99-lpb", \
+        f"last-version not saved, got {mod._load_last_version()!r}"
+    print("  PASS\n")
+
+
+def test_cmd_update_dev_tag():
+    """--update --tag dev pulls the dev pipeline and pins the dev version.
+
+    Dev is an explicit opt-in: bare `lpb --update` defaults to stable (main).
+    """
+    print("TEST: --update --tag dev saves dev version")
     reset_mock()
     mod = make_module()
     mod.self_update = lambda: None
     mod._get_remote_version = lambda branch="dev": "0.0.99-lpb-dev"
     pulled = []
     mod.ContainerClient.images_pull = lambda self, name: pulled.append(name) or 0
-    mod.parse_cli(["--update"])
+    mod.parse_cli(["--update", "--tag", "dev"])
     mod.apply_overrides()
     with _OutputCapture():
         mod.cmd_update()
@@ -261,6 +285,7 @@ TESTS = [
     test_resolve_cli_image_default_offline,
     test_resolve_cli_image_default_pinned,
     test_cmd_update_saves_version,
+    test_cmd_update_dev_tag,
 ]
 
 
