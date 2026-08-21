@@ -128,6 +128,11 @@ def cmd_bump(cons: Console, *, minor: bool = False, major: bool = False,
         cons.info(f"Pushed {branch} — CI will build + tag {new}")
     else:
         cons.info("Push to trigger the CI build + tag:  git push origin <branch>")
+        cons.warn("The bump must be the TIP of the push: CI's VERSION_CHECK diffs "
+                  "the pushed tip commit for VERSION changes. Commits made after "
+                  "this one make the release a no-op (tests-only run) — if you "
+                  "add follow-up commits, run 'lpb-devstack bump' again so the "
+                  "bump is pushed last.")
     return 0
 
 

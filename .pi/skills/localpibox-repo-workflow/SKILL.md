@@ -167,6 +167,12 @@ lpb-devstack workspace status
 lpb-devstack validate
 ```
 
+**The bump must be the TIP of the push.** CI's `VERSION_CHECK` diffs the
+pushed tip commit only — commits made after the bump (follow-up fixes,
+docs) make the push look tests-only and the build/tag is skipped. If that
+happens, run `bump` again so a VERSION change lands on the new tip, and
+push. `bump` (without `--push`) warns about this.
+
 ## Stack Tools
 
 **`lpb-config`** — config repo manager (in-container, `~/.local/bin/lpb-config`):
