@@ -281,16 +281,17 @@ devstack/
 ├── lpb.stack.env         # fork URLs, image names, container identity
 ├── lpb.conf.env          # runtime defaults (baked into the image)
 ├── .env.example          # template for per-project .env (LPB_ vars)
-├── scripts/
+├── scripts/              # CLIs + shared package (single source, baked to
+│   │                     # /opt/pi-support/ by the Dockerfile)
 │   ├── lpb               # bash wrapper
 │   ├── lpb.py            # launcher engine (stdlib-only Python)
-│   ├── install.sh        # host installer (lpb + stack tools)
-│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
-├── support/
-│   ├── start.sh          # container bootstrap (config, .env, extensions)
-│   ├── entrypoint-*.sh   # cli / web entrypoints
 │   ├── lpb-config        # config repo manager (in-container)
 │   ├── lpb-devstack      # DevOps tool (bump/tag/workspace/validate/release)
+│   ├── install.sh        # host installer (lpb + stack tools)
+│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
+├── support/              # runtime image tools (start.sh, browser, schemas…)
+│   ├── start.sh          # container bootstrap (config, .env, extensions)
+│   ├── entrypoint-*.sh   # cli / web entrypoints
 │   └── docs/             # operational docs (e.g. subagent spawning)
 └── doc/                  # reference docs (mirrored to the docs site)
 ```
