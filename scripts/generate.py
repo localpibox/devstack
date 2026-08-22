@@ -88,11 +88,16 @@ def resolve_ref(path: Path, tag: str | None) -> str | None:
         _, code = git(path, "rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}")
         if code == 0:
             return cand
-    # devstack is never tagged: find the commit that wrote this tag to VERSION
+    # devstack is never tagged: find the commit whose VERSION file EXACTLY
+    # equals the tag. (git log -S <tag> would also match sibling versions
+    # as substrings — e.g. 0.0.62-lpb inside 0.0.62-lpb-dev.)
     if path == REPO_ROOT:
-        out, code = git(path, "log", "--all", "--format=%H", "-S", tag, "--", "VERSION")
-        if code == 0 and out.strip():
-            return out.strip().splitlines()[-1]  # oldest commit with this VERSION
+        out, code = git(path, "log", "--all", "--format=%H", "--", "VERSION")
+        if code == 0:
+            for sha in out.strip().splitlines():
+                v, vcode = git(path, "show", f"{sha}:VERSION")
+                if vcode == 0 and v.strip() == tag:
+                    return sha
     return None
 
 
