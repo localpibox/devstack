@@ -10,7 +10,6 @@ release) require --rebase: stable is replaced with the dev history
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -614,17 +613,17 @@ def cmd_release_docs_ready(*, assume_yes: bool, cons: Console) -> int:
     if code != 0:
         cons.error(f"generate.py failed: {err.strip() or out.strip()}")
         return 1
-    mike = shutil.which("mike")
-    mike_cmd = [mike] if mike else [sys.executable, "-m", "mike"]
-    out, err, code = run_cmd(mike_cmd + ["build"], cwd=str(work))
+    out, err, code = run_cmd([sys.executable, "-m", "mkdocs", "build"],
+                             cwd=str(work))
     if code != 0:
-        cons.error(f"mike build failed: {err.strip() or out.strip()}")
+        cons.error(f"mkdocs build failed: {err.strip() or out.strip()}")
         cons.error("Install docs tooling: "
-                   "python3 -m pip install --user 'mkdocs-material==9.7.7' mike")
+                   "python3 -m pip install --user --break-system-packages "
+                   "'mkdocs-material==9.7.7' mike")
         return 1
     cons.info("Site built — note: repo-map/versions pages are re-stamped by "
               "CI after the release tags exist.")
-    cons.info(f"  preview:  cd {work} && {' '.join(mike_cmd)} serve")
+    cons.info(f"  preview:  cd {work} && mike serve   # http://localhost:8000")
     if not assume_yes and not confirm(
             f"Review the site, then flag docs as ready for {target}?"):
         cons.info("Aborted — docs branch not flagged. Re-run when ready.")
