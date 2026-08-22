@@ -18,6 +18,7 @@
 #       Phase 2: build-cli     — only if VERSION changed
 #       Phase 3: build-web     — only if VERSION changed
 #       Phase 4: tag-repos     — only if VERSION changed (after build)
+#       Phase 4.5: docs-publish — main only, stable docs version (mike)
 #       Phase 5: status        — always runs
 #   - Cron / manual dispatch always build (keep image fresh / on-demand)
 #   - Dev pipeline (push to dev):   0.0.x-lpb-dev, images :dev-*, :{v}-*, :{sha}-*
@@ -370,6 +371,78 @@ jobs:
             echo "::error::Tag creation failed for $FAILURES repo(s) at $VERSION — the stack is now misaligned; re-run this job to complete tagging"
             exit 1
           fi
+
+  # ──────────────────────────────────────────────────────
+  # Phase 3.5: Publish stable docs (main pipeline only)
+  # Docs are gated into the release BEFORE promotion:
+  #   lpb-devstack release docs-ready  (merge dev→docs, review, flag)
+  #   lpb-devstack release promote     (refuses unless docs are ready)
+  # This job re-verifies the flag (catches --force promotions), then cuts
+  # the immutable docs version and points the `latest` alias at it.
+  # Output: gh-pages branch (mike) → https://lpb-stack.github.io/devstack/<version>/
+  # ──────────────────────────────────────────────────────
+  docs-publish:
+    name: Publish docs (mike)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [tag-repos, VERSION_CHECK]
+    if: ${{ github.ref_name == 'main' && github.event_name == 'push' && needs.VERSION_CHECK.outputs.changed == 'true' && needs.tag-repos.result == 'success' }}
+    steps:
+      - name: Checkout docs branch
+        uses: actions/checkout@v6
+        with:
+          ref: docs
+          fetch-depth: 0
+
+      - name: Verify docs flag
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          FLAG=$(git show HEAD:DOCS_READY 2>/dev/null | tr -d '[:space:]' || true)
+          if [ "$FLAG" != "$VERSION" ]; then
+            echo "::error::docs not flagged ready for $VERSION (DOCS_READY='${FLAG:-<missing>}') — run 'lpb-devstack release docs-ready' before promoting, then re-run this job"
+            exit 1
+          fi
+          echo "docs flag OK: $FLAG"
+
+      - name: Fetch stack repos at the release tag
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          mkdir -p ws/git
+          git clone --quiet https://github.com/lpb-stack/config.git ws/config
+          for r in lpb-memory pi-subagents lemonade-pi-plugin; do
+            git clone --quiet "https://github.com/lpb-stack/$r.git" "ws/git/$r"
+          done
+          git clone --quiet https://github.com/lpb-stack/pi.git ws/pi
+          for d in ws/config ws/git/lpb-memory ws/git/pi-subagents \
+                   ws/git/lemonade-pi-plugin ws/pi; do
+            git -C "$d" fetch --quiet --depth 1 origin tag "$VERSION"
+            git -C "$d" checkout -q "$VERSION"
+          done
+
+      - name: Install docs tooling
+        run: python3 -m pip install --quiet "mkdocs-material==9.7.7" mike
+
+      - name: Prepare docs tree + version stamp
+        env:
+          AGENT_DIR: ${{ github.workspace }}/ws/config
+          LPB_AGENT_GIT: ${{ github.workspace }}/ws/git
+          LPB_WORKSPACE_ROOT: ${{ github.workspace }}/ws
+        run: python3 scripts/generate.py --tag "$(git show origin/main:VERSION | tr -d '[:space:]')"
+
+      - name: Configure git identity for mike
+        run: |
+          git config user.name "lpb-docs"
+          git config user.email "ci@lpb-stack.dev"
+
+      - name: Publish tagged docs version
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          mike deploy "$VERSION" latest --push --update-aliases
+          mike set-default latest --push
+          echo "Docs version: https://lpb-stack.github.io/devstack/$VERSION/"
 
   status:
     name: Build status

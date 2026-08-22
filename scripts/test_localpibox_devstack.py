@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""support/lpb-devstack tests: VERSION bumping (patch/minor/set,
+"""scripts/lpb-devstack tests: VERSION bumping (patch/minor/set,
 commit, missing VERSION) and repo tagging (tag-repos, missing clone)."""
 from __future__ import annotations
 
-from testharness import run_lpbx_suite, _bare_remote, _quiet_console, _load_script, SUPPORT_DIR
+from testharness import run_lpbx_suite, _bare_remote, _quiet_console, _load_script, SCRIPTS_DIR
 
 import os
 import subprocess
 from unittest import mock
 
-from localpibox import _stack_lib as sl
 from localpibox.stack import version as ver_mod
 from localpibox.stack import workspace as ws_mod
 
-ld = _load_script('lpb_devstack', SUPPORT_DIR / 'lpb-devstack')
+ld = _load_script('lpb_devstack', SCRIPTS_DIR / 'lpb-devstack')
 
 # ─── lpb-devstack: VERSION bumping ────────────────────────────────────────
 
@@ -86,7 +85,7 @@ def test_devstack_tag_repos(tmpdir):
     ws.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "clone", "-q", "--branch", "lpb-dev", str(remote), str(ws)], check=True)
     env = mock.patch.dict(os.environ, {"LPB_STACK_REMOTE_BASE": str(tmpdir / "remotes")})
-    patch_repos = mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")])
+    patch_repos = mock.patch.object(ld, "TAG_REPOS", [("pi", "lpb-dev", "lpb")])
     patch_ws = mock.patch.object(ws_mod, "WORKSPACE_ROOT", tmpdir / "workspace")
     for p in (env, patch_repos, patch_ws):
         p.start()
@@ -107,11 +106,27 @@ def test_devstack_tag_repos(tmpdir):
 
 
 def test_devstack_tag_repos_missing_clone(tmpdir):
-    with mock.patch.object(sl, "TAG_REPOS", [("pi", "lpb-dev", "lpb")]), \
+    with mock.patch.object(ld, "TAG_REPOS", [("pi", "lpb-dev", "lpb")]), \
          mock.patch.object(ws_mod, "WORKSPACE_ROOT", tmpdir / "empty-ws"):
         cons = _quiet_console()
         assert ld.cmd_tag_repos(cons, pipeline="dev", version="0.0.58-lpb-dev") == 1
         assert "workspace sync" in cons.err.getvalue()
+
+
+def test_devstack_release_cli_surface(tmpdir):
+    """New release subcommands/flags parse: docs-ready + promote --force."""
+    import contextlib
+    import io
+    for argv, needle in ((["release", "docs-ready", "--help"], "docs-ready"),
+                         (["release", "promote", "--help"], "--force")):
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                ld.main(argv)
+            raise AssertionError(f"{argv} did not exit")
+        except SystemExit as e:
+            assert e.code == 0
+            assert needle in buf.getvalue()
 
 
 def main() -> int:

@@ -26,7 +26,8 @@ Installs (no sudo required) into `~/.local/bin`:
 | `lpb [/path/to/project]` | Start a **Pi CLI session** (foreground). No path → last project, or `~` if none yet |
 | `lpb --web [/path]` | Start **VSCodium** (background), prints the connection URL |
 | `lpb --shell [/path]` | Interactive bash shell inside the container |
-| `lpb --ssh [pubkey\|path] [/path]` | Start an sshd server in the container for remote login |
+| `lpb --ssh [pubkey\|path] [/path]` | Start an sshd server in the container for remote login (key auto-detected from `~/.ssh` when omitted) |
+| `lpb --ssh --ssh-password [pw]` | SSH password login (random if omitted, shown once; can combine with key auth) |
 | `lpb --stop` | Stop the container |
 | `lpb --remove` | Stop + remove container + state dirs |
 | `lpb --logs` | Stream container logs |
@@ -58,6 +59,24 @@ lpb /myproject -- --thinking high            # pass any pi flag
 --without-token        hide the token in the printed URL
 ```
 
+### SSH mode (`--ssh`)
+
+- **Key auto-detection**: `lpb --ssh` with no argument scans the *host* user
+  profile (`~/.ssh/*.pub`). One key → used (confirmed on a TTY); several →
+  numbered menu; none → error with a hint. Non-interactive: one key is used
+  automatically, several → explicit selection required.
+- **Explicit key still wins**: `lpb --ssh <pubkey|path>` (literal key or file).
+- **Password login**: `lpb --ssh --ssh-password` (random, printed once) or
+  `lpb --ssh --ssh-password <pw>` (user-chosen). The container user's password
+  is set at start (`chpasswd`) and `PasswordAuthentication` is enabled in the
+  generated `sshd_config`. Key auth remains the default — password auth is
+  opt-in (the container runs `network=host`, so a password is reachable from
+  the LAN).
+- **authorized_keys is append+dedup**: keys added manually (or in a previous
+  session) survive container recreation.
+- **`LPB_SSH_PORT`** (default `2222`): forwarded to the container; the
+  connect line (`ssh -p <port> lpb@<host>`) is printed when the server starts.
+
 ## Image Selection
 
 Two image flavours are published to `ghcr.io/lpb-stack/devstack`:
@@ -74,7 +93,7 @@ Two image flavours are published to `ghcr.io/lpb-stack/devstack`:
 | `--tag latest` | same as `main` |
 | `--tag 0.0.55-lpb-dev` | pin to an exact version |
 | `LPB_IMAGE_TAG=…` | persistent env-var override |
-| *(no tag)* | last-used version (pinned in `~/.lpb-stack/devstack/last-version`), else the dev pipeline |
+| *(no tag)* | last-used version (pinned in `~/.lpb-stack/devstack/last-version`), else the stable pipeline |
 
 ### Resolution rules
 
@@ -153,7 +172,7 @@ working stable tree.)
 ## Examples
 
 ```bash
-lpb ~/projects/myapp                        # Pi CLI, dev pipeline (or last pin)
+lpb ~/projects/myapp                        # Pi CLI (stable pipeline, or last pin; --dev for dev)
 lpb --main ~/projects/myapp                 # stable pipeline
 lpb --tag 0.0.55-lpb-dev ~/projects/myapp   # pin to an exact version
 lpb --web --port 8080 ~/projects/myapp      # VSCodium on port 8080

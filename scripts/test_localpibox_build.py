@@ -4,14 +4,12 @@ var/${HOME} expansion), build-arg mapping from git identity, docker
 command shape."""
 from __future__ import annotations
 
-from testharness import run_lpbx_suite, _load_script, SUPPORT_DIR
+from testharness import run_lpbx_suite
 
 import os
 import time
 import datetime
 import build
-
-ld = _load_script('lpb_devstack', SUPPORT_DIR / 'lpb-devstack')
 
 
 def _fake_runner(responses):

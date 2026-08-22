@@ -12,11 +12,12 @@ import re
 from pathlib import Path
 
 from ..env import parse_env_file
+from .gitutil import git, git_auth
 from .repos import (
     _DEVSTACK_ROOT,
     VERSION_RE,
-    WORKSPACE_REPOS,
     WORKSPACE_ROOT,
+    stack_repos,
 )
 
 
@@ -57,6 +58,11 @@ def detect_pipeline(tag_override: str | None = None) -> str:
 
 # ─── VERSION discovery ─────────────────────────────────────────────────────
 
+def _devstack_root_candidates() -> list[Path]:
+    """Known devstack repo roots: repo checkout, Docker image, workspace clone."""
+    return [_DEVSTACK_ROOT, Path("/opt/devstack"), WORKSPACE_ROOT / "devstack"]
+
+
 def get_version() -> str:
     """Read the current stack VERSION."""
     vf = _find_version_file()
@@ -72,14 +78,11 @@ def _find_version_file() -> Path | None:
     global _VERSION_FILE
     if _VERSION_FILE is not None:
         return _VERSION_FILE
-    for candidate in (
-        _DEVSTACK_ROOT / "VERSION",
-        Path("/opt/devstack/VERSION"),
-        WORKSPACE_ROOT / "devstack" / "VERSION",
-    ):
-        if candidate.is_file():
-            _VERSION_FILE = candidate
-            return candidate
+    for root in _devstack_root_candidates():
+        vf = root / "VERSION"
+        if vf.is_file():
+            _VERSION_FILE = vf
+            return vf
     return None
 
 
@@ -91,34 +94,47 @@ def get_stack_env(pipeline: str) -> dict[str, str]:
     Returns LPB_PI_REF, LPB_CONFIG_REF, etc.
     """
     base_env: dict[str, str] = {}
-    for candidate in (
-        _DEVSTACK_ROOT / "lpb.stack.env",
-        Path("/opt/devstack/lpb.stack.env"),
-        WORKSPACE_ROOT / "devstack" / "lpb.stack.env",
-    ):
-        if candidate.is_file():
-            base_env = parse_env_file(candidate)
+    for root in _devstack_root_candidates():
+        env_file = root / "lpb.stack.env"
+        if env_file.is_file():
+            base_env = parse_env_file(env_file)
             break
 
     # Overlay pipeline-specific env
-    for candidate in (
-        _DEVSTACK_ROOT / f"lpb.stack.{pipeline}.env",
-        Path("/opt/devstack") / f"lpb.stack.{pipeline}.env",
-        WORKSPACE_ROOT / "devstack" / f"lpb.stack.{pipeline}.env",
-    ):
-        if candidate.is_file():
-            base_env.update(parse_env_file(candidate))
+    for root in _devstack_root_candidates():
+        env_file = root / f"lpb.stack.{pipeline}.env"
+        if env_file.is_file():
+            base_env.update(parse_env_file(env_file))
             break
 
     return base_env
 
 
 def expected_branch(repo_name: str, pipeline: str) -> str:
-    """Return the expected branch for a repo given the pipeline."""
-    for name, _, _, dev_branch, main_branch in WORKSPACE_REPOS:
+    """Expected branch for a stack repo on *pipeline* ("" if unknown repo)."""
+    for name, dev_branch, main_branch in stack_repos():
         if name == repo_name:
             return dev_branch if pipeline == "dev" else main_branch
     return ""
+
+
+def expected_pin_version(pipeline: str) -> str:
+    """settings.json extension pin target for *pipeline*.
+
+    dev  → the local devstack VERSION.
+    main → the stable VERSION committed on origin/main (what CI last
+           released), falling back to the local VERSION with -dev stripped.
+    """
+    version = get_version()
+    if pipeline != "main":
+        return version
+    devstack_dir = WORKSPACE_ROOT / "devstack"
+    if (devstack_dir / ".git").is_dir():
+        git_auth(devstack_dir, "fetch", "origin", "main", "--quiet", timeout=120)
+        out, _, code = git(devstack_dir, "show", "origin/main:VERSION")
+        if code == 0 and out.strip():
+            return out.strip()
+    return version.replace("-dev", "")
 
 
 # ─── VERSION bumping (pure logic) ─────────────────────────────────────────

@@ -6,6 +6,7 @@ The suite is split per concern, one file per area (all in scripts/):
   test_lpb_basic.py       — lifecycle commands, run modes, URL building
   test_lpb_tags.py        — image tag selection + image resolution
   test_lpb_selfupdate.py  — lpb --update (launcher self-update)
+  test_lpb_ssh.py         — SSH mode (key auto-detect, password auth)
   test_lpb_regression.py  — structural guards, env files, cmd_* regression
                             tests, mutation tests
 
@@ -23,6 +24,7 @@ from testharness import run_lpb_suite
 from test_lpb_basic import TESTS as BASIC_TESTS
 from test_lpb_tags import TESTS as TAG_TESTS
 from test_lpb_selfupdate import TESTS as SELFUPDATE_TESTS
+from test_lpb_ssh import TESTS as SSH_TESTS
 from test_lpb_regression import TESTS as REGRESSION_TESTS
 
 TESTS = [
@@ -32,6 +34,7 @@ TESTS = [
     *BASIC_TESTS,
     *TAG_TESTS,
     *SELFUPDATE_TESTS,
+    *SSH_TESTS,
 ]
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""localpibox stack workspace-sync tests (via the _stack_lib shim):
-detached-head checkout, clone-missing, dirty skip, wrong branch, missing
-config, main pipeline."""
+"""localpibox.stack workspace-sync tests:
+detached-head checkout, clone-missing, dirty skip, lockfile-drift discard,
+wrong branch, missing config, main pipeline."""
 from __future__ import annotations
 
 from testharness import run_lpbx_suite, _bare_remote, _push_branch, _quiet_console, log_mod
@@ -11,7 +11,7 @@ import io
 import subprocess
 from unittest import mock
 
-from localpibox import _stack_lib as sl
+from localpibox.stack.workspace import cmd_workspace_sync
 from localpibox.stack import workspace as ws_mod
 
 
@@ -61,7 +61,7 @@ def test_lpb_config_sync_detached_head(tmpdir):
     subprocess.run(["git", "-C", str(clone), "checkout", "-q", "0.0.1"], check=True)
     _push_branch(src, "dev")
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
-        code = sl.cmd_workspace_sync("dev", _quiet_console())
+        code = cmd_workspace_sync("dev", _quiet_console())
     ws = tmpdir / "workspace"
     assert code == 0
     assert (ws / "repo-a").is_symlink()
@@ -77,7 +77,7 @@ def test_lpb_config_sync_clones_missing(tmpdir):
     _bare_remote(tmpdir, "repo-b", "dev")
     with mock.patch.dict(os.environ, {"LPB_STACK_REMOTE_BASE": str(tmpdir / "remotes")}), \
          _workspace_patch(tmpdir, repos):
-        code = sl.cmd_workspace_sync("dev", _quiet_console())
+        code = cmd_workspace_sync("dev", _quiet_console())
     ws = tmpdir / "workspace"
     ag = tmpdir / "agent" / "git" / "github.com" / "lpb-stack"
     assert code == 0
@@ -97,11 +97,52 @@ def test_lpb_config_sync_dirty_skipped(tmpdir):
     out, err = io.StringIO(), io.StringIO()
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
         cons = log_mod.Console(color=False, out=out, err=err)
-        code = sl.cmd_workspace_sync("dev", cons)
+        code = cmd_workspace_sync("dev", cons)
     assert code == 1
     assert _branch(clone) == "dev"
     assert (clone / "f").read_text() == "local edit"  # untouched
     assert "uncommitted changes" in (out.getvalue() + err.getvalue())
+
+
+def test_lpb_config_sync_lockfile_drift_discarded(tmpdir):
+    """Only package-lock.json dirty (npm rewrite) → discarded, sync proceeds."""
+    remote, src = _bare_remote(tmpdir, "repo-a", "dev")
+    (src / "package-lock.json").write_text('{\n  "name": "repo-a"\n}\n')
+    subprocess.run(["git", "-C", str(src), "add", "package-lock.json"], check=True)
+    subprocess.run(["git", "-C", str(src), "commit", "-qm", "lockfile"], check=True)
+    subprocess.run(["git", "-C", str(src), "push", "-q", "origin", "dev"], check=True)
+    clone = tmpdir / "agent" / "git" / "github.com" / "lpb-stack" / "repo-a"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    (clone / "package-lock.json").write_text('{\n  "name": "repo-a", "rewritten": true\n}\n')
+    _push_branch(src, "dev")
+    out, err = io.StringIO(), io.StringIO()
+    with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
+        cons = log_mod.Console(color=False, out=out, err=err)
+        code = cmd_workspace_sync("dev", cons)
+    assert code == 0
+    assert (clone / "package-lock.json").read_text() == '{\n  "name": "repo-a"\n}\n'  # restored
+    assert (clone / "f").read_text() == "two"  # fast-forwarded
+    assert "lockfile rewrite" in (out.getvalue() + err.getvalue())
+
+
+def test_lpb_config_sync_mixed_dirt_still_skipped(tmpdir):
+    """package-lock.json + a real file dirty → still skipped."""
+    remote, src = _bare_remote(tmpdir, "repo-a", "dev")
+    (src / "package-lock.json").write_text('{\n  "name": "repo-a"\n}\n')
+    subprocess.run(["git", "-C", str(src), "add", "package-lock.json"], check=True)
+    subprocess.run(["git", "-C", str(src), "commit", "-qm", "lockfile"], check=True)
+    subprocess.run(["git", "-C", str(src), "push", "-q", "origin", "dev"], check=True)
+    clone = tmpdir / "agent" / "git" / "github.com" / "lpb-stack" / "repo-a"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    (clone / "package-lock.json").write_text('{\n  "rewritten": true\n}\n')
+    (clone / "f").write_text("local edit")
+    _push_branch(src, "dev")
+    with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
+        code = cmd_workspace_sync("dev", _quiet_console())
+    assert code == 1
+    assert _branch(clone) == "dev"
+    assert (clone / "f").read_text() == "local edit"  # untouched
+    assert (clone / "package-lock.json").read_text() == '{\n  "name": "repo-a"\n}\n'  # drift discarded
 
 
 def test_lpb_config_sync_wrong_branch(tmpdir):
@@ -114,7 +155,7 @@ def test_lpb_config_sync_wrong_branch(tmpdir):
     subprocess.run(["git", "-C", str(clone), "checkout", "-q", "feature"], check=True)
     _push_branch(src, "dev")
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")]):
-        code = sl.cmd_workspace_sync("dev", _quiet_console())
+        code = cmd_workspace_sync("dev", _quiet_console())
     assert code == 0
     assert _branch(clone) == "dev"
     assert (clone / "f").read_text() == "two"
@@ -128,7 +169,7 @@ def test_lpb_config_sync_missing_config(tmpdir):
     out, err = io.StringIO(), io.StringIO()
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")], config_repo=False):
         cons = log_mod.Console(color=False, out=out, err=err)
-        code = sl.cmd_workspace_sync("dev", cons)
+        code = cmd_workspace_sync("dev", cons)
     assert code == 1
     assert "config" in (out.getvalue() + err.getvalue())
 
@@ -143,7 +184,7 @@ def test_lpb_config_sync_main_pipeline(tmpdir):
     clone = tmpdir / "agent" / "git" / "github.com" / "lpb-stack" / "repo-a"
     subprocess.run(["git", "clone", "-q", "--branch", "main", str(remote), str(clone)], check=True)
     with _workspace_patch(tmpdir, [("repo-a", True, True, "dev", "main")], config_branch="main"):
-        code = sl.cmd_workspace_sync("main", _quiet_console())
+        code = cmd_workspace_sync("main", _quiet_console())
     assert code == 0
     assert _branch(clone) == "main"
     assert (clone / "f").read_text() == "stable"

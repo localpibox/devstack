@@ -50,8 +50,10 @@ git remote set-url origin https://github.com/<you>/config.git
 git pull --ff-only origin <your-branch>
 ```
 
-`start.sh` re-seeds the runtime files (settings, skills, agents) from the
-clone on every container start.
+`start.sh` only does a non-destructive `git fetch` on later boots (it never
+wipes local changes — use `lpb-config update/reset/merge` for actual
+updates). The clone *is* the live config directory, so pulled files are in
+place at the next Pi start.
 
 ## Repointing extensions at runtime (no rebuild)
 

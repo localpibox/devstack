@@ -7,9 +7,8 @@ live in shell scripts (support/_lib.sh) and were copy-pasted across tools:
   log      — colored console output (info/warn/error/done/debug)
   run      — subprocess helpers, tool discovery, container detection
   cli      — argument-parser helpers, prompts, fatal-error exit
-  stack/   — LocalPibox stack operations (git helpers, repo map, pipeline
-             detection, VERSION bump math, workspace/validate/release)
-             (legacy import path: localpibox._stack_lib shim)
+  stack/   — LocalPibox stack operations (git helpers, single 6-repo map,
+             pipeline detection, VERSION bump math, workspace/validate/release)
 """
 
 from .env import (

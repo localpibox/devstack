@@ -174,9 +174,13 @@ COPY support/validate-subagent-output.ts /opt/pi-support/validate-subagent-outpu
 COPY support/config/ /opt/pi-support/config/
 COPY support/docs/ /opt/pi-support/docs/
 COPY support/schemas/ /opt/pi-support/schemas/
-# Shared Python helpers used by the ported support tools (import via the
-# script directory, which Python adds to sys.path automatically).
+# ── Shared Python helpers + user-facing CLIs ─────────────────────────────
+# The localpibox package and the lpb-config/lpb-devstack CLIs are the source of
+# truth in scripts/ (single copy — no support/ duplicates). They must live
+# under /opt/pi-support/ for their sys.path resolution.
 COPY scripts/localpibox/ /opt/pi-support/localpibox/
+COPY --chmod=755 scripts/lpb-config /opt/pi-support/lpb-config
+COPY --chmod=755 scripts/lpb-devstack /opt/pi-support/lpb-devstack
 
 # ── Devstack deployment scripts ──
 COPY --chmod=755 support/install-browser.py /opt/devstack/install-browser.py
@@ -204,8 +208,6 @@ RUN mkdir -p /home/lpb/.local/bin \
 # lpb-config / lpb-devstack need to live under /opt/pi-support/ for their
 # sys.path resolution (the localpibox package is copied there above).
 # Symlinks at ~/.local/bin give users the clean CLI names.
-COPY --chmod=755 support/lpb-config /opt/pi-support/lpb-config
-COPY --chmod=755 support/lpb-devstack /opt/pi-support/lpb-devstack
 
 # ── Root operations: ownership + gitconfig + shell PATH ─────────────────────
 USER root

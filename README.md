@@ -26,13 +26,16 @@ lpb                              # resumes your last project (or ~)
 ```
 
 On the **first run** the container pulls the image, clones the config preset,
-generates `settings.json`, and installs the extensions — then Pi starts.
-You'll be asked to connect a model:
+generates `settings.json`, and installs the extensions. Before Pi starts, the
+**first-run setup wizard** walks you through connecting your Lemonade server:
 
-```
-/login lemonade     # connect to the local Lemonade server (must be running on the host)
-/model              # pick a model (e.g. the Qwen3.6-35B reasoning model)
-```
+1. server URL (pre-filled from `LEMONADE_BASE_URL`, health-checked)
+2. API key (a placeholder like `lemonade` is fine for a local server)
+3. default model (picked from the server's model list)
+4. lpb-memory configuration
+
+After that Pi starts fully configured. Re-run it any time inside the
+container with `lpb-config setup --reconfigure`.
 
 ### Common commands
 
@@ -119,7 +122,8 @@ CI tags images per pipeline: `:0.0.x-lpb[-dev]-cli/web` (versioned),
 | `lpb /path` | Pi CLI session (foreground); no path → last project or `~` |
 | `lpb --web /path` | VSCodium (background); `--port 8080` to change the port |
 | `lpb --shell /path` | Interactive bash inside the container |
-| `lpb --ssh [pubkey] /path` | sshd server in the container for remote login |
+| `lpb --ssh [pubkey\|path] /path` | sshd server in the container for remote login (key auto-detected from `~/.ssh` when omitted) |
+| `lpb --ssh --ssh-password [pw]` | SSH password login (random if omitted, shown once; can combine with a key) |
 | `lpb --stop` / `--remove` / `--logs` | Stop / stop+remove+state cleanup / stream logs |
 | `lpb --update` | Self-update launcher + pull latest image for the selected pipeline |
 | `lpb /path -- <pi-args>` | Pass args to Pi, e.g. `lpb /path -- -p "summarize this repo"` |
@@ -194,14 +198,14 @@ flowchart LR
 ## Forked Repos & Upstream Policy
 
 Fork URLs and branches are tracked in `lpb.stack.env` at the repo root.
-Each fork carries its LocalPibox work as a **single squashed commit** on top
-of upstream, so the delta vs upstream is always one clean patch.
+Each fork keeps its LocalPibox work as clean commits on top of upstream
+merges, so the delta vs upstream can always be extracted as one patch.
 
 | Repo | Upstream | LocalPibox work | Update policy |
 |---|---|---|---|
 | **pi** | `earendil-works/pi` (v0.84.2) | Qwen `reasoning_effort` + context-overflow patches | rebase onto new upstream releases |
 | **lemonade-pi-plugin** | `lemonade-sdk/lemonade-pi-plugin` (no stable release) | Qwen thinking + vision support | follow upstream `main`, check periodically |
-| **pi-subagents** | `tintinweb/pi-subagents` (v0.14.3) | centralized local-first subagent model registry | follow `master`; submit upstream if clean |
+| **pi-subagents** | `tintinweb/pi-subagents` (v0.16.1) | centralized local-first subagent model registry | follow upstream; merge + repair as needed |
 | **lpb-memory** | *(independent project)* | Pi memory extension (subprocess reviews) | no upstream to track |
 | **config** / **devstack** | — | own | own |
 
@@ -230,8 +234,10 @@ Versioning is **manual**: `lpb-devstack bump` commits a new `VERSION`, and CI
 builds + tags only when VERSION changed in the pushed commit. Pipeline jobs:
 **VERSION check** → **test** (always) → **build & publish images** →
 **tag repos** (CI tags the other 5 stack repos on their pipeline branches) →
-**status**. Devstack itself is tracked by its `VERSION` file and is never
-tagged.
+**docs publish** (main pipeline only — publishes the stable docs version,
+gated on the docs being flagged ready via `lpb-devstack release docs-ready`
+before promotion) → **status**. Devstack itself is tracked by its `VERSION`
+file and is never tagged.
 
 ## Troubleshooting
 
@@ -281,24 +287,25 @@ devstack/
 ├── lpb.stack.env         # fork URLs, image names, container identity
 ├── lpb.conf.env          # runtime defaults (baked into the image)
 ├── .env.example          # template for per-project .env (LPB_ vars)
-├── scripts/
+├── scripts/              # CLIs + shared package (single source, baked to
+│   │                     # /opt/pi-support/ by the Dockerfile)
 │   ├── lpb               # bash wrapper
 │   ├── lpb.py            # launcher engine (stdlib-only Python)
-│   ├── install.sh        # host installer (lpb + stack tools)
-│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
-├── support/
-│   ├── start.sh          # container bootstrap (config, .env, extensions)
-│   ├── entrypoint-*.sh   # cli / web entrypoints
 │   ├── lpb-config        # config repo manager (in-container)
 │   ├── lpb-devstack      # DevOps tool (bump/tag/workspace/validate/release)
+│   ├── install.sh        # host installer (lpb + stack tools)
+│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
+├── support/              # runtime image tools (start.sh, browser, schemas…)
+│   ├── start.sh          # container bootstrap (config, .env, extensions)
+│   ├── entrypoint-*.sh   # cli / web entrypoints
 │   └── docs/             # operational docs (e.g. subagent spawning)
 └── doc/                  # reference docs (mirrored to the docs site)
 ```
 
 ## Documentation & Related Repos
 
-- [Documentation site](https://lpb-stack.github.io/devstack/) — versioned
-  per stack tag
+- [Documentation site](https://lpb-stack.github.io/devstack/) — one version
+  per stable release (served from the `docs` branch)
 - [lpb-stack/pi](https://github.com/lpb-stack/pi) — Pi monorepo fork
 - [lpb-stack/config](https://github.com/lpb-stack/config) — agent config preset
 - [lpb-stack/lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) — Lemonade provider plugin

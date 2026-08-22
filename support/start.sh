@@ -113,6 +113,7 @@ BARE_NAMES=(
     EXA_API_KEY
     CONTEXT7_API_KEY
     LEMONADE_BASE_URL
+    LEMONADE_API_KEY
     OPENROUTER_BASE_URL
     ED_PORT
     HOST
@@ -361,6 +362,20 @@ if [[ "$FIRST_RUN" = "true" ]]; then
         warn "settings.json.template not found — Pi will use defaults"
     fi
 
+    # ── First-run setup: lemonade provider + default model + memory ─────
+    # Interactive when a TTY is attached (cli / --shell); non-interactive
+    # otherwise (web mode, cron). Best-effort: a failure never blocks
+    # startup — re-run 'lpb-config setup [--reconfigure]' any time.
+    if command -v lpb-config >/dev/null 2>&1; then
+        if [[ -t 0 ]]; then
+            info "Running first-run setup (provider, model, memory)..."
+            lpb-config setup || warn "First-run setup failed — run 'lpb-config setup' in a terminal"
+        else
+            lpb-config setup --non-interactive || \
+                info "Non-interactive setup incomplete (server unreachable?) — run 'lpb-config setup' in a terminal"
+        fi
+    fi
+
     # ── Generate lpb-memory config from template (first boot only) ──
     # No llmModelOverride — uses main model until user configures provider.
     _memory_template="${AGENT_DIR}/lpb-memory-config.json.template"
@@ -535,8 +550,9 @@ if [[ "$MODE" = "shell" ]]; then
     cd "${PROJECT_DIR}" 2>/dev/null || true
     debug "Shell mode; working directory: $(pwd)"
 
-    # If an SSH pubkey was provided, run sshd so the user can log in.
-    if [[ -n "${LPB_SSH_PUBKEY:-}" ]]; then
+    # If SSH auth was provided (pubkey and/or password), run sshd so the
+    # user can log in.
+    if [[ -n "${LPB_SSH_PUBKEY:-}" || -n "${LPB_SSH_PASSWORD:-}" ]]; then
         export PATH="/usr/sbin:/usr/bin:${PATH}"
         if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             SUDO="sudo -n"
@@ -544,11 +560,30 @@ if [[ "$MODE" = "shell" ]]; then
             SUDO=""
         fi
         if command -v sshd >/dev/null 2>&1; then
+            _ssh_owner="$(stat -c %U "${HOME_DIR}" 2>/dev/null || echo "lpb")"
             mkdir -p "${HOME_DIR}/.ssh"
             chmod 700 "${HOME_DIR}/.ssh"
-            echo "${LPB_SSH_PUBKEY}" > "${HOME_DIR}/.ssh/authorized_keys"
-            chmod 600 "${HOME_DIR}/.ssh/authorized_keys"
-            chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.ssh" 2>/dev/null || true
+            # authorized_keys — append + dedup: keys added manually (or in a
+            # previous session) survive container recreation.
+            if [[ -n "${LPB_SSH_PUBKEY:-}" ]]; then
+                touch "${HOME_DIR}/.ssh/authorized_keys"
+                if ! grep -qxF "${LPB_SSH_PUBKEY}" "${HOME_DIR}/.ssh/authorized_keys" 2>/dev/null; then
+                    echo "${LPB_SSH_PUBKEY}" >> "${HOME_DIR}/.ssh/authorized_keys"
+                fi
+                chmod 600 "${HOME_DIR}/.ssh/authorized_keys"
+                chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.ssh" 2>/dev/null || true
+            fi
+            # Optional password login — set the container user's password.
+            _pass_auth="no"
+            if [[ -n "${LPB_SSH_PASSWORD:-}" ]]; then
+                if command -v chpasswd >/dev/null 2>&1 \
+                        && printf '%s:%s\n' "${_ssh_owner}" "${LPB_SSH_PASSWORD}" | ${SUDO} chpasswd; then
+                    _pass_auth="yes"
+                    info "SSH password login enabled for user '${_ssh_owner}'"
+                else
+                    warn "chpasswd failed — SSH password login disabled (key auth only)"
+                fi
+            fi
             # Persistent host keys — avoid "remote host identification changed"
             # when the container is recreated. Stored under the persisted ~/.pi
             # state dir (lpb-writable) so the same host identity is reused.
@@ -570,15 +605,15 @@ Port ${LPB_SSH_PORT:-2222}
 HostKey ${HOSTKEY_DIR}/ssh_host_ed25519_key
 PidFile ${HOME_DIR}/.ssh/sshd.pid
 PubkeyAuthentication yes
-PasswordAuthentication no
+PasswordAuthentication ${_pass_auth}
 PermitRootLogin no
 AuthorizedKeysFile .ssh/authorized_keys
 Subsystem sftp internal-sftp
 EOF
             chmod 600 "${SSHD_CONFIG}"
 
-            # Unlock the lpb account for SSH key auth
-            _unlock_account "$(stat -c %U "${HOME_DIR}" 2>/dev/null || echo "lpb")" "${SUDO}" info
+            # Unlock the lpb account for SSH auth (key and/or password)
+            _unlock_account "${_ssh_owner}" "${SUDO}" info
 
             info "Starting sshd on port ${LPB_SSH_PORT:-2222}..."
             # Run sshd in the foreground in the background; it requires root for
@@ -589,7 +624,7 @@ EOF
                 /usr/sbin/sshd -f "${SSHD_CONFIG}" 2>&1 | tail -3
             fi
         else
-            warn "sshd not available; SSH disabled (run with no pubkey for a bare shell)."
+            warn "sshd not available; SSH disabled (bare shell only)."
         fi
     fi
 

@@ -105,9 +105,8 @@ lpb-devstack tag-repos --version v   # explicit version
 
 # Workspace management
 lpb-devstack workspace status        — branches + alignment
-lpb-devstack workspace sync          — clone/symlink/align/pull
-lpb-devstack workspace sync --extensions — sync settings.json pins
-lpb-devstack workspace ensure [--fix] — switch to correct branches
+lpb-devstack workspace sync          — clone/symlink/align/pull (single write path)
+lpb-devstack workspace sync-pins     — sync settings.json pins
 
 # Stack validation
 lpb-devstack validate                — full stack alignment check
@@ -129,7 +128,7 @@ lpb-devstack validate-hooks          — run full pre-commit checks (tests + val
 | Memory config | ✅ | ❌ | Image-usable, needed inside container |
 | VERSION bumping | ❌ | ✅ | Devstack-specific, workspace tool |
 | Tag repos | ❌ | ✅ | Dev-time operation |
-| Workspace sync/ensure | ❌ | ✅ | Developer workspace maintenance |
+| Workspace sync/status | ❌ | ✅ | Developer workspace maintenance |
 | Stack validation | ❌ | ✅ | Dev-time operation |
 | Release promote | ❌ | ✅ | Dev→stable promotion |
 | Pre-commit validation | ❌ | ✅ | Dev-time operation |
@@ -138,18 +137,17 @@ lpb-devstack validate-hooks          — run full pre-commit checks (tests + val
 
 ```
 devstack/
-├── support/
-│   ├── lpb-config          ← slimmed down (config repo only, ~250 lines)
-│   └── lpb-devstack        ← new (devops, ~600 lines)
-├── scripts/
-│   ├── lpb-config          ← symlink → ../support/lpb-config
-│   ├── lpb-devstack        ← symlink → ../support/lpb-devstack
+├── support/                  ← runtime image tools (start.sh, browser*, validate.py, …)
+├── scripts/                  ← single source for the CLIs + shared package
+│   ├── lpb-config            ← config repo manager
+│   ├── lpb-devstack          ← DevOps workspace tool
 │   ├── localpibox/
-│   │   ├── _stack_lib.py   ← shared code (git, repo defs, pipeline detection)
+│   │   ├── stack/            ← gitutil / repos / version / workspace / validate / release
 │   │   └── ...
-│   └── install.sh          ← install both scripts
+│   ├── install.sh            ← installs both CLIs + localpibox (from scripts/)
+│   └── test_*                ← test suite
 └── .githooks/
-    └── pre-commit          ← keep full check (tests included)
+    └── pre-commit            ← keep full check (tests included)
 ```
 
 ---
@@ -219,7 +217,12 @@ intent):
 
 8. Follow-up reorg (same day): `_stack_lib.py` was split into the
    `localpibox/stack/` package (`gitutil` / `repos` / `version` /
-   `workspace` / `validate` / `release`); `_stack_lib.py` remains a thin
-   compat shim so existing imports are unchanged. `test_env_bridge.sh`
+   `workspace` / `validate` / `release`); `_stack_lib.py` remained a thin
+   compat shim so existing imports were unchanged. `test_env_bridge.sh`
    (previously orphaned) is wired into CI and now isolates its subshells
    from the ambient environment.
+
+   (2026-08-21 cleanup: the compat shim was deleted — all callers import
+   from `localpibox.stack.*` directly; the CLI canonical copies moved from
+   `support/` to `scripts/` with the symlinks removed, and the Dockerfile /
+   `install.sh` point at `scripts/`.)
