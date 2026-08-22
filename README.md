@@ -198,14 +198,14 @@ flowchart LR
 ## Forked Repos & Upstream Policy
 
 Fork URLs and branches are tracked in `lpb.stack.env` at the repo root.
-Each fork carries its LocalPibox work as a **single squashed commit** on top
-of upstream, so the delta vs upstream is always one clean patch.
+Each fork keeps its LocalPibox work as clean commits on top of upstream
+merges, so the delta vs upstream can always be extracted as one patch.
 
 | Repo | Upstream | LocalPibox work | Update policy |
 |---|---|---|---|
 | **pi** | `earendil-works/pi` (v0.84.2) | Qwen `reasoning_effort` + context-overflow patches | rebase onto new upstream releases |
 | **lemonade-pi-plugin** | `lemonade-sdk/lemonade-pi-plugin` (no stable release) | Qwen thinking + vision support | follow upstream `main`, check periodically |
-| **pi-subagents** | `tintinweb/pi-subagents` (v0.14.3) | centralized local-first subagent model registry | follow `master`; submit upstream if clean |
+| **pi-subagents** | `tintinweb/pi-subagents` (v0.16.1) | centralized local-first subagent model registry | follow upstream; merge + repair as needed |
 | **lpb-memory** | *(independent project)* | Pi memory extension (subprocess reviews) | no upstream to track |
 | **config** / **devstack** | — | own | own |
 
@@ -234,8 +234,10 @@ Versioning is **manual**: `lpb-devstack bump` commits a new `VERSION`, and CI
 builds + tags only when VERSION changed in the pushed commit. Pipeline jobs:
 **VERSION check** → **test** (always) → **build & publish images** →
 **tag repos** (CI tags the other 5 stack repos on their pipeline branches) →
-**status**. Devstack itself is tracked by its `VERSION` file and is never
-tagged.
+**docs publish** (main pipeline only — publishes the stable docs version,
+gated on the docs being flagged ready via `lpb-devstack release docs-ready`
+before promotion) → **status**. Devstack itself is tracked by its `VERSION`
+file and is never tagged.
 
 ## Troubleshooting
 
@@ -302,8 +304,8 @@ devstack/
 
 ## Documentation & Related Repos
 
-- [Documentation site](https://lpb-stack.github.io/devstack/) — versioned
-  per stack tag
+- [Documentation site](https://lpb-stack.github.io/devstack/) — one version
+  per stable release (served from the `docs` branch)
 - [lpb-stack/pi](https://github.com/lpb-stack/pi) — Pi monorepo fork
 - [lpb-stack/config](https://github.com/lpb-stack/config) — agent config preset
 - [lpb-stack/lemonade-pi-plugin](https://github.com/lpb-stack/lemonade-pi-plugin) — Lemonade provider plugin
