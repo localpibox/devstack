@@ -138,6 +138,16 @@ def test_docs_state_ready_then_stale(tmpdir):
     p1, p2 = _patch_release(clone, tmpdir)
     with p1, p2:
         assert rel._docs_release_state()["verdict"] == "ready"
+    # code-only changes on dev do NOT invalidate the flag (the site
+    # doesn't build them)
+    _g(clone, "checkout", "dev")
+    (clone / "scripts").mkdir(exist_ok=True)
+    (clone / "scripts" / "tool.py").write_text("x = 1\n")
+    _g(clone, "add", ".")
+    _g(clone, "commit", "-qm", "code")
+    _g(clone, "push", "-q", "origin", "dev")
+    with p1, p2:
+        assert rel._docs_release_state()["verdict"] == "ready"
     # doc content changes on dev after flagging → stale
     _g(clone, "checkout", "dev")
     (clone / "doc" / "x.md").write_text("content v2\n")

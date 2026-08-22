@@ -37,6 +37,26 @@ DOCS_READY_FILE = "DOCS_READY"
 DOCS_ONLY_FILES = frozenset({
     "mkdocs.yml", "scripts/generate.py", "DOCS.md", DOCS_READY_FILE,
 })
+# Paths on dev that are code/machinery, not site content — a change there
+# does not invalidate a docs flag (the site never builds them). Anything
+# else counts as content. support/docs/ is content even though support/
+# holds runtime tools.
+_NON_CONTENT_FILES = frozenset({
+    ".dockerignore", ".env.example", ".gitignore", "Dockerfile", "VERSION",
+    "lpb.conf.env", "lpb.stack.env", "lpb.stack.dev.env", "lpb.stack.main.env",
+})
+_NON_CONTENT_DIRS = ("scripts/", ".githooks/", ".github/")
+
+
+def _is_content(path: str) -> bool:
+    """True when a dev↔docs tree difference is site content (drift-worthy)."""
+    if path in DOCS_ONLY_FILES or path in _NON_CONTENT_FILES:
+        return False
+    if path.startswith(_NON_CONTENT_DIRS):
+        return False
+    if path.startswith("support/") and not path.startswith("support/docs/"):
+        return False
+    return True
 
 
 def _docs_preview_dir() -> Path:
@@ -53,17 +73,17 @@ def _stable_version(dev_version: str) -> str:
 
 
 def _docs_drift_files(path: Path) -> list[str]:
-    """Content files differing between origin/dev and origin/docs.
+    """Site-content files differing between origin/dev and origin/docs.
 
-    Machinery files (DOCS_ONLY_FILES) are expected to differ and are
-    filtered out; anything else means dev's doc content is not in docs.
+    Machinery (DOCS_ONLY_FILES) and code paths (_NON_CONTENT_*) never appear
+    in the site build, so they are not drift; anything else means dev's
+    doc content is not in docs.
     """
     out, _err, code = git(path, "diff", "--name-only",
                           "origin/dev", f"origin/{DOCS_BRANCH}")
     if code != 0:
         return []
-    return sorted(f for f in out.splitlines()
-                  if f and f not in DOCS_ONLY_FILES)
+    return sorted(f for f in out.splitlines() if f and _is_content(f))
 
 
 def _docs_verdict(flag: str | None, target: str, drift: list[str]) -> str:
