@@ -64,9 +64,27 @@ partially-tagged stack is a release bug.
 
 | Command | Description |
 |---|---|
-| `lpb-devstack release status` | Pre-flight check: all 6 repos, non-destructive |
+| `lpb-devstack release status` | Pre-flight check: all 6 repos + docs flag, non-destructive |
+| `lpb-devstack release docs-ready [--yes]` | Flag the docs branch as reviewed for the next stable release |
 | `lpb-devstack release promote --dry-run` | Inspect plan without making changes |
-| `lpb-devstack release promote` | Promote dev → main (interactive confirmation) |
+| `lpb-devstack release promote` | Promote dev → main (interactive confirmation, blocked until docs are ready) |
+
+**Docs are gated into the release.** The docs site (MkDocs + mike) lives on
+the `docs` branch; stable releases ship the docs version too. Before
+promoting:
+
+1. `lpb-devstack release docs-ready` — merges `origin/dev` → `docs`, builds
+   the site, and (after your local review via
+   `cd ~/.lpb-stack/docs-preview && mike serve`) commits
+   `DOCS_READY=<stable-version>` on the `docs` branch and pushes it
+2. `release status` shows the docs verdict: `READY` / `MISSING` /
+   `STALE` (stale = flag for another version, or doc content changed on dev
+   after flagging)
+3. `release promote` **refuses** unless docs are `READY` for the version
+   being released — `--force` overrides with a warning
+4. The main pipeline re-verifies the flag, then publishes the immutable
+   docs version (`mike deploy <version> latest`) to the `gh-pages` branch:
+   `https://lpb-stack.github.io/devstack/<version>/`
 
 `promote` does per repo (dev branch → stable branch: `dev` → `main` for
 devstack/config/lpb-memory, `lpb-dev` → `lpb` for pi/pi-subagents/
@@ -85,7 +103,8 @@ lemonade-pi-plugin):
   `0.0.58-lpb-dev` → `0.0.58-lpb`) and commits it
 
 Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
-(first-release mode).
+(first-release mode), `--force` (promote even if docs are not flagged
+ready). `docs-ready` accepts `--yes` (skip the review confirmation).
 
 ### Pipeline Override
 
@@ -111,12 +130,15 @@ lpb-devstack validate
 ## Manual Tagging Flow (stable release)
 
 ```bash
-lpb-devstack release status                    # readiness check
+lpb-devstack release docs-ready                # merge dev→docs, review site, flag DOCS_READY
+lpb-devstack release status                    # readiness check (repos + docs)
 lpb-devstack release promote --dry-run         # inspect plan
-lpb-devstack release promote                   # dev → stable + push
+lpb-devstack release promote                   # dev → stable + push (blocked until docs ready)
 lpb-devstack tag-repos --branch main           # tag the 5 repos on stable branches
 lpb-devstack --tag main workspace sync-pins   # pins → stable tag
 pi update --extensions
+# CI (main pipeline) then builds images, tags repos, and publishes the
+# stable docs version (https://lpb-stack.github.io/devstack/<version>/)
 ```
 
 ## Quick Reference

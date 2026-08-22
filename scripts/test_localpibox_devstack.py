@@ -113,6 +113,22 @@ def test_devstack_tag_repos_missing_clone(tmpdir):
         assert "workspace sync" in cons.err.getvalue()
 
 
+def test_devstack_release_cli_surface(tmpdir):
+    """New release subcommands/flags parse: docs-ready + promote --force."""
+    import contextlib
+    import io
+    for argv, needle in ((["release", "docs-ready", "--help"], "docs-ready"),
+                         (["release", "promote", "--help"], "--force")):
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf):
+                ld.main(argv)
+            raise AssertionError(f"{argv} did not exit")
+        except SystemExit as e:
+            assert e.code == 0
+            assert needle in buf.getvalue()
+
+
 def main() -> int:
     return run_lpbx_suite("lpb-devstack tests", globals())
 

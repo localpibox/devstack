@@ -110,16 +110,26 @@ commits to the repo (manual tagging).
 
 ## Stable Release Procedure (dev → main)
 
+**Docs are gated into the release** — `promote` refuses until the docs
+branch is flagged ready for the version being released (`--force`
+overrides). Doc content changes on `dev` in place as usual; the one-shot
+docs sync + review happens at release time via `docs-ready`.
+
 **`lpb-devstack release` is the tool** (there is no other local version path).
 
 ```bash
-# 1. Readiness check (all 6 repos, non-destructive, fetches first)
+# 0. Flag docs as reviewed for the release (merge dev→docs, build site,
+#    review with `cd ~/.lpb-stack/docs-preview && mike serve`, confirm →
+#    commits DOCS_READY=<stable-version> on the docs branch + pushes)
+lpb-devstack release docs-ready
+
+# 1. Readiness check (all 6 repos + docs verdict, non-destructive, fetches first)
 lpb-devstack release status
 
 # 2. Inspect the exact plan without changing anything
 lpb-devstack release promote --dry-run
 
-# 3. Promote (interactive confirmation)
+# 3. Promote (interactive confirmation; blocked unless docs are READY)
 lpb-devstack release promote
 ```
 
@@ -150,8 +160,16 @@ lpb-devstack --tag main validate
 ```
 
 Flags: `--yes` (skip confirmation), `--dry-run` (plan only), `--rebase`
-(first-release mode for unrelated histories). Re-runs are safe: promoted
+(first-release mode for unrelated histories), `--force` (promote even if
+docs are not flagged ready). Re-runs are safe: promoted
 repos fast-forward or no-op.
+
+Docs readiness verdicts (`release status`, checked by `promote`):
+- `READY` — `DOCS_READY` on the `docs` branch matches the release version
+  and doc content matches `dev`
+- `MISSING` — no flag yet → run `lpb-devstack release docs-ready`
+- `STALE` — flag for another version, or doc content changed on `dev`
+  after flagging → re-run `docs-ready`
 
 ## Shipping a Dev Image (the common case)
 
@@ -200,7 +218,7 @@ lpb-devstack bump [--minor|--major] [--set V] [--no-commit] [--push]
 lpb-devstack tag-repos [--branch dev|main] [--version V] [--dry-run]
 lpb-devstack workspace status | sync [--extensions] | ensure [--fix]
 lpb-devstack validate
-lpb-devstack release status | promote [--yes] [--dry-run] [--rebase]
+lpb-devstack release status | docs-ready | promote [--yes] [--dry-run] [--rebase] [--force]
 lpb-devstack validate-hooks     # full pre-commit checks (tests included)
 
 # Pipeline override (dev vs main) on any command:
@@ -282,7 +300,12 @@ Jobs:
    and **fails the run if any repo's tag fails** (a partially-tagged stack
    is a release bug — re-running the job is idempotent, 422 = already
    tagged). A missing branch aborts immediately.
-5. **status** — always runs; passes when builds were skipped (no VERSION
+5. **docs-publish** — main pipeline only, after tag-repos, only if VERSION
+   changed: re-verifies the `DOCS_READY` flag on the `docs` branch matches
+   the released VERSION (catches `--force` promotions), then
+   `mike deploy <version> latest` + `set-default latest` → `gh-pages`
+   branch. Served at `lpb-stack.github.io/devstack/<version>/`.
+6. **status** — always runs; passes when builds were skipped (no VERSION
    change), fails otherwise only on build failure
 
 Images: `ghcr.io/lpb-stack/devstack` in two flavours per tag — `…-cli`

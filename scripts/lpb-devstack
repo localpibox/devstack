@@ -18,9 +18,13 @@ Usage:
   lpb-devstack validate
       Full stack alignment check (repos, branches, pins, env).
   lpb-devstack release status
-      Stable-release readiness across all 6 repos (non-destructive).
-  lpb-devstack release promote [--yes] [--dry-run] [--rebase]
-      Promote dev branches to stable branches + push.
+      Stable-release readiness across all 6 repos + docs flag (non-destructive).
+  lpb-devstack release docs-ready [--yes]
+      Flag the docs branch as reviewed for the next stable release
+      (merge dev→docs, build site, confirm, commit DOCS_READY + push).
+  lpb-devstack release promote [--yes] [--dry-run] [--rebase] [--force]
+      Promote dev branches to stable branches + push (blocked until docs
+      are flagged ready; --force overrides).
   lpb-devstack validate-hooks
       Run the full devstack pre-commit checks (tests included).
 
@@ -76,6 +80,7 @@ from localpibox.stack.workspace import (  # noqa: E402
 )
 from localpibox.stack.validate import cmd_validate  # noqa: E402
 from localpibox.stack.release import (  # noqa: E402
+    cmd_release_docs_ready,
     cmd_release_promote,
     cmd_release_status,
 )
@@ -338,7 +343,11 @@ def main(argv: list[str] | None = None) -> int:
     # Release promotion
     p_rel = sub.add_parser("release", help="Stable release: promote dev branches to stable")
     rel_sub = p_rel.add_subparsers(dest="release_command")
-    _add_subparser(rel_sub, "status", "Show stable-release readiness across all repos")
+    _add_subparser(rel_sub, "status", "Show stable-release readiness across all repos + docs flag")
+    p_rel_docs = _add_subparser(rel_sub, "docs-ready",
+                                "Flag the docs branch as reviewed for the next stable release")
+    p_rel_docs.add_argument("--yes", action="store_true",
+                            help="skip the review confirmation")
     p_rel_promote = _add_subparser(rel_sub, "promote",
                                    "Merge dev branches into stable branches + push")
     p_rel_promote.add_argument("--yes", action="store_true", help="skip confirmation")
@@ -348,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
                                help="first-release mode: for repos with unrelated "
                                     "histories, replace stable with dev history "
                                     "(force-push)")
+    p_rel_promote.add_argument("--force", action="store_true",
+                               help="promote even if docs are not flagged ready")
 
     # Pre-commit validation
     _add_subparser(sub, "validate-hooks", "Run the full devstack pre-commit checks (tests included)")
@@ -388,10 +399,14 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         if args.release_command == "status":
             return cmd_release_status(cons)
+        if args.release_command == "docs-ready":
+            return cmd_release_docs_ready(assume_yes=getattr(args, "yes", False),
+                                          cons=cons)
         if args.release_command == "promote":
             return cmd_release_promote(assume_yes=getattr(args, "yes", False),
                                        dry_run=getattr(args, "dry_run", False),
                                        rebase=getattr(args, "rebase", False),
+                                       force=getattr(args, "force", False),
                                        cons=cons)
     if args.command == "validate-hooks":
         return cmd_validate_hooks(cons)
