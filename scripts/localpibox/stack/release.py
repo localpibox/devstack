@@ -609,13 +609,14 @@ def cmd_release_docs_ready(*, assume_yes: bool, cons: Console) -> int:
     if not gen.is_file():
         cons.error(f"{gen} missing — {DOCS_BRANCH} branch out of date?")
         return 1
-    out, err, code = run_cmd([sys.executable, str(gen), "--tag", target])
+    out, err, code = run_cmd([sys.executable, str(gen), "--tag", target],
+                             cwd=str(work))
     if code != 0:
         cons.error(f"generate.py failed: {err.strip() or out.strip()}")
         return 1
     mike = shutil.which("mike")
     mike_cmd = [mike] if mike else [sys.executable, "-m", "mike"]
-    out, err, code = run_cmd(mike_cmd + ["build"])
+    out, err, code = run_cmd(mike_cmd + ["build"], cwd=str(work))
     if code != 0:
         cons.error(f"mike build failed: {err.strip() or out.strip()}")
         cons.error("Install docs tooling: "

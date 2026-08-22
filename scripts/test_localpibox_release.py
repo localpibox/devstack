@@ -228,6 +228,8 @@ def test_docs_ready_flags_and_pushes(tmpdir):
     # dev content is merged into docs on the remote
     doc = _g(remote, "show", "refs/heads/docs:doc/x.md").stdout
     assert doc == "content v1\n"
+    # mike/generate ran in the preview worktree, not the caller's cwd
+    assert (tmpdir / "preview" / "docs" / "site" / ".marker").is_file()
 
 
 def test_docs_ready_idempotent(tmpdir):
