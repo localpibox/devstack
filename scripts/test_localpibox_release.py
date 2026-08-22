@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """localpibox.stack.release tests: docs readiness (verdict/gate math, state
-from real git repos, docs-ready end-to-end with stub generate.py + fake
-mike, idempotency, re-flag after drift) and release-state VERSION-only
-conflict handling (devstack stable branch)."""
+from real git repos, docs-ready end-to-end with stub generate.py +
+intercepted mkdocs build, idempotency, re-flag after drift) and
+release-state VERSION-only conflict handling (devstack stable branch)."""
 from __future__ import annotations
 
 from testharness import run_lpbx_suite, _quiet_console
 
 import os
-import stat
 import subprocess
 from unittest import mock
 
@@ -20,14 +19,6 @@ p = pathlib.Path(__file__).resolve().parent.parent / "docs"
 p.mkdir(exist_ok=True)
 (p / "repo-map.md").write_text("repo-map\\n")
 print("stub generate ok")
-"""
-
-_FAKE_MIKE = """#!/bin/sh
-if [ "$1" = "build" ]; then
-  mkdir -p docs/site
-  echo built > docs/site/.marker
-fi
-exit 0
 """
 
 
@@ -65,21 +56,30 @@ def _fake_stack(tmpdir):
     return clone
 
 
-def _patch_release(clone, tmpdir, with_mike=False):
-    env = {"LPB_DOCS_PREVIEW": str(tmpdir / "preview")}
-    if with_mike:
-        binr = tmpdir / "bin"
-        binr.mkdir(exist_ok=True)
-        mike = binr / "mike"
-        mike.write_text(_FAKE_MIKE)
-        mike.chmod(0o755)
-        env["PATH"] = f"{binr}{os.pathsep}{os.environ['PATH']}"
-    return (mock.patch.multiple(
-                rel,
-                repo_path=lambda name: clone,
-                get_version=lambda: (clone / "VERSION").read_text().strip(),
-            ),
-            mock.patch.dict(os.environ, env))
+def _patch_release(clone, tmpdir):
+    return mock.patch.multiple(
+        rel,
+        repo_path=lambda name: clone,
+        get_version=lambda: (clone / "VERSION").read_text().strip(),
+    ), mock.patch.dict(os.environ, {"LPB_DOCS_PREVIEW": str(tmpdir / "preview")})
+
+
+def _patch_build():
+    """Intercept the mkdocs build call (keeps tests hermetic — CI has no
+    mkdocs). Emulates writing site/ *relative to the cwd kwarg*, so a wrong
+    cwd is caught by the marker assertions."""
+    import pathlib
+    real = rel.run_cmd
+
+    def fake(args, **kw):
+        if any("mkdocs" in a for a in args):
+            site = pathlib.Path(kw.get("cwd") or ".") / "site"
+            site.mkdir(parents=True, exist_ok=True)
+            (site / ".marker").write_text("built\n")
+            return "ok\n", "", 0
+        return real(args, **kw)
+
+    return mock.patch.object(rel, "run_cmd", fake)
 
 
 # ─── pure math ────────────────────────────────────────────────────────────
@@ -218,8 +218,8 @@ def test_release_state_real_conflict(tmpdir):
 
 def test_docs_ready_flags_and_pushes(tmpdir):
     clone = _fake_stack(tmpdir)
-    p1, p2 = _patch_release(clone, tmpdir, with_mike=True)
-    with p1, p2:
+    p1, p2 = _patch_release(clone, tmpdir)
+    with p1, p2, _patch_build():
         code = rel.cmd_release_docs_ready(assume_yes=True, cons=_quiet_console())
     assert code == 0
     remote = tmpdir / "remotes" / "devstack.git"
@@ -228,14 +228,14 @@ def test_docs_ready_flags_and_pushes(tmpdir):
     # dev content is merged into docs on the remote
     doc = _g(remote, "show", "refs/heads/docs:doc/x.md").stdout
     assert doc == "content v1\n"
-    # mike/generate ran in the preview worktree, not the caller's cwd
-    assert (tmpdir / "preview" / "docs" / "site" / ".marker").is_file()
+    # mkdocs build ran in the preview worktree, not the caller's cwd
+    assert (tmpdir / "preview" / "site" / ".marker").is_file()
 
 
 def test_docs_ready_idempotent(tmpdir):
     clone = _fake_stack(tmpdir)
-    p1, p2 = _patch_release(clone, tmpdir, with_mike=True)
-    with p1, p2:
+    p1, p2 = _patch_release(clone, tmpdir)
+    with p1, p2, _patch_build():
         assert rel.cmd_release_docs_ready(assume_yes=True,
                                           cons=_quiet_console()) == 0
         # second run: already ready → no-op
@@ -245,8 +245,8 @@ def test_docs_ready_idempotent(tmpdir):
 
 def test_docs_ready_reflag_after_drift(tmpdir):
     clone = _fake_stack(tmpdir)
-    p1, p2 = _patch_release(clone, tmpdir, with_mike=True)
-    with p1, p2:
+    p1, p2 = _patch_release(clone, tmpdir)
+    with p1, p2, _patch_build():
         assert rel.cmd_release_docs_ready(assume_yes=True,
                                           cons=_quiet_console()) == 0
     # doc content changes on dev → stale until re-flagged
@@ -254,7 +254,7 @@ def test_docs_ready_reflag_after_drift(tmpdir):
     (clone / "doc" / "x.md").write_text("content v3\n")
     _g(clone, "commit", "-qam", "v3")
     _g(clone, "push", "-q", "origin", "dev")
-    with p1, p2:
+    with p1, p2, _patch_build():
         assert rel._docs_release_state()["verdict"] == "stale"
         assert rel.cmd_release_docs_ready(assume_yes=True,
                                           cons=_quiet_console()) == 0
