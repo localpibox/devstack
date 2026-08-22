@@ -38,6 +38,7 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 | `LPB_EDITOR_HOST` | `0.0.0.0` | Editor listen host (`127.0.0.1` for local-only) |
 | `LPB_CONNECTION_TOKEN` | *(random per start)* | OpenVSCode token — set for a stable token |
 | `LPB_LEMONADE_BASE_URL` | `http://127.0.0.1:13305/v1` | Local model server endpoint |
+| `LPB_LEMONADE_API_KEY` | *(none)* | Lemonade server API key — used by the first-run setup wizard (`lpb-config setup`); a placeholder is fine for local servers |
 | `LPB_MAX_TOKENS_CONTEXT_RATIO` | `0.06` | max_tokens as fraction of context window (Qwen thinking headroom) |
 | `LPB_AGENT_BROWSER_SESSION` | `$PI_WORKTREE_ID` | Browser session isolation id |
 | `LPB_AGENT_BROWSER_MAX_OUTPUT` | `4000` | Max chars for browser snapshot output |
@@ -99,6 +100,7 @@ These select **what goes into the image** (build time) and which pipeline
 | `PI_CODING_AGENT_DIR` | Same dir, as Pi expects it |
 | `LPB_AGENT_GIT` | Extension clones dir (default `$AGENT_DIR/git/github.com/lpb-stack`) |
 | `LEMONADE_BASE_URL` | Model API endpoint (`http://127.0.0.1:13305/v1`) |
+| `LEMONADE_API_KEY` | Lemonade server API key (bridged from `LPB_LEMONADE_API_KEY`) |
 | `AGENT_BROWSER_SESSION` | Browser session isolation id |
 | `AGENT_BROWSER_MAX_OUTPUT` | Max chars for snapshot output |
 

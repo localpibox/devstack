@@ -6,6 +6,8 @@ Usage:
     lpb /path -- <pi-args...>           Pass args through to pi (e.g. -p, --session)
     lpb --shell [/path/to/project]      Start interactive bash shell in container
     lpb --ssh [pubkey|path] [/path]     Start sshd server (background) for remote login
+                                        (key auto-detected from ~/.ssh when omitted)
+    lpb --ssh --ssh-password [pw]       SSH password login (no pw: random, shown once)
     lpb --web [/path/to/project]        Start VSCodium at project (background)
     lpb --stop                          Stop the container
     lpb --remove                        Stop + remove container + state dirs
@@ -70,6 +72,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -338,6 +341,7 @@ class Config:
     shell_mode = False
     ssh_mode = False
     ssh_pubkey = ""
+    ssh_password = ""
     ssh_port = os.environ.get("LPB_SSH_PORT", _conf_cfg.get("LPB_SSH_PORT", "2222"))
     pi_args = []  # args after "--" forwarded to pi inside container
 
@@ -357,6 +361,18 @@ def err(msg: str, hint: str = "") -> None:
 def warn(msg: str) -> None:
     """Print a warning (yellow) to stderr (single line via logger)."""
     logger.warning("%sWarning: %s%s", _WRN, msg, _RSV)
+
+
+def _discover_ssh_pubkeys(ssh_dir: Path | None = None) -> list[Path]:
+    """Public keys available in the user profile (~/.ssh/*.pub), sorted.
+
+    Used to default `lpb --ssh` to the keys the user already has, instead of
+    requiring a key argument on every invocation.
+    """
+    d = ssh_dir or (Path.home() / ".ssh")
+    if not d.is_dir():
+        return []
+    return sorted(p for p in d.glob("*.pub") if p.is_file())
 
 
 # ── Output helpers (stdout) ───────────────────────────────────────────────────
@@ -782,7 +798,8 @@ HELP = (
     "  lpb [/path/to/project]           Start Pi CLI session at project\n"
     "  lpb /path -- <pi-args...>        Pass flags through to pi (-p, --session, etc.)\n"
     "  lpb --shell [/path/to/project]   Interactive bash shell in container\n"
-    "  lpb --ssh [pubkey|path]          Start sshd server in background (pubkey required)\n"
+    "  lpb --ssh [pubkey|path]          Start sshd server in background (key auto-detected from ~/.ssh)\n"
+    "  lpb --ssh --ssh-password [pw]    SSH password login (no pw: random, shown once)\n"
     "  lpb --web [/path/to/project]     Start VSCodium (background)\n"
     "  lpb --stop                       Stop the container\n"
     "  lpb --remove                     Stop + remove container + state dirs\n"
@@ -831,6 +848,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ssh-port", type=int, default=None)
     parser.add_argument("--shell", action="store_true")
     parser.add_argument("--ssh", nargs="?", const="", metavar="PUBKEY")
+    parser.add_argument("--ssh-password", nargs="?", const="", metavar="PASSWORD",
+                        default=None,
+                        help="SSH password login (no value: random, shown once)")
     parser.add_argument("--web", action="store_true")
     parser.add_argument("--tag", default=None,
                         help="Select image pipeline (dev|main|latest|<custom>)")
@@ -925,15 +945,54 @@ def parse_cli(args: list[str]) -> None:
     if known.help:
         cfg.command = "help"
 
-    # Handle --ssh (special: nargs="?", pubkey may follow)
-    if known.ssh is not None:
+    # Handle --ssh (special: nargs="?", pubkey may follow) and --ssh-password.
+    # Key is optional: when omitted, keys from the user profile (~/.ssh/*.pub)
+    # are offered/used; password login (--ssh-password) is an alternative auth.
+    if known.ssh is not None or known.ssh_password is not None:
         cfg.ssh_mode = cfg.shell_mode = True
         if known.ssh:
             p = Path(known.ssh)
             cfg.ssh_pubkey = p.read_text(encoding="utf-8").strip() if p.is_file() else known.ssh.strip()
-        if not cfg.ssh_pubkey:
-            err("--ssh requires a public key or path to a .pub file",
-                "Usage: lpb --ssh 'ssh-ed25519 AAAA... user@host' [/path]")
+        elif known.ssh_password is None:
+            # No explicit key — fall back to the user's profile keys.
+            keys = _discover_ssh_pubkeys()
+            if not keys:
+                err("no public keys found in ~/.ssh",
+                    "Pass one: lpb --ssh <pubkey|path> — or use password login: lpb --ssh --ssh-password")
+                raise DevstackError
+            if len(keys) == 1:
+                if sys.stdin.isatty():
+                    ans = input(f"Use profile key {keys[0].name}? [Y/n]: ").strip().lower()
+                    if ans.startswith("n"):
+                        err("no key selected",
+                            "Re-run with lpb --ssh <pubkey|path> or --ssh-password")
+                        raise DevstackError
+                info(f"Using profile key: {keys[0]}")
+                cfg.ssh_pubkey = keys[0].read_text(encoding="utf-8").strip()
+            elif sys.stdin.isatty():
+                info("Public keys found in ~/.ssh:")
+                for i, k in enumerate(keys, 1):
+                    info(f"  {i}. {k.name}")
+                ans = input(f"Use key [1-{len(keys)}] (0 = none): ").strip() or "1"
+                idx = int(ans) if ans.isdigit() else 0
+                if not 1 <= idx <= len(keys):
+                    err("no key selected",
+                        "Re-run with lpb --ssh <pubkey|path> or --ssh-password")
+                    raise DevstackError
+                info(f"Using profile key: {keys[idx - 1]}")
+                cfg.ssh_pubkey = keys[idx - 1].read_text(encoding="utf-8").strip()
+            else:
+                err(f"{len(keys)} public keys in ~/.ssh — select one explicitly",
+                    "lpb --ssh <pubkey|path>  (or --ssh-password for password login)")
+                raise DevstackError
+        # Password login (optional; can combine with key auth)
+        if known.ssh_password is not None:
+            cfg.ssh_password = known.ssh_password
+            if not cfg.ssh_password:
+                cfg.ssh_password = secrets.token_urlsafe(12)
+        if not cfg.ssh_pubkey and not cfg.ssh_password:
+            err("no SSH auth configured",
+                "Pass a key (lpb --ssh <pubkey|path>) or enable password login (--ssh-password)")
             raise DevstackError
 
     # Handle extra/positional args (single-dash flags = error, rest = positional)
@@ -1225,7 +1284,7 @@ def _resolve_image_and_mode() -> str:
         mode_label = "web (VSCodium)"
     elif cfg.shell_mode:
         cfg.image_name = resolve_cli_image(tag)
-        mode_label = "cli (ssh server)" if cfg.ssh_pubkey else "cli (shell)"
+        mode_label = "cli (ssh server)" if (cfg.ssh_pubkey or cfg.ssh_password) else "cli (shell)"
     else:
         cfg.image_name = resolve_cli_image(tag)
         mode_label = "cli (Pi CLI)"
@@ -1390,6 +1449,9 @@ def _build_run_env(mount_path: str) -> list[str]:
         env_vars.append("LPB_START_MODE=shell")
         if cfg.ssh_pubkey:
             env_vars.append(f"LPB_SSH_PUBKEY={cfg.ssh_pubkey}")
+        if cfg.ssh_password:
+            env_vars.append(f"LPB_SSH_PASSWORD={cfg.ssh_password}")
+        if cfg.ssh_pubkey or cfg.ssh_password:
             env_vars.append(f"LPB_SSH_PORT={cfg.ssh_port}")
     return env_vars
 
@@ -1584,11 +1646,12 @@ def _run_ssh(c: ContainerClient, project_dir: str, env_vars: list[str],
     user = "lpb"  # container user (uid 1000) is lpb
     done("\u2713 SSH server ready (background)")
     info(f"  Connect:  ssh -p {port} {user}@{host}")
-    info(f"  Pubkey:   {cfg.ssh_pubkey}")
+    if cfg.ssh_pubkey:
+        info("  Auth:     key — your pubkey is in authorized_keys (private key never uploaded)")
+    if cfg.ssh_password:
+        info(f"  Password: {cfg.ssh_password}   \u2190 shown once; store it if you need it again")
     info("")
-    info("  The container runs in the background with the provided public\n"
-          "  key in authorized_keys. Your private key is never uploaded.\n"
-          "  Manage it with:")
+    info("  Manage it with:")
     info("    lpb --stop      \u2014 Stop the SSH server")
     info("    lpb --logs      \u2014 View logs")
 

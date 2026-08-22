@@ -34,6 +34,13 @@ see [lpb-devstack reference](lpb-devstack.md).
 | `lpb-config memory show` | Display current lpb-memory configuration |
 | `lpb-config memory setup` | Interactive wizard to configure lpb-memory |
 
+### First-Run Setup
+
+| Command | Description |
+|---|---|
+| `lpb-config setup` | Interactive first-run setup: lemonade provider (auth.json), default model (settings.json), lpb-memory config. Runs automatically on first boot (start.sh); idempotent — re-run with `--reconfigure` to change server/model |
+| `lpb-config setup --non-interactive` | Same, no prompts — `LEMONADE_BASE_URL` / `LEMONADE_API_KEY` env + defaults (used on TTY-less first boots) |
+
 ### Pipeline Override
 
 `--tag dev|main` is accepted on any command (validates the value) for
@@ -59,6 +66,8 @@ Example pin: `git:github.com/lpb-stack/pi-subagents@0.0.57-lpb-dev`
 Same template-driven pattern:
 
 1. First boot: `start.sh` copies `lpb-memory-config.json.template` → config
+   (or `lpb-config setup` configures it interactively during the first-run
+   wizard, pre-filling the model override with the selected default model)
 2. No model override — uses the main model until user configures
 3. Tune: `lpb-config memory setup` (interactive wizard)
 4. Review: `lpb-config memory show`

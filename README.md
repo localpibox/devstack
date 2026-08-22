@@ -26,13 +26,16 @@ lpb                              # resumes your last project (or ~)
 ```
 
 On the **first run** the container pulls the image, clones the config preset,
-generates `settings.json`, and installs the extensions — then Pi starts.
-You'll be asked to connect a model:
+generates `settings.json`, and installs the extensions. Before Pi starts, the
+**first-run setup wizard** walks you through connecting your Lemonade server:
 
-```
-/login lemonade     # connect to the local Lemonade server (must be running on the host)
-/model              # pick a model (e.g. the Qwen3.6-35B reasoning model)
-```
+1. server URL (pre-filled from `LEMONADE_BASE_URL`, health-checked)
+2. API key (a placeholder like `lemonade` is fine for a local server)
+3. default model (picked from the server's model list)
+4. lpb-memory configuration
+
+After that Pi starts fully configured. Re-run it any time inside the
+container with `lpb-config setup --reconfigure`.
 
 ### Common commands
 
@@ -119,7 +122,8 @@ CI tags images per pipeline: `:0.0.x-lpb[-dev]-cli/web` (versioned),
 | `lpb /path` | Pi CLI session (foreground); no path → last project or `~` |
 | `lpb --web /path` | VSCodium (background); `--port 8080` to change the port |
 | `lpb --shell /path` | Interactive bash inside the container |
-| `lpb --ssh [pubkey] /path` | sshd server in the container for remote login |
+| `lpb --ssh [pubkey\|path] /path` | sshd server in the container for remote login (key auto-detected from `~/.ssh` when omitted) |
+| `lpb --ssh --ssh-password [pw]` | SSH password login (random if omitted, shown once; can combine with a key) |
 | `lpb --stop` / `--remove` / `--logs` | Stop / stop+remove+state cleanup / stream logs |
 | `lpb --update` | Self-update launcher + pull latest image for the selected pipeline |
 | `lpb /path -- <pi-args>` | Pass args to Pi, e.g. `lpb /path -- -p "summarize this repo"` |

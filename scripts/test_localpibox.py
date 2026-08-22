@@ -10,6 +10,7 @@ The suite is split one file per target (all in scripts/):
   test_localpibox_build.py            — support/build.py
   test_localpibox_bsc.py              — browser-state-cleanup
   test_localpibox_config.py           — scripts/lpb-config
+  test_localpibox_config_setup.py     — lpb-config setup (first-run wizard)
   test_localpibox_workspace.py        — workspace sync (localpibox.stack)
   test_localpibox_stack.py            — localpibox.stack: pipeline + VERSION math
   test_localpibox_devstack.py         — scripts/lpb-devstack (bump, tag-repos)
@@ -34,6 +35,7 @@ import test_localpibox_cli as t_cli
 import test_localpibox_build as t_build
 import test_localpibox_bsc as t_bsc
 import test_localpibox_config as t_config
+import test_localpibox_config_setup as t_config_setup
 import test_localpibox_workspace as t_workspace
 import test_localpibox_stack as t_stack
 import test_localpibox_devstack as t_devstack
@@ -49,6 +51,7 @@ MODULES = [
     t_build,
     t_bsc,
     t_config,
+    t_config_setup,
     t_workspace,
     t_stack,
     t_devstack,
