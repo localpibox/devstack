@@ -59,11 +59,11 @@ published; the first `0.0.X-lpb` stable release flips the site root.
 ## Local build / preview
 
 ```bash
-python3 -m pip install --user "mkdocs-material==9.7.7" mike   # once
+python3 -m pip install --user --break-system-packages "mkdocs-material==9.7.7" mike   # once
 git checkout docs && git pull
 python3 scripts/generate.py            # or: --tag 0.0.X-lpb
-mike build
-mike serve                             # live preview at http://localhost:8000
+mike serve                             # build + live preview at http://localhost:8000
+# (build check without the server: mkdocs build)
 ```
 
 ## Fallback (manual mike cut)
