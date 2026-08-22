@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""lpb-devstack — LocalPibox DevOps workspace tool.
+
+For developers working on the stack (workspace + GitHub). Config repo
+management inside the container lives in lpb-config.
+
+Usage:
+  lpb-devstack bump [--minor|--major] [--set V] [--no-commit] [--push]
+      Bump devstack/VERSION (default: patch, suffix preserved) and commit.
+  lpb-devstack tag-repos [--branch dev|main] [--version V] [--dry-run]
+      Tag the 5 stack repos (excl. devstack) at the given version.
+  lpb-devstack workspace status
+      Show workspace repo branches + alignment.
+  lpb-devstack workspace sync
+      Clone/symlink/align/pull workspace repos (the single write path).
+  lpb-devstack workspace sync-pins
+      Sync settings.json extension pins to the pipeline's stack version.
+  lpb-devstack validate
+      Full stack alignment check (repos, branches, pins, env).
+  lpb-devstack release status
+      Stable-release readiness across all 6 repos + docs flag (non-destructive).
+  lpb-devstack release docs-ready [--yes]
+      Flag the docs branch as reviewed for the next stable release
+      (merge dev→docs, build site, confirm, commit DOCS_READY + push).
+  lpb-devstack release promote [--yes] [--dry-run] [--rebase] [--force]
+      Promote dev branches to stable branches + push (blocked until docs
+      are flagged ready; --force overrides).
+  lpb-devstack validate-hooks
+      Run the full devstack pre-commit checks (tests included).
+
+Pipeline detection:
+  Read from the VERSION file (-lpb-dev → dev, else main). Override with --tag.
+
+Environment:
+  LPB_WORKSPACE_ROOT    — Workspace root (default: /home/lpb/workspace)
+  AGENT_DIR             — Config repo path (default: /home/lpb/.pi/agent)
+  LPB_AGENT_GIT         — Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)
+  LPB_STACK_REMOTE_BASE — Stack remote base (default: https://github.com/lpb-stack)
+  LPB_GITHUB_TOKEN      — GitHub token for authenticated git operations
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+_SELF_DIR = Path(__file__).resolve().parent
+# Shared localpibox package location — repo layout (support/ → <devstack>/scripts/),
+# Docker image (/opt/pi-support), or host install (~/.lpb-stack/devstack/).
+for _c in (
+    _SELF_DIR.parent / "scripts",
+    _SELF_DIR,
+    Path("/opt/pi-support"),
+    Path.home() / ".lpb-stack" / "devstack",
+):
+    if (_c / "localpibox").is_dir():
+        sys.path.insert(0, str(_c))
+        break
+
+from localpibox.cli import install_sigpipe_handler  # noqa: E402
+from localpibox.log import Console  # noqa: E402
+from localpibox.run import run_cmd  # noqa: E402
+from localpibox.stack.gitutil import git, git_auth  # noqa: E402
+from localpibox.stack.repos import TAG_REPOS  # noqa: E402
+from localpibox.stack.version import (  # noqa: E402
+    VERSION_RE,
+    _devstack_root_candidates,
+    _find_version_file,
+    bump_version,
+    detect_pipeline,
+    expected_branch,
+    get_version,
+)
+from localpibox.stack.workspace import (  # noqa: E402
+    _resolve_repo_path,
+    cmd_workspace_status,
+    cmd_workspace_sync,
+    cmd_workspace_sync_pins,
+)
+from localpibox.stack.validate import cmd_validate  # noqa: E402
+from localpibox.stack.release import (  # noqa: E402
+    cmd_release_docs_ready,
+    cmd_release_promote,
+    cmd_release_status,
+)
+
+
+# ─── VERSION bumping ───────────────────────────────────────────────────────
+
+def cmd_bump(cons: Console, *, minor: bool = False, major: bool = False,
+             set_version: str | None = None,
+             no_commit: bool = False, push: bool = False) -> int:
+    """Bump devstack/VERSION and commit it (push is manual — CI builds on it)."""
+    vf = _find_version_file()
+    if vf is None:
+        cons.error("VERSION file not found (looked in the devstack root, "
+                   "/opt/devstack, and $LPB_WORKSPACE_ROOT/devstack)")
+        return 1
+
+    current = vf.read_text().strip()
+
+    if set_version is not None:
+        if not VERSION_RE.match(set_version):
+            cons.error(f"invalid version: {set_version!r} (expected 0.x.y-lpb[-dev])")
+            return 1
+        new = set_version
+    else:
+        kind = "major" if major else ("minor" if minor else "patch")
+        try:
+            new = bump_version(current, kind)
+        except ValueError as e:
+            cons.error(str(e))
+            cons.info(f"Use --set 0.x.y-lpb[-dev] to set an explicit version.")
+            return 1
+
+    if new == current:
+        cons.warn(f"VERSION unchanged ({current})")
+        return 0
+
+    vf.write_text(new + "\n")
+    cons.info(f"VERSION: {current} → {new}")
+
+    if no_commit:
+        cons.info("--no-commit: file written, not committed (review + commit manually)")
+        return 0
+
+    repo_root = vf.parent
+    out, _, code = git(repo_root, "rev-parse", "--is-inside-work-tree")
+    if code != 0 or out.strip() != "true":
+        cons.error(f"{repo_root} is not a git worktree — commit the VERSION change manually")
+        return 1
+
+    git(repo_root, "add", "VERSION")
+    cons.info("Committing (pre-commit hook runs the test suite — may take a minute)...")
+    out, err, code = git(repo_root, "commit", "-m", f"chore: bump VERSION {new}",
+                         timeout=900)
+    if code != 0:
+        cons.error(f"Commit failed: {(err.strip() or out.strip())[:200]}")
+        return 1
+    cons.info(f"Committed: chore: bump VERSION {new}")
+
+    if push:
+        branch_out, _, bcode = git(repo_root, "branch", "--show-current")
+        branch = branch_out.strip()
+        if bcode != 0 or not branch:
+            cons.error("Not on a branch — push manually (git push origin <branch>)")
+            return 1
+        out, err, code = git_auth(repo_root, "push", "origin", branch, timeout=180)
+        if code != 0:
+            cons.error(f"Push failed: {(err.strip() or out.strip())[:200]}")
+            return 1
+        cons.info(f"Pushed {branch} — CI will build + tag {new}")
+    else:
+        cons.info("Push to trigger the CI build + tag:  git push origin <branch>")
+        cons.warn("The bump must be the TIP of the push: CI's VERSION_CHECK diffs "
+                  "the pushed tip commit for VERSION changes. Commits made after "
+                  "this one make the release a no-op (tests-only run) — if you "
+                  "add follow-up commits, run 'lpb-devstack bump' again so the "
+                  "bump is pushed last.")
+    return 0
+
+
+# ─── Repo tagging ──────────────────────────────────────────────────────────
+
+def _tag_repo_hint(name: str) -> str:
+    return ("$AGENT_DIR" if name == "config"
+            else f"$LPB_WORKSPACE_ROOT/{name}")
+
+
+def cmd_tag_repos(cons: Console, *, pipeline: str = "dev",
+                  version: str | None = None, dry_run: bool = False) -> int:
+    """Tag the 5 stack repos (excl. devstack) at *version* on the pipeline's branches.
+
+    Uses the local workspace clones (fetch branch → push tag ref), so git
+    auth (LPB_GITHUB_TOKEN / credential helper) is used and no objects need
+    to be transferred.
+    """
+    if version is None:
+        version = get_version()
+    if not VERSION_RE.match(version):
+        cons.error(f"invalid version: {version!r} (expected 0.x.y-lpb[-dev])")
+        return 1
+
+    # Best-effort: warn when the local devstack VERSION is not what's committed.
+    root = _find_version_file()
+    if root is not None:
+        out, _, code = git(root.parent, "show", "HEAD:VERSION")
+        if code == 0 and out.strip() and out.strip() != version:
+            cons.warn(f"committed devstack VERSION is {out.strip()} (tagging {version}) — "
+                      "run 'lpb-devstack bump' first for a normal release")
+
+    cons.info(f"Tagging 5 repos at {version} (pipeline: {pipeline})")
+    if dry_run:
+        cons.info("(dry run — nothing will be pushed)")
+    cons.info("")
+
+    failures = 0
+    for name, dev_b, main_b in TAG_REPOS:
+        b = expected_branch(name, pipeline)
+        path = _resolve_repo_path(name)
+        if path is None:
+            cons.error(f"  {name}: no local clone at {_tag_repo_hint(name)} — "
+                       f"run 'lpb-devstack workspace sync' / 'lpb-config update' first")
+            return 1
+
+        out, err, code = git_auth(path, "fetch", "--prune", "origin", "--quiet", timeout=180)
+        if code != 0:
+            cons.error(f"  {name}: fetch failed ({(err.strip() or out.strip())[:80]})")
+            return 1
+        sha = git(path, "rev-parse", f"origin/{b}")[0].strip()
+        if not sha:
+            cons.error(f"  {name}: branch '{b}' not found on origin — aborting (fail fast)")
+            return 1
+
+        existing, _, _ = git_auth(path, "ls-remote", "origin", f"refs/tags/{version}", timeout=60)
+        if existing.strip():
+            cons.info(f"  {name}: {version} already exists — skipped")
+            continue
+
+        if dry_run:
+            cons.info(f"  {name}: would tag {b}@{sha[:8]} → {version}")
+            continue
+
+        out, err, code = git_auth(path, "push", "origin", f"{sha}:refs/tags/{version}", timeout=120)
+        if code == 0:
+            cons.info(f"  ✅ {name}@{version} ({b}@{sha[:8]})")
+        else:
+            cons.error(f"  ❌ {name}: tag push failed ({(err.strip() or out.strip())[:120]})")
+            failures += 1
+
+    if dry_run:
+        cons.info("")
+        cons.info("Dry run — nothing was changed.")
+        return 0
+    if failures:
+        cons.error(f"{failures} repo(s) failed — re-run to complete tagging "
+                   "(already-tagged repos are skipped)")
+        return 1
+    cons.done(f"All 5 repos tagged at {version}")
+    return 0
+
+
+# ─── Pre-commit validation ─────────────────────────────────────────────────
+
+def _find_devstack_root() -> Path | None:
+    """Locate the devstack repo root (cwd first, then known locations)."""
+    cwd = Path.cwd()
+    for p in [cwd, *cwd.parents]:
+        if (p / ".githooks" / "pre-commit").is_file() and (p / "VERSION").is_file():
+            return p
+    for c in _devstack_root_candidates():
+        if (c / ".githooks" / "pre-commit").is_file():
+            return c
+    return None
+
+
+def cmd_validate_hooks(cons: Console) -> int:
+    """Run the full devstack pre-commit checks (VERSION, pins, cleanliness, tests)."""
+    root = _find_devstack_root()
+    if root is None:
+        cons.error("devstack repo with .githooks/pre-commit not found")
+        cons.info("Run this from inside the devstack workspace, or set LPB_WORKSPACE_ROOT.")
+        return 1
+
+    hook = root / ".githooks" / "pre-commit"
+    cons.info(f"Running pre-commit checks: {hook}")
+    cons.info("(includes the full test suite — may take a minute)")
+    out, err, code = run_cmd(["bash", str(hook)], cwd=str(root), timeout=1800)
+    if out.strip():
+        cons.raw(out.rstrip())
+    if err.strip():
+        cons.raw(err.rstrip())
+    if code != 0:
+        cons.error("pre-commit checks FAILED (exit %d)" % code)
+        return 1
+    cons.done("pre-commit checks passed")
+    return 0
+
+
+# ─── CLI ──────────────────────────────────────────────────────────────────
+
+def _add_subparser(sub, name: str, help_: str) -> argparse.ArgumentParser:
+    p = sub.add_parser(name, help=help_)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    install_sigpipe_handler()
+    parser = argparse.ArgumentParser(
+        prog="lpb-devstack",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Environment:\n"
+            "  LPB_WORKSPACE_ROOT    Workspace root (default: /home/lpb/workspace)\n"
+            "  AGENT_DIR             Config repo path (default: /home/lpb/.pi/agent)\n"
+            "  LPB_AGENT_GIT         Extension clone dir (default: $AGENT_DIR/git/github.com/lpb-stack)\n"
+            "  LPB_STACK_REMOTE_BASE Stack remote base (default: https://github.com/lpb-stack)\n"
+            "  LPB_GITHUB_TOKEN      GitHub token for authenticated git operations\n\n"
+            "Pipeline:\n"
+            "  Detected from VERSION file or LPB_IMAGE_TAG env var.\n"
+            "  Override with --tag dev|main on any command."
+        ),
+    )
+    parser.add_argument(
+        "--tag", default=None,
+        help="Override pipeline detection (dev|main)",
+    )
+
+    sub = parser.add_subparsers(dest="command")
+
+    # VERSION bumping
+    p_bump = _add_subparser(sub, "bump", "Bump devstack/VERSION and commit")
+    p_bump.add_argument("--minor", action="store_true", help="bump minor (0.0.9 → 0.1.0)")
+    p_bump.add_argument("--major", action="store_true", help="bump major (0.9.9 → 1.0.0)")
+    p_bump.add_argument("--set", dest="set_version", metavar="V",
+                        help="explicit version (0.x.y-lpb[-dev])")
+    p_bump.add_argument("--no-commit", action="store_true",
+                        help="write VERSION but don't commit")
+    p_bump.add_argument("--push", action="store_true",
+                        help="commit + push (triggers the CI build + tag)")
+
+    # Repo tagging
+    p_tag = _add_subparser(sub, "tag-repos", "Tag the 5 stack repos at the committed VERSION")
+    p_tag.add_argument("--branch", choices=["dev", "main"],
+                       help="tag on dev branches (dev) or stable branches (main)")
+    p_tag.add_argument("--version", dest="version", metavar="V",
+                       help="explicit version (default: devstack VERSION file)")
+    p_tag.add_argument("--dry-run", action="store_true",
+                       help="show the plan, change nothing")
+
+    # Workspace management
+    p_ws = sub.add_parser("workspace", help="Manage workspace repos")
+    ws_sub = p_ws.add_subparsers(dest="workspace_command")
+    _add_subparser(ws_sub, "status", "Show workspace repo branches + alignment")
+    _add_subparser(ws_sub, "sync", "Prepare workspace: clone missing repos, create symlinks, align branches, pull latest")
+    _add_subparser(ws_sub, "sync-pins", "Sync settings.json extension pins to the pipeline's stack version")
+
+    # Stack validation
+    _add_subparser(sub, "validate", "Full stack alignment check (repos, branches, pins, env)")
+
+    # Release promotion
+    p_rel = sub.add_parser("release", help="Stable release: promote dev branches to stable")
+    rel_sub = p_rel.add_subparsers(dest="release_command")
+    _add_subparser(rel_sub, "status", "Show stable-release readiness across all repos + docs flag")
+    p_rel_docs = _add_subparser(rel_sub, "docs-ready",
+                                "Flag the docs branch as reviewed for the next stable release")
+    p_rel_docs.add_argument("--yes", action="store_true",
+                            help="skip the review confirmation")
+    p_rel_promote = _add_subparser(rel_sub, "promote",
+                                   "Merge dev branches into stable branches + push")
+    p_rel_promote.add_argument("--yes", action="store_true", help="skip confirmation")
+    p_rel_promote.add_argument("--dry-run", action="store_true",
+                               help="show plan + feasibility, change nothing")
+    p_rel_promote.add_argument("--rebase", action="store_true",
+                               help="first-release mode: for repos with unrelated "
+                                    "histories, replace stable with dev history "
+                                    "(force-push)")
+    p_rel_promote.add_argument("--force", action="store_true",
+                               help="promote even if docs are not flagged ready")
+
+    # Pre-commit validation
+    _add_subparser(sub, "validate-hooks", "Run the full devstack pre-commit checks (tests included)")
+
+    args = parser.parse_args(argv)
+    cons = Console()
+
+    if args.tag is not None and args.tag not in ("dev", "main"):
+        cons.error(f"invalid --tag: {args.tag} (expected dev|main)")
+        return 1
+    pipeline = detect_pipeline(args.tag)
+
+    if args.command == "bump":
+        return cmd_bump(cons, minor=getattr(args, "minor", False),
+                        major=getattr(args, "major", False),
+                        set_version=getattr(args, "set_version", None),
+                        no_commit=getattr(args, "no_commit", False),
+                        push=getattr(args, "push", False))
+    if args.command == "tag-repos":
+        return cmd_tag_repos(cons, pipeline=pipeline,
+                             version=getattr(args, "version", None),
+                             dry_run=getattr(args, "dry_run", False))
+    if args.command == "workspace":
+        if not args.workspace_command:
+            p_ws.print_help()
+            return 1
+        if args.workspace_command == "status":
+            return cmd_workspace_status(pipeline, cons)
+        if args.workspace_command == "sync":
+            return cmd_workspace_sync(pipeline, cons)
+        if args.workspace_command == "sync-pins":
+            return cmd_workspace_sync_pins(pipeline, cons)
+    if args.command == "validate":
+        return cmd_validate(pipeline, cons)
+    if args.command == "release":
+        if not args.release_command:
+            p_rel.print_help()
+            return 1
+        if args.release_command == "status":
+            return cmd_release_status(cons)
+        if args.release_command == "docs-ready":
+            return cmd_release_docs_ready(assume_yes=getattr(args, "yes", False),
+                                          cons=cons)
+        if args.release_command == "promote":
+            return cmd_release_promote(assume_yes=getattr(args, "yes", False),
+                                       dry_run=getattr(args, "dry_run", False),
+                                       rebase=getattr(args, "rebase", False),
+                                       force=getattr(args, "force", False),
+                                       cons=cons)
+    if args.command == "validate-hooks":
+        return cmd_validate_hooks(cons)
+
+    parser.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

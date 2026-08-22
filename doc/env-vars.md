@@ -38,6 +38,7 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 | `LPB_EDITOR_HOST` | `0.0.0.0` | Editor listen host (`127.0.0.1` for local-only) |
 | `LPB_CONNECTION_TOKEN` | *(random per start)* | OpenVSCode token — set for a stable token |
 | `LPB_LEMONADE_BASE_URL` | `http://127.0.0.1:13305/v1` | Local model server endpoint |
+| `LPB_LEMONADE_API_KEY` | *(none)* | Lemonade server API key — used by the first-run setup wizard (`lpb-config setup`); a placeholder is fine for local servers |
 | `LPB_MAX_TOKENS_CONTEXT_RATIO` | `0.06` | max_tokens as fraction of context window (Qwen thinking headroom) |
 | `LPB_AGENT_BROWSER_SESSION` | `$PI_WORKTREE_ID` | Browser session isolation id |
 | `LPB_AGENT_BROWSER_MAX_OUTPUT` | `4000` | Max chars for browser snapshot output |
@@ -46,6 +47,12 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 | `LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS` | `300000` | Browser daemon idle timeout |
 | `LPB_PERSIST_GH_CONFIG` | — | Persist gh CLI auth into the state volume |
 | `LPB_OPENROUTER_BASE_URL` | — | Optional overflow provider (not needed with Lemonade) |
+
+> **Browser var bridging:** agent-browser (CLI / MCP server) reads the
+> `AGENT_BROWSER_*` names, not `LPB_*`. `start.sh` bridges each
+> `LPB_AGENT_BROWSER_*` to `AGENT_BROWSER_*` (shell env > LPB_ > container-safe
+> fallback), so the container-safe Chrome args — notably `--no-sandbox`,
+> required to launch Chrome inside a container — always take effect.
 
 ## API Keys
 
@@ -81,18 +88,19 @@ So setting `LPB_EXA_API_KEY` in your project `.env` is sufficient —
 | `LPB_CONFIG_REF` | `dev` | `main` | Config preset branch baked into the image |
 
 These select **what goes into the image** (build time) and which pipeline
-`lpb-config` validates against. At runtime you pick the pipeline with
+`lpb-devstack validate` checks against. At runtime you pick the pipeline with
 `lpb --tag dev|main`, not with these vars.
 
 ## In-Container Variables (read by Pi, extensions, and tooling)
 
 | Variable | Purpose |
 |---|---|
-| `LPB_VERSION` | Stack version baked at build time — stamps `settings.json` pins and selects the `lpb-config` pipeline |
+| `LPB_VERSION` | Stack version baked at build time — stamps `settings.json` pins and selects the `lpb-config` / `lpb-devstack` pipeline |
 | `AGENT_DIR` | Config repo directory (`~/.pi/agent`) |
 | `PI_CODING_AGENT_DIR` | Same dir, as Pi expects it |
 | `LPB_AGENT_GIT` | Extension clones dir (default `$AGENT_DIR/git/github.com/lpb-stack`) |
 | `LEMONADE_BASE_URL` | Model API endpoint (`http://127.0.0.1:13305/v1`) |
+| `LEMONADE_API_KEY` | Lemonade server API key (bridged from `LPB_LEMONADE_API_KEY`) |
 | `AGENT_BROWSER_SESSION` | Browser session isolation id |
 | `AGENT_BROWSER_MAX_OUTPUT` | Max chars for snapshot output |
 

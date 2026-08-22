@@ -99,49 +99,62 @@ export PI_TIME="$(date '+%H:%M:%S %Z')"
 export LPB_DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR:-/home/lpb/workspace}"
 export PI_SUPPORT_DIR="${PI_SUPPORT_DIR:-/opt/pi-support}"
 
-# -- API endpoints --
-export LEMONADE_BASE_URL="${LPB_LEMONADE_BASE_URL:-${LEMONADE_BASE_URL:-http://127.0.0.1:13305/v1}}"
-export OPENROUTER_BASE_URL="${LPB_OPENROUTER_BASE_URL:-${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}}"
-export LPB_LEMONADE_BASE_URL="${LEMONADE_BASE_URL}"
-export LPB_OPENROUTER_BASE_URL="${OPENROUTER_BASE_URL}"
-
-# -- Editor (web mode) --
-export LPB_ED_PORT="${LPB_ED_PORT:-${ED_PORT:-3000}}"
-export LPB_EDITOR_HOST="${LPB_EDITOR_HOST:-${HOST:-0.0.0.0}}"
-export LPB_CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN:-${CONNECTION_TOKEN:-$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')}}"
-
-# Backwards-compat aliases (used by VSCodium server and other tools)
-export ED_PORT="${LPB_ED_PORT}"
-export HOST="${LPB_EDITOR_HOST}"
-export CONNECTION_TOKEN="${LPB_CONNECTION_TOKEN}"
-export DEVCONTAINER_WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
+# ── LPB_ → bare-name bridge (single source of truth) ─────────────────────────
+# One list, one loop: every variable a third-party tool reads under a bare
+# (unprefixed) name — API keys, endpoints, editor, agent-browser.
+# agent-browser does NOT read LPB_AGENT_BROWSER_*; without promotion the
+# container-safe defaults in lpb.conf.env (notably --no-sandbox) never reach
+# the browser, and Chrome cannot launch in a container without --no-sandbox.
+# BARE_FALLBACKS carries per-name container-safe defaults.
+# Priority: shell env > LPB_ (conf/.env) > container-safe fallback.
+# NOTE: GITHUB_TOKEN is intentionally excluded — its fallback is a command
+# (`gh auth token`), handled in the special case below.
+BARE_NAMES=(
+    EXA_API_KEY
+    CONTEXT7_API_KEY
+    LEMONADE_BASE_URL
+    LEMONADE_API_KEY
+    OPENROUTER_BASE_URL
+    ED_PORT
+    HOST
+    CONNECTION_TOKEN
+    DEVCONTAINER_WORKSPACE_DIR
+    MAX_TOKENS_CONTEXT_RATIO
+    GITHUB_TOOLSETS
+    AGENT_BROWSER_ARGS
+    AGENT_BROWSER_MAX_OUTPUT
+    AGENT_BROWSER_CONTENT_BOUNDARIES
+    AGENT_BROWSER_CONFIRM_ACTIONS
+    AGENT_BROWSER_IDLE_TIMEOUT_MS
+    AGENT_BROWSER_SESSION
+)
+# Container-safe fallbacks per bare name (absent = pure LPB_→bare promotion).
+declare -A BARE_FALLBACKS=(
+    [LEMONADE_BASE_URL]="http://127.0.0.1:13305/v1"
+    [OPENROUTER_BASE_URL]="https://openrouter.ai/api/v1"
+    [ED_PORT]="3000"
+    [HOST]="0.0.0.0"
+    [CONNECTION_TOKEN]="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')"
+    [DEVCONTAINER_WORKSPACE_DIR]="/home/lpb/workspace"
+    [MAX_TOKENS_CONTEXT_RATIO]="0.06"
+    [GITHUB_TOOLSETS]="all"
+    [AGENT_BROWSER_ARGS]="--no-sandbox,--no-first-run,--disable-gpu,--disable-crashpad"
+    [AGENT_BROWSER_MAX_OUTPUT]="4000"
+    [AGENT_BROWSER_CONTENT_BOUNDARIES]="true"
+    [AGENT_BROWSER_CONFIRM_ACTIONS]="delete,download,cookie_delete,file_access"
+    [AGENT_BROWSER_IDLE_TIMEOUT_MS]="300000"
+    [AGENT_BROWSER_SESSION]="${PI_WORKTREE_ID:-}"
+)
+# LPB_ var name for bare names where the prefix is not simply LPB_<name>.
+declare -A BARE_ALIASES=(
+    [HOST]="LPB_EDITOR_HOST"
+)
 
 # -- Workspace --
 WORKSPACE_DIR="${LPB_DEVCONTAINER_WORKSPACE_DIR}"
 
-# -- Context window / max tokens ratio --
-export LPB_MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO:-0.06}"
-export MAX_TOKENS_CONTEXT_RATIO="${LPB_MAX_TOKENS_CONTEXT_RATIO}"
-
-
-# -- Browser config (preserve lpb.py defaults, allow shell override) --
-export LPB_AGENT_BROWSER_ARGS="${LPB_AGENT_BROWSER_ARGS:-}"
-export LPB_AGENT_BROWSER_MAX_OUTPUT="${LPB_AGENT_BROWSER_MAX_OUTPUT:-4000}"
-export LPB_AGENT_BROWSER_CONTENT_BOUNDARIES="${LPB_AGENT_BROWSER_CONTENT_BOUNDARIES:-true}"
-export LPB_AGENT_BROWSER_CONFIRM_ACTIONS="${LPB_AGENT_BROWSER_CONFIRM_ACTIONS:-delete,download,cookie_delete,file_access}"
-export LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS="${LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS:-300000}"
-export LPB_AGENT_BROWSER_SESSION="${LPB_AGENT_BROWSER_SESSION:-${PI_WORKTREE_ID:-}}"
-
-# ── API keys & other LPB_ → bare-name bridges ────────────────────────────────
-# Define bare-name aliases here. The _bridge() loop applies the generic logic:
-#   LPB_FOO → FOO (only if FOO not already set by shell env).
-# Fallback chain: shell env > LPB_ (from .env/conf) > hardcoded.
-#
-# NOTE: GITHUB_TOKEN is excluded — it has a special fallback chain:
-#   shell env > LPB_ > `gh auth token` (CLI auth) > empty.
-# That special case runs below, after _bridge.
 _bridge() {
-    local _name lpb_name
+    local _name lpb_name fallback resolved
     # Unset bare names that are set but empty — they block the promotion
     # (e.g. EXA_API_KEY="" from host env still counts as "set")
     for _name in "${BARE_NAMES[@]}"; do
@@ -149,32 +162,18 @@ _bridge() {
             unset "$_name"
         fi
     done
-    # Build LPB_ prefix with fallback to bare name (shell env wins)
+    # Resolve each name (shell env > LPB_ > fallback) and keep the LPB_
+    # mirror in sync so dumps of LPB_* reflect the effective value.
     for _name in "${BARE_NAMES[@]}"; do
-        lpb_name="LPB_${_name}"
-        export "$lpb_name="${!lpb_name:-${!_name:-}}""
-    done
-    # Promote LPB_ → bare (only if bare not already in shell env)
-    for _name in "${BARE_NAMES[@]}"; do
-        lpb_name="LPB_${_name}"
-        if [[ -z "${!_name+x}" ]]; then
-            export "$_name="${!lpb_name:-}""
-        fi
+        lpb_name="${BARE_ALIASES[${_name}]:-LPB_${_name}}"
+        fallback="${BARE_FALLBACKS[${_name}]:-}"
+        resolved="${!_name:-}"
+        [[ -z "$resolved" ]] && resolved="${!lpb_name:-}"
+        [[ -z "$resolved" ]] && resolved="$fallback"
+        export "$_name=$resolved"
+        export "$lpb_name=$resolved"
     done
 }
-
-# Define the full list of LPB_ → bare-name pairs.
-BARE_NAMES=(
-    EXA_API_KEY
-    CONTEXT7_API_KEY
-    LEMONADE_BASE_URL
-    OPENROUTER_BASE_URL
-    ED_PORT
-    HOST
-    CONNECTION_TOKEN
-    DEVCONTAINER_WORKSPACE_DIR
-    MAX_TOKENS_CONTEXT_RATIO
-)
 
 # Apply bridge after lpb.conf.env defaults (step 0).
 _bridge
@@ -187,9 +186,6 @@ export GITHUB_TOKEN="${GITHUB_TOKEN:-${LPB_GITHUB_TOKEN:-$(gh auth token 2>/dev/
 # mcp.json resolves ${GITHUB_PERSONAL_ACCESS_TOKEN} from this export.
 export GITHUB_PERSONAL_ACCESS_TOKEN="${GITHUB_TOKEN}"
 export LPB_GITHUB_TOKEN="${GITHUB_TOKEN}"
-
-# ── GitHub MCP Server toolsets (see mcp.json for transport config) ──
-export GITHUB_TOOLSETS="${GITHUB_TOOLSETS:-${LPB_GITHUB_TOOLSETS:-all}}"
 
 # ── Persistence flags ──
 export LPB_PERSIST_GH_CONFIG="${LPB_PERSIST_GH_CONFIG:-true}"
@@ -366,6 +362,20 @@ if [[ "$FIRST_RUN" = "true" ]]; then
         warn "settings.json.template not found — Pi will use defaults"
     fi
 
+    # ── First-run setup: lemonade provider + default model + memory ─────
+    # Interactive when a TTY is attached (cli / --shell); non-interactive
+    # otherwise (web mode, cron). Best-effort: a failure never blocks
+    # startup — re-run 'lpb-config setup [--reconfigure]' any time.
+    if command -v lpb-config >/dev/null 2>&1; then
+        if [[ -t 0 ]]; then
+            info "Running first-run setup (provider, model, memory)..."
+            lpb-config setup || warn "First-run setup failed — run 'lpb-config setup' in a terminal"
+        else
+            lpb-config setup --non-interactive || \
+                info "Non-interactive setup incomplete (server unreachable?) — run 'lpb-config setup' in a terminal"
+        fi
+    fi
+
     # ── Generate lpb-memory config from template (first boot only) ──
     # No llmModelOverride — uses main model until user configures provider.
     _memory_template="${AGENT_DIR}/lpb-memory-config.json.template"
@@ -540,8 +550,9 @@ if [[ "$MODE" = "shell" ]]; then
     cd "${PROJECT_DIR}" 2>/dev/null || true
     debug "Shell mode; working directory: $(pwd)"
 
-    # If an SSH pubkey was provided, run sshd so the user can log in.
-    if [[ -n "${LPB_SSH_PUBKEY:-}" ]]; then
+    # If SSH auth was provided (pubkey and/or password), run sshd so the
+    # user can log in.
+    if [[ -n "${LPB_SSH_PUBKEY:-}" || -n "${LPB_SSH_PASSWORD:-}" ]]; then
         export PATH="/usr/sbin:/usr/bin:${PATH}"
         if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
             SUDO="sudo -n"
@@ -549,11 +560,30 @@ if [[ "$MODE" = "shell" ]]; then
             SUDO=""
         fi
         if command -v sshd >/dev/null 2>&1; then
+            _ssh_owner="$(stat -c %U "${HOME_DIR}" 2>/dev/null || echo "lpb")"
             mkdir -p "${HOME_DIR}/.ssh"
             chmod 700 "${HOME_DIR}/.ssh"
-            echo "${LPB_SSH_PUBKEY}" > "${HOME_DIR}/.ssh/authorized_keys"
-            chmod 600 "${HOME_DIR}/.ssh/authorized_keys"
-            chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.ssh" 2>/dev/null || true
+            # authorized_keys — append + dedup: keys added manually (or in a
+            # previous session) survive container recreation.
+            if [[ -n "${LPB_SSH_PUBKEY:-}" ]]; then
+                touch "${HOME_DIR}/.ssh/authorized_keys"
+                if ! grep -qxF "${LPB_SSH_PUBKEY}" "${HOME_DIR}/.ssh/authorized_keys" 2>/dev/null; then
+                    echo "${LPB_SSH_PUBKEY}" >> "${HOME_DIR}/.ssh/authorized_keys"
+                fi
+                chmod 600 "${HOME_DIR}/.ssh/authorized_keys"
+                chown -R "$(id -u):$(id -g)" "${HOME_DIR}/.ssh" 2>/dev/null || true
+            fi
+            # Optional password login — set the container user's password.
+            _pass_auth="no"
+            if [[ -n "${LPB_SSH_PASSWORD:-}" ]]; then
+                if command -v chpasswd >/dev/null 2>&1 \
+                        && printf '%s:%s\n' "${_ssh_owner}" "${LPB_SSH_PASSWORD}" | ${SUDO} chpasswd; then
+                    _pass_auth="yes"
+                    info "SSH password login enabled for user '${_ssh_owner}'"
+                else
+                    warn "chpasswd failed — SSH password login disabled (key auth only)"
+                fi
+            fi
             # Persistent host keys — avoid "remote host identification changed"
             # when the container is recreated. Stored under the persisted ~/.pi
             # state dir (lpb-writable) so the same host identity is reused.
@@ -575,15 +605,15 @@ Port ${LPB_SSH_PORT:-2222}
 HostKey ${HOSTKEY_DIR}/ssh_host_ed25519_key
 PidFile ${HOME_DIR}/.ssh/sshd.pid
 PubkeyAuthentication yes
-PasswordAuthentication no
+PasswordAuthentication ${_pass_auth}
 PermitRootLogin no
 AuthorizedKeysFile .ssh/authorized_keys
 Subsystem sftp internal-sftp
 EOF
             chmod 600 "${SSHD_CONFIG}"
 
-            # Unlock the lpb account for SSH key auth
-            _unlock_account "$(stat -c %U "${HOME_DIR}" 2>/dev/null || echo "lpb")" "${SUDO}" info
+            # Unlock the lpb account for SSH auth (key and/or password)
+            _unlock_account "${_ssh_owner}" "${SUDO}" info
 
             info "Starting sshd on port ${LPB_SSH_PORT:-2222}..."
             # Run sshd in the foreground in the background; it requires root for
@@ -594,7 +624,7 @@ EOF
                 /usr/sbin/sshd -f "${SSHD_CONFIG}" 2>&1 | tail -3
             fi
         else
-            warn "sshd not available; SSH disabled (run with no pubkey for a bare shell)."
+            warn "sshd not available; SSH disabled (bare shell only)."
         fi
     fi
 

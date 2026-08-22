@@ -3,10 +3,12 @@
 Small, stdlib-only package that consolidates the common parts that used to
 live in shell scripts (support/_lib.sh) and were copy-pasted across tools:
 
-  env  — KEY=VALUE .env/.conf parsing, ${NAME} expansion, layered loading
-  log  — colored console output (info/warn/error/done/debug)
-  run  — subprocess helpers, tool discovery, container detection
-  cli  — argument-parser helpers, prompts, fatal-error exit
+  env      — KEY=VALUE .env/.conf parsing, ${NAME} expansion, layered loading
+  log      — colored console output (info/warn/error/done/debug)
+  run      — subprocess helpers, tool discovery, container detection
+  cli      — argument-parser helpers, prompts, fatal-error exit
+  stack/   — LocalPibox stack operations (git helpers, single 6-repo map,
+             pipeline detection, VERSION bump math, workspace/validate/release)
 """
 
 from .env import (

@@ -26,13 +26,16 @@ lpb                              # resumes your last project (or ~)
 ```
 
 On the **first run** the container pulls the image, clones the config preset,
-generates `settings.json`, and installs the extensions — then Pi starts.
-You'll be asked to connect a model:
+generates `settings.json`, and installs the extensions. Before Pi starts, the
+**first-run setup wizard** walks you through connecting your Lemonade server:
 
-```
-/login lemonade     # connect to the local Lemonade server (must be running on the host)
-/model              # pick a model (e.g. the Qwen3.6-35B reasoning model)
-```
+1. server URL (pre-filled from `LEMONADE_BASE_URL`, health-checked)
+2. API key (a placeholder like `lemonade` is fine for a local server)
+3. default model (picked from the server's model list)
+4. lpb-memory configuration
+
+After that Pi starts fully configured. Re-run it any time inside the
+container with `lpb-config setup --reconfigure`.
 
 ### Common commands
 
@@ -119,7 +122,8 @@ CI tags images per pipeline: `:0.0.x-lpb[-dev]-cli/web` (versioned),
 | `lpb /path` | Pi CLI session (foreground); no path → last project or `~` |
 | `lpb --web /path` | VSCodium (background); `--port 8080` to change the port |
 | `lpb --shell /path` | Interactive bash inside the container |
-| `lpb --ssh [pubkey] /path` | sshd server in the container for remote login |
+| `lpb --ssh [pubkey\|path] /path` | sshd server in the container for remote login (key auto-detected from `~/.ssh` when omitted) |
+| `lpb --ssh --ssh-password [pw]` | SSH password login (random if omitted, shown once; can combine with a key) |
 | `lpb --stop` / `--remove` / `--logs` | Stop / stop+remove+state cleanup / stream logs |
 | `lpb --update` | Self-update launcher + pull latest image for the selected pipeline |
 | `lpb /path -- <pi-args>` | Pass args to Pi, e.g. `lpb /path -- -p "summarize this repo"` |
@@ -151,7 +155,8 @@ podman exec -it lpb-stack bash
 |---|---|
 | `pi` | Start the Pi CLI |
 | `pi update --extensions` | Update unpinned packages (tag-pinned packages are skipped — move a pin with `pi install git:github.com/lpb-stack/<repo>@<new-tag>`) |
-| `lpb-config validate` | Validate stack alignment (repos, branches, pins) |
+| `lpb-devstack validate` | Validate stack alignment (repos, branches, pins) |
+| `lpb-devstack bump` | Bump VERSION + commit (the release trigger for CI build/tag) |
 | `lpb-config memory setup` | Interactive wizard for the memory extension |
 
 Inside the Pi TUI: `/login <provider>`, `/model`, `/settings` (thinking
@@ -220,16 +225,17 @@ rebuild) to a full image rebuild (Pi core). Full procedure in
 
 GitHub Actions (`.github/workflows/build-and-publish.yml`) runs on:
 
-- push to `dev` or `main` (Dockerfile, `support/`, `scripts/`, workflow
-  changes — VERSION auto-bumps are excluded so they don't re-trigger)
+- push to `dev` or `main` (Dockerfile, `VERSION`, `support/`, `scripts/`,
+  workflow changes)
 - pull requests to `main` (tests only)
-- weekly cron (Monday 03:00 UTC)
-- manual dispatch (`publish_latest`, `no_cache`)
+- weekly cron (Monday 03:00 UTC) and manual dispatch (always build)
 
-Pipeline jobs: **test** → **bump version** (commits the new `VERSION` to the
-pushed branch) → **build & publish images** → **tag repos** (CI tags the
-other 5 stack repos on their pipeline branches). Devstack itself is tracked
-by its `VERSION` file and is never tagged.
+Versioning is **manual**: `lpb-devstack bump` commits a new `VERSION`, and CI
+builds + tags only when VERSION changed in the pushed commit. Pipeline jobs:
+**VERSION check** → **test** (always) → **build & publish images** →
+**tag repos** (CI tags the other 5 stack repos on their pipeline branches) →
+**status**. Devstack itself is tracked by its `VERSION` file and is never
+tagged.
 
 ## Troubleshooting
 
@@ -279,15 +285,17 @@ devstack/
 ├── lpb.stack.env         # fork URLs, image names, container identity
 ├── lpb.conf.env          # runtime defaults (baked into the image)
 ├── .env.example          # template for per-project .env (LPB_ vars)
-├── scripts/
+├── scripts/              # CLIs + shared package (single source, baked to
+│   │                     # /opt/pi-support/ by the Dockerfile)
 │   ├── lpb               # bash wrapper
 │   ├── lpb.py            # launcher engine (stdlib-only Python)
-│   ├── install.sh        # host installer for lpb
-│   └── localpibox/       # shared Python helpers
-├── support/
+│   ├── lpb-config        # config repo manager (in-container)
+│   ├── lpb-devstack      # DevOps tool (bump/tag/workspace/validate/release)
+│   ├── install.sh        # host installer (lpb + stack tools)
+│   └── localpibox/       # shared Python helpers (env/log/run/cli/stack)
+├── support/              # runtime image tools (start.sh, browser, schemas…)
 │   ├── start.sh          # container bootstrap (config, .env, extensions)
 │   ├── entrypoint-*.sh   # cli / web entrypoints
-│   ├── lpb-config.py     # stack management tool (in-container)
 │   └── docs/             # operational docs (e.g. subagent spawning)
 └── doc/                  # reference docs (mirrored to the docs site)
 ```

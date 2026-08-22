@@ -5,15 +5,22 @@
 # Extensions update at runtime via pi update --extensions
 #
 # Triggers:
-#   - Push to dev (code changes, NOT VERSION bumps)
-#   - Push to main (Dockerfile, support/, lpb.stack.env, lpb.conf.env)
+#   - Push to dev/main (code or VERSION changes, path-filtered)
 #   - Weekly cron (Monday 3am UTC) — keep image fresh
 #   - Manual dispatch
 #
-# Version model (Option C):
+# Version model (manual tagging):
 #   - Single source: devstack/VERSION
-#   - CI bumps version after tests pass, sets bumped value as CI output
-#   - The 5 stack repos (all except devstack) tagged on each CI run
+#   - Developer bumps VERSION with `lpb-devstack bump` (local commit + push)
+#   - CI never writes VERSION. Pipeline phases:
+#       Phase 0: VERSION_CHECK — did this commit change VERSION?
+#       Phase 1: test-lpb      — always runs (fast validation)
+#       Phase 2: build-cli     — only if VERSION changed
+#       Phase 3: build-web     — only if VERSION changed
+#       Phase 4: tag-repos     — only if VERSION changed (after build)
+#       Phase 4.5: docs-publish — main only, stable docs version (mike)
+#       Phase 5: status        — always runs
+#   - Cron / manual dispatch always build (keep image fresh / on-demand)
 #   - Dev pipeline (push to dev):   0.0.x-lpb-dev, images :dev-*, :{v}-*, :{sha}-*
 #   - Main pipeline (push to main): 0.0.x-lpb,     images :main-*, :latest-*, :{v}-*, :{sha}-*
 #
@@ -30,15 +37,17 @@ on:
     branches: [dev, main]
     paths:
       - 'Dockerfile'
+      - 'VERSION'
       - 'support/**'
       - 'scripts/**'
       - '.github/workflows/*.yml'
-      # NOTE: VERSION + lpb.stack.env changes intentionally excluded
-      # to avoid re-triggering on auto-bump commits
+      # NOTE: VERSION changes DO trigger — manual tagging (bump = release).
+      # lpb.stack.env / lpb.conf.env changes ship with the next VERSION bump.
   pull_request:
     branches: [main]
     paths:
       - 'Dockerfile'
+      - 'VERSION'
       - 'support/**'
       - 'scripts/**'
       - '.github/workflows/*.yml'
@@ -64,7 +73,41 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────
-  # Phase 1: Test
+  # Phase 0: VERSION check — build only when VERSION changed
+  # ──────────────────────────────────────────────────────
+  VERSION_CHECK:
+    name: VERSION check
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect VERSION change
+        id: check
+        run: |
+          # Cron and manual dispatch always build (keep image fresh / on-demand release)
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Regular commit: files changed vs its parent (root commit → full tree)
+          changed_files=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          # Merge commit: diff-tree shows nothing by default → diff vs first parent
+          if [ -z "$changed_files" ] && git rev-parse -q --verify "$GITHUB_SHA^2" >/dev/null 2>&1; then
+            changed_files=$(git diff --name-only "$GITHUB_SHA^1" "$GITHUB_SHA")
+          fi
+          if echo "$changed_files" | grep -q "VERSION"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ──────────────────────────────────────────────────────
+  # Phase 1: Test (always)
   # ──────────────────────────────────────────────────────
   test-lpb:
     name: Run lpb.py unit tests
@@ -77,61 +120,17 @@ jobs:
         run: |
           python3 scripts/test_lpb.py
           python3 scripts/test_localpibox.py
+          bash scripts/test_env_bridge.sh
 
   # ──────────────────────────────────────────────────────
-  # Phase 2: Bump version (before build, so build uses correct number)
-  # ──────────────────────────────────────────────────────
-  bump-version:
-    name: Bump version
-    runs-on: ubuntu-latest
-    needs: [test-lpb]
-    if: ${{ github.event_name != 'pull_request' }}
-    outputs:
-      version: ${{ steps.bump.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Bump patch version
-        id: bump
-        run: |
-          set -e
-          VERSION=$(cat VERSION 2>/dev/null || echo "0.0.0-lpb")
-          MAJOR=$(echo "$VERSION" | sed 's/^\([0-9]*\)\..*/\1/')
-          MINOR=$(echo "$VERSION" | sed 's/^[0-9]*\.\([0-9]*\)\..*/\1/')
-          PATCH=$(echo "$VERSION" | sed 's/^[0-9]*\.[0-9]*\.\([0-9]*\).*/\1/')
-          NEW_PATCH=$((PATCH + 1))
-
-          # Add -dev suffix for dev branch, no suffix for main
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            SUFFIX=""
-          else
-            SUFFIX="-dev"
-          fi
-          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}-lpb${SUFFIX}"
-
-          echo "Bumping $VERSION → $NEW_VERSION"
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-
-          # Persist bumped version (VERSION excluded from CI paths, won't re-trigger)
-          echo "$NEW_VERSION" > VERSION
-          git config user.name "ci-localpibox"
-          git config user.email "ci@lpb-stack.dev"
-          git add VERSION
-          git commit -m "chore: bump VERSION $NEW_VERSION" || echo "Nothing to commit"
-          git push origin "${GITHUB_REF_NAME}" --force-with-lease || echo "Push failed (already up-to-date)"
-
-  # ──────────────────────────────────────────────────────
-  # Phase 3: Build & publish images
+  # Phase 2: Build & publish images (only if VERSION changed)
   # ──────────────────────────────────────────────────────
   build-cli:
     name: Build & publish cli image
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [bump-version]
-    if: ${{ github.event_name != 'pull_request' }}
+    needs: [test-lpb, VERSION_CHECK]
+    if: ${{ github.event_name != 'pull_request' && needs.VERSION_CHECK.outputs.changed == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -163,20 +162,20 @@ jobs:
           esac
           set +a
           echo "PI_FORK=$LPB_PI_FORK" >> "$GITHUB_OUTPUT"
-          # Use branch name for cloning (not version tag, which doesn't exist yet)
+          # Use branch name for cloning (not version tag, which may not exist yet)
           echo "PI_REF=$LPB_PI_REF" >> "$GITHUB_OUTPUT"
-          # Use bumped version for image tagging
-          echo "PI_TAG=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          # VERSION file is the single source (manual tagging — CI never bumps)
+          LPB_VERSION=$(cat VERSION)
+          echo "LPB_VERSION=${LPB_VERSION}" >> "$GITHUB_OUTPUT"
           echo "CONFIG_FORK=$LPB_CONFIG_FORK" >> "$GITHUB_OUTPUT"
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "LPB_VERSION=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "stack_version=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${LPB_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push cli
         uses: docker/build-push-action@v7
@@ -201,7 +200,7 @@ jobs:
             GIT_AUTH_TOKEN=${{ secrets.LPB_STACK_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-cli
+            ${{ env.IMAGE_NAME }}:${{ steps.config.outputs.LPB_VERSION }}-cli
             ${{ github.ref_name == 'main' && format('{0}:main-cli', env.IMAGE_NAME) || format('{0}:dev-cli', env.IMAGE_NAME) }}
             ${{ github.ref_name == 'main' && format('{0}:latest-cli', env.IMAGE_NAME) || '' }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-cli
@@ -214,8 +213,8 @@ jobs:
     name: Build & publish web image
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    needs: [build-cli, bump-version]
-    if: ${{ github.event_name != 'pull_request' }}
+    needs: [build-cli, VERSION_CHECK]
+    if: ${{ github.event_name != 'pull_request' && needs.VERSION_CHECK.outputs.changed == 'true' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -252,12 +251,14 @@ jobs:
           echo "CONFIG_REF=$LPB_CONFIG_REF" >> "$GITHUB_OUTPUT"
           echo "NODE_VERSION=$LPB_NODE_VERSION" >> "$GITHUB_OUTPUT"
           echo "VSCODIUM_VERSION=$LPB_VSCODIUM_VERSION" >> "$GITHUB_OUTPUT"
-          echo "LPB_VERSION=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          # VERSION file is the single source (manual tagging — CI never bumps)
+          LPB_VERSION=$(cat VERSION)
+          echo "LPB_VERSION=${LPB_VERSION}" >> "$GITHUB_OUTPUT"
           MAX_TOKENS=$(grep -E '^LPB_MAX_TOKENS_CONTEXT_RATIO=' lpb.conf.env | cut -d= -f2- | tr -d '"' 2>/dev/null || true)
           echo "MAX_TOKENS=${MAX_TOKENS:-0.06}" >> "$GITHUB_OUTPUT"
           sha=$(git ls-remote "$LPB_PI_FORK" "refs/heads/$LPB_PI_REF" | awk '{print $1}')
           echo "sha=${sha:-unknown}" >> "$GITHUB_OUTPUT"
-          echo "stack_version=${{ needs.bump-version.outputs.version }}" >> "$GITHUB_OUTPUT"
+          echo "stack_version=${LPB_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push web
         uses: docker/build-push-action@v7
@@ -282,7 +283,7 @@ jobs:
             GIT_AUTH_TOKEN=${{ secrets.LPB_STACK_PAT }}
           no-cache: ${{ github.event.inputs.no_cache == 'true' }}
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ needs.bump-version.outputs.version }}-web
+            ${{ env.IMAGE_NAME }}:${{ steps.config.outputs.LPB_VERSION }}-web
             ${{ github.ref_name == 'main' && format('{0}:main-web', env.IMAGE_NAME) || format('{0}:dev-web', env.IMAGE_NAME) }}
             ${{ github.ref_name == 'main' && format('{0}:latest-web', env.IMAGE_NAME) || '' }}
             ${{ env.IMAGE_NAME }}:${{ github.sha }}-web
@@ -292,21 +293,24 @@ jobs:
           platforms: linux/amd64
 
   # ──────────────────────────────────────────────────────
-  # Phase 4: Tag repos on success (only after build passes)
+  # Phase 3: Tag repos on success (only after build passes)
   # ──────────────────────────────────────────────────────
   tag-repos:
     name: Tag all repos
     runs-on: ubuntu-latest
-    needs: [build-cli, build-web, bump-version]
-    if: ${{ github.event_name != 'pull_request' && needs.build-cli.result == 'success' && needs.build-web.result == 'success' }}
+    needs: [build-cli, build-web, VERSION_CHECK]
+    if: ${{ github.event_name != 'pull_request' && needs.VERSION_CHECK.outputs.changed == 'true' && needs.build-cli.result == 'success' && needs.build-web.result == 'success' }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Create tags on all repos
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.bump-version.outputs.version }}
           GH_TOKEN: ${{ secrets.LPB_STACK_PAT }}
         run: |
           set -e
+          VERSION=$(cat VERSION)
           # repo -> branch mapping per pipeline
           # dev pipeline: dev branches; main pipeline: stable branches
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
@@ -326,26 +330,119 @@ jobs:
               ["lpb-stack/lpb-memory"]="dev"
             )
           fi
+          FAILURES=0
           for repo in "${!REPO_BRANCHS[@]}"; do
             branch="${REPO_BRANCHS[$repo]}"
             echo "Tagging $repo@$VERSION (from $branch)"
             sha=$(git ls-remote "https://github.com/$repo.git" "refs/heads/$branch" | awk '{print $1}')
-            if [ -n "$sha" ]; then
-              # POST to /git/refs with {ref, sha} body (NOT /git/refs/tags/{tagname})
+            if [ -z "$sha" ]; then
+              # A missing branch means the repo map or branch name is wrong —
+              # a partial tag set would desync the stack, so fail loudly.
+              echo "  ❌ $repo:$branch not found — aborting (fail fast)"
+              exit 1
+            fi
+            # POST to /git/refs with {ref, sha} body (NOT /git/refs/tags/{tagname})
+            # 201 = created, 422 = already exists (idempotent re-run) = success.
+            # Anything else (503/429/...) is retried with backoff — transient
+            # GitHub API outages must not produce a partially-tagged stack.
+            status=""
+            for attempt in 1 2 3 4; do
               status=$(curl -s -o /dev/null -w '%{http_code}' \
                 -X POST "https://api.github.com/repos/$repo/git/refs" \
                 -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github+json" \
                 -d "{\"ref\": \"refs/tags/$VERSION\", \"sha\": \"$sha\"}")
               if [ "$status" = "201" ] || [ "$status" = "422" ]; then
-                echo "  ✅ $repo@$VERSION"
-              else
-                echo "  ⚠️  $repo tag creation failed (HTTP $status)"
+                break
               fi
+              if [ "$attempt" -lt 4 ]; then
+                sleep $((attempt * 15))
+                echo "  ⚠️  $repo HTTP $status — retry $((attempt + 1))/4"
+              fi
+            done
+            if [ "$status" = "201" ] || [ "$status" = "422" ]; then
+              echo "  ✅ $repo@$VERSION"
             else
-              echo "  ⚠️  $repo:$branch not found, skipping tag"
+              echo "  ❌ $repo tag creation failed (HTTP $status after 4 attempts)"
+              FAILURES=$((FAILURES + 1))
             fi
           done
+          if [ "$FAILURES" -gt 0 ]; then
+            echo "::error::Tag creation failed for $FAILURES repo(s) at $VERSION — the stack is now misaligned; re-run this job to complete tagging"
+            exit 1
+          fi
+
+  # ──────────────────────────────────────────────────────
+  # Phase 3.5: Publish stable docs (main pipeline only)
+  # Docs are gated into the release BEFORE promotion:
+  #   lpb-devstack release docs-ready  (merge dev→docs, review, flag)
+  #   lpb-devstack release promote     (refuses unless docs are ready)
+  # This job re-verifies the flag (catches --force promotions), then cuts
+  # the immutable docs version and points the `latest` alias at it.
+  # Output: gh-pages branch (mike) → https://lpb-stack.github.io/devstack/<version>/
+  # ──────────────────────────────────────────────────────
+  docs-publish:
+    name: Publish docs (mike)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [tag-repos, VERSION_CHECK]
+    if: ${{ github.ref_name == 'main' && github.event_name == 'push' && needs.VERSION_CHECK.outputs.changed == 'true' && needs.tag-repos.result == 'success' }}
+    steps:
+      - name: Checkout docs branch
+        uses: actions/checkout@v6
+        with:
+          ref: docs
+          fetch-depth: 0
+
+      - name: Verify docs flag
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          FLAG=$(git show HEAD:DOCS_READY 2>/dev/null | tr -d '[:space:]' || true)
+          if [ "$FLAG" != "$VERSION" ]; then
+            echo "::error::docs not flagged ready for $VERSION (DOCS_READY='${FLAG:-<missing>}') — run 'lpb-devstack release docs-ready' before promoting, then re-run this job"
+            exit 1
+          fi
+          echo "docs flag OK: $FLAG"
+
+      - name: Fetch stack repos at the release tag
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          mkdir -p ws/git
+          git clone --quiet https://github.com/lpb-stack/config.git ws/config
+          for r in lpb-memory pi-subagents lemonade-pi-plugin; do
+            git clone --quiet "https://github.com/lpb-stack/$r.git" "ws/git/$r"
+          done
+          git clone --quiet https://github.com/lpb-stack/pi.git ws/pi
+          for d in ws/config ws/git/lpb-memory ws/git/pi-subagents \
+                   ws/git/lemonade-pi-plugin ws/pi; do
+            git -C "$d" fetch --quiet --depth 1 origin tag "$VERSION"
+            git -C "$d" checkout -q "$VERSION"
+          done
+
+      - name: Install docs tooling
+        run: python3 -m pip install --quiet "mkdocs-material==9.7.7" mike
+
+      - name: Prepare docs tree + version stamp
+        env:
+          AGENT_DIR: ${{ github.workspace }}/ws/config
+          LPB_AGENT_GIT: ${{ github.workspace }}/ws/git
+          LPB_WORKSPACE_ROOT: ${{ github.workspace }}/ws
+        run: python3 scripts/generate.py --tag "$(git show origin/main:VERSION | tr -d '[:space:]')"
+
+      - name: Configure git identity for mike
+        run: |
+          git config user.name "lpb-docs"
+          git config user.email "ci@lpb-stack.dev"
+
+      - name: Publish tagged docs version
+        run: |
+          set -e
+          VERSION=$(git show origin/main:VERSION | tr -d '[:space:]')
+          mike deploy "$VERSION" latest --push --update-aliases
+          mike set-default latest --push
+          echo "Docs version: https://lpb-stack.github.io/devstack/$VERSION/"
 
   status:
     name: Build status
@@ -354,7 +451,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          if [ "${{ needs.build-cli.result }}" != "success" ] || [ "${{ needs.build-web.result }}" != "success" ]; then
+          cli="${{ needs.build-cli.result }}"
+          web="${{ needs.build-web.result }}"
+          if [ "$cli" = "skipped" ] && [ "$web" = "skipped" ]; then
+            echo "Builds skipped — no VERSION change in this push (tests only)"
+            exit 0
+          fi
+          if [ "$cli" != "success" ] || [ "$web" != "success" ]; then
             echo "Build failed!"
             exit 1
           fi
