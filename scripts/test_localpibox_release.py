@@ -226,7 +226,7 @@ def test_main_unique_version_only(tmpdir):
         _g(clone, "checkout", "-q", "-B", "main", "origin/dev")
         (clone / "VERSION").write_text("0.0.9-lpb\n")
         _g(clone, "commit", "-qam", "strip")
-        _g(clone, "push", "-q", "origin", "main")
+        _g(clone, "push", "-q", "--force", "origin", "main")
         assert rel._main_unique_is_version_only(clone, "dev", "main") is True
 
 
