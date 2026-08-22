@@ -38,15 +38,16 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 | `LPB_EDITOR_HOST` | `0.0.0.0` | Editor listen host (`127.0.0.1` for local-only) |
 | `LPB_CONNECTION_TOKEN` | *(random per start)* | OpenVSCode token — set for a stable token |
 | `LPB_LEMONADE_BASE_URL` | `http://127.0.0.1:13305/v1` | Local model server endpoint |
-| `LPB_LEMONADE_API_KEY` | *(none)* | Lemonade server API key — used by the first-run setup wizard (`lpb-config setup`); a placeholder is fine for local servers |
 | `LPB_MAX_TOKENS_CONTEXT_RATIO` | `0.06` | max_tokens as fraction of context window (Qwen thinking headroom) |
 | `LPB_AGENT_BROWSER_SESSION` | `$PI_WORKTREE_ID` | Browser session isolation id |
 | `LPB_AGENT_BROWSER_MAX_OUTPUT` | `4000` | Max chars for browser snapshot output |
 | `LPB_AGENT_BROWSER_ARGS` | `--no-sandbox,…` | Chrome launch args |
+| `LPB_AGENT_BROWSER_CONTENT_BOUNDARIES` | `true` | LLM safety markers in content extraction |
 | `LPB_AGENT_BROWSER_CONFIRM_ACTIONS` | `delete,download,…` | Action categories requiring approval |
 | `LPB_AGENT_BROWSER_IDLE_TIMEOUT_MS` | `300000` | Browser daemon idle timeout |
-| `LPB_PERSIST_GH_CONFIG` | — | Persist gh CLI auth into the state volume |
-| `LPB_OPENROUTER_BASE_URL` | — | Optional overflow provider (not needed with Lemonade) |
+| `LPB_PERSIST_GH_CONFIG` | `true` | Persist gh CLI auth into the state volume |
+| `LPB_OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Optional overflow provider (not needed with Lemonade) |
+| `GHCR_TOKEN` | *(empty)* | Read-only PAT for GHCR pulls (falls back to `GITHUB_TOKEN`/`LPB_GITHUB_TOKEN`) |
 
 > **Browser var bridging:** agent-browser (CLI / MCP server) reads the
 > `AGENT_BROWSER_*` names, not `LPB_*`. `start.sh` bridges each
@@ -60,19 +61,28 @@ If a value from `.env` doesn't seem to apply, check shell env first:
 |---|---|
 | `LPB_EXA_API_KEY` | Exa MCP server (web search) |
 | `LPB_CONTEXT7_API_KEY` | Context7 MCP server (higher rate limits) |
+| `LPB_LEMONADE_API_KEY` | Lemonade server API key — first-run setup wizard (`lpb-config setup`); a placeholder is fine for local servers |
 
 ## The `LPB_` Bridge (container boot)
 
-`start.sh` at container boot promotes selected `LPB_*` vars to the bare
-names that third-party tools expect:
+`start.sh` at container boot promotes every `LPB_<name>` var to the bare
+name third-party tools expect (single list, single loop in `start.sh`;
+priority: shell env > `LPB_` > container-safe fallback):
 
 | LPB_ Prefix | Bare Name | Used By |
 |---|---|---|
 | `LPB_EXA_API_KEY` | `EXA_API_KEY` | Exa MCP server |
 | `LPB_CONTEXT7_API_KEY` | `CONTEXT7_API_KEY` | Context7 MCP server |
+| `LPB_LEMONADE_BASE_URL` | `LEMONADE_BASE_URL` | Lemonade provider + setup wizard |
+| `LPB_LEMONADE_API_KEY` | `LEMONADE_API_KEY` | Lemonade provider + setup wizard |
+| `LPB_OPENROUTER_BASE_URL` | `OPENROUTER_BASE_URL` | Optional overflow provider |
+| `LPB_MAX_TOKENS_CONTEXT_RATIO` | `MAX_TOKENS_CONTEXT_RATIO` | lemonade-pi-plugin (max_tokens ratio) |
 | `LPB_CONNECTION_TOKEN` | `CONNECTION_TOKEN` | OpenVSCode |
 | `LPB_EDITOR_HOST` | `HOST` | OpenVSCode |
 | `LPB_ED_PORT` | `ED_PORT` | OpenVSCode |
+| `LPB_DEVCONTAINER_WORKSPACE_DIR` | `DEVCONTAINER_WORKSPACE_DIR` | Workspace dir |
+| `LPB_GITHUB_TOOLSETS` | `GITHUB_TOOLSETS` | gh CLI toolsets |
+| `LPB_AGENT_BROWSER_*` (6 vars) | `AGENT_BROWSER_*` | agent-browser (session, args, output limits, confirm actions, timeout) |
 
 So setting `LPB_EXA_API_KEY` in your project `.env` is sufficient —
 `start.sh` promotes it to `EXA_API_KEY` for the MCP server.
@@ -101,6 +111,7 @@ These select **what goes into the image** (build time) and which pipeline
 | `LPB_AGENT_GIT` | Extension clones dir (default `$AGENT_DIR/git/github.com/lpb-stack`) |
 | `LEMONADE_BASE_URL` | Model API endpoint (`http://127.0.0.1:13305/v1`) |
 | `LEMONADE_API_KEY` | Lemonade server API key (bridged from `LPB_LEMONADE_API_KEY`) |
+| `MAX_TOKENS_CONTEXT_RATIO` | max_tokens ratio for the lemonade provider (bridged) |
 | `AGENT_BROWSER_SESSION` | Browser session isolation id |
 | `AGENT_BROWSER_MAX_OUTPUT` | Max chars for snapshot output |
 

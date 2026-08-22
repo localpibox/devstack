@@ -14,7 +14,7 @@ repos and their upstream origins:
 |---|---|---|---|
 | **`lpb-stack/pi`** | Fork | `earendil-works/pi` | Pi monorepo — Qwen reasoning + overflow detection |
 | **`lpb-stack/lemonade-pi-plugin`** | Fork | `lemonade-sdk/lemonade-pi-plugin` | Lemonade provider — Qwen model detection, vision |
-| **`lpb-stack/pi-subagents`** | Original | — | Subagent model registry (local-first) |
+| **`lpb-stack/pi-subagents`** | Fork | `tintinweb/pi-subagents` | Subagent model registry (local-first) |
 | **`lpb-stack/config`** | Original | — | User settings, skills, agents |
 | **`lpb-stack/devstack`** | Original | — | Docker dev environment + lpb launcher |
 | **`lpb-stack/lpb-memory`** | Original | — | Persistent memory extension |
@@ -133,7 +133,8 @@ network calls. Triggered on login, refresh, and `/lemonade change-ctx`.
 
 ## Pi Subagents (`lpb-stack/pi-subagents`)
 
-**Original** — not a fork. Provides subagent model registry that removes
+Fork of `tintinweb/pi-subagents` (on top of upstream v0.16.1, merged into
+`lpb-dev`). Provides subagent model registry that removes
 Anthropic defaults and makes the stack fully local-first.
 
 ### Key Change: `globalDefaultModel`

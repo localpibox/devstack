@@ -93,7 +93,7 @@ Two image flavours are published to `ghcr.io/lpb-stack/devstack`:
 | `--tag latest` | same as `main` |
 | `--tag 0.0.55-lpb-dev` | pin to an exact version |
 | `LPB_IMAGE_TAG=…` | persistent env-var override |
-| *(no tag)* | last-used version (pinned in `~/.lpb-stack/devstack/last-version`), else the dev pipeline |
+| *(no tag)* | last-used version (pinned in `~/.lpb-stack/devstack/last-version`), else the stable pipeline |
 
 ### Resolution rules
 
@@ -172,7 +172,7 @@ working stable tree.)
 ## Examples
 
 ```bash
-lpb ~/projects/myapp                        # Pi CLI, dev pipeline (or last pin)
+lpb ~/projects/myapp                        # Pi CLI (stable pipeline, or last pin; --dev for dev)
 lpb --main ~/projects/myapp                 # stable pipeline
 lpb --tag 0.0.55-lpb-dev ~/projects/myapp   # pin to an exact version
 lpb --web --port 8080 ~/projects/myapp      # VSCodium on port 8080
