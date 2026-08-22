@@ -242,6 +242,14 @@ def _repo_action(st: dict, rebase: bool) -> tuple[str, str | None]:
     return st["feasibility"], None  # ff | merge
 
 
+def _main_unique_is_version_only(path: Path, dev_b: str, main_b: str) -> bool:
+    """True when main's tree differs from dev only in VERSION (the expected
+    stable-branch strip after a promotion, until dev advances again)."""
+    out, _err, code = git(path, "diff", "--name-only",
+                          f"origin/{dev_b}", f"origin/{main_b}")
+    return code == 0 and all(f == "VERSION" for f in out.splitlines() if f)
+
+
 def _set_commit_author() -> None:
     """Force LocalPibox author identity for git commits made by this process."""
     os.environ["GIT_AUTHOR_NAME"] = "localpibox"
@@ -270,8 +278,13 @@ def cmd_release_status(cons: Console) -> int:
         elif feas == "aligned":
             mark, note = "✅", "aligned"
         elif feas == "ahead":
-            mark, note = "⚠️", f"{main_b} is AHEAD of dev — check its unique commits"
-            problems += 1
+            if label == "devstack" and _main_unique_is_version_only(path, dev_b, main_b):
+                mark, note = "✅", (f"{main_b} ahead only by the stable VERSION "
+                                    f"strip (expected after a release, until "
+                                    f"dev advances)")
+            else:
+                mark, note = "⚠️", f"{main_b} is AHEAD of dev — check its unique commits"
+                problems += 1
         elif feas == "ff":
             mark, note = "✅", f"{main_b} {st['main_behind_by']} behind → fast-forward"
         elif feas == "merge":

@@ -214,6 +214,22 @@ def test_release_state_real_conflict(tmpdir):
     assert st["feasibility"] == "conflict"
 
 
+def test_main_unique_version_only(tmpdir):
+    """After a promotion, main is ahead of dev only by the VERSION strip —
+    status must not warn about it."""
+    clone = _fake_release_repo(tmpdir)
+    p1, p2 = _patch_release(clone, tmpdir)
+    with p1, p2:
+        # main (0.0.8-lpb) vs dev (0.0.9-lpb-dev): main's unique change is VERSION
+        assert rel._main_unique_is_version_only(clone, "dev", "main") is False
+        # simulate the post-release state: main == merge(dev) + VERSION strip
+        _g(clone, "checkout", "-q", "-B", "main", "origin/dev")
+        (clone / "VERSION").write_text("0.0.9-lpb\n")
+        _g(clone, "commit", "-qam", "strip")
+        _g(clone, "push", "-q", "origin", "main")
+        assert rel._main_unique_is_version_only(clone, "dev", "main") is True
+
+
 # ─── docs-ready command end-to-end ────────────────────────────────────────
 
 def test_docs_ready_flags_and_pushes(tmpdir):
